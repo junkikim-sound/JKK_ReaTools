@@ -8,7 +8,7 @@ local ctx = reaper.ImGui_CreateContext('JKK_Track Manager')
 local open = true
 
 -- Theme Load
-local theme_module = dofile(reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_Theme.lua")
+local theme_module = dofile(reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_Theme/JKK_Theme.lua")
 if not theme_module then
     reaper.MB("Error: JKK_Theme.lua not found or failed to load. Check file path: JKK_ReaScripts/JKK_Theme.lua", "Error", 0)
     return
