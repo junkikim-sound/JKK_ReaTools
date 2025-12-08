@@ -1,5 +1,7 @@
 --========================================================
---  JKK_SFX Arranger_Apply.lua
+-- @title JKK_Item Manager_Arrange Items to Current Setting
+-- @author Junki Kim
+-- @version 1.0.0
 --========================================================
 
 local EXTSTATE_KEY = "JKK_Item Manager"

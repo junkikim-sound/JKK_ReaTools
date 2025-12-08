@@ -1,3 +1,9 @@
+--========================================================
+-- @title JKK_Theme
+-- @author Junki Kim
+-- @version 1.0.0
+--========================================================
+
 function ApplyTheme(ctx)
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_Alpha(),                       1)
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_DisabledAlpha(),               0.6)

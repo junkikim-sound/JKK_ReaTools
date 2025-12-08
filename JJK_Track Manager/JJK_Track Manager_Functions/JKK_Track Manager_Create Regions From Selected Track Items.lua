@@ -1,9 +1,9 @@
 --========================================================
--- CreateRegions_From_Selected_Tracks.lua (경고 메시지 제거됨)
--- 선택된 트랙/폴더별로 아이템 전체 범위를 Region으로 지정
+-- @title JKK_Track Manager_Create Regions From Selected Track Items
+-- @author Junki Kim
+-- @version 1.0.0
 --========================================================
 
--- Helpers
 local function GetTrackCount() return reaper.CountTracks(0) end
 
 local function CalcTrackLevelByIndex(idx)
@@ -31,7 +31,7 @@ local function GetSortedSelectedTracksWithLevel()
 end
 
 -- =================================================================================
--- GetFullFolderRangeIndicesByIndex
+-- Get Full Folder Range Indices By Index
 -- =================================================================================
 local function GetFullFolderRangeIndicesByIndex(start_idx)
     local tr = reaper.GetTrack(0, start_idx)
@@ -97,7 +97,7 @@ local function CreateRegion(start_pos, end_pos, name)
 end
 
 -- =================================================================================
--- GetTopLevelSelectedTracks 
+-- Get Top Level Selected Tracks 
 -- =================================================================================
 local function GetTopLevelSelectedTracks()
     local sel = GetSortedSelectedTracksWithLevel()
@@ -111,7 +111,6 @@ local function Action_CreateRegions()
     reaper.Undo_BeginBlock()
     local topSel = GetTopLevelSelectedTracks()
     
-    -- [수정]: 선택된 트랙이 없으면 조용히 종료
     if #topSel == 0 then 
         reaper.Undo_EndBlock("JKK: CreateRegions (none)", -1) 
         return 
@@ -131,10 +130,8 @@ local function Action_CreateRegions()
             regions_created = regions_created + 1
         end
     end
-    -- [수정]: 아이템이 없어 Region이 생성되지 않아도 메시지 없이 조용히 종료
 
     reaper.Undo_EndBlock("JKK: CreateRegions (per selected track)", -1)
 end
 
--- 스크립트 실행
 Action_CreateRegions()
