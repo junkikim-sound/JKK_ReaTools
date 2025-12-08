@@ -1,18 +1,19 @@
 --========================================================
 -- @title JKK_Track Manager
 -- @author Junki Kim
--- @version 1.0.1
+-- @version 1.0.11
 --========================================================
 
 local ctx = reaper.ImGui_CreateContext('JKK_Track Manager')
 local open = true
 
-local theme_module = dofile(reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_Theme/JKK_Theme.lua")
-if not theme_module then
-    reaper.MB("Error: JKK_Theme.lua not found or failed to load. Check file path: JKK_ReaScripts/JKK_Theme.lua", "Error", 0)
-    return
+local theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_Theme/JKK_Theme.lua"
+local theme_module = nil
+if reaper.file_exists(theme_path) then
+    theme_module = dofile(theme_path)
 end
-local ApplyTheme = theme_module.ApplyTheme
+
+local ApplyTheme = theme_module and theme_module.ApplyTheme or function(ctx) return 0, 0 end
 local style_pop_count, color_pop_count
 
 local select_level = 0
