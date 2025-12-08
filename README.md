@@ -9,7 +9,7 @@ JKK_ReaTools를 사용하기 위해서는 **ReaImGui**가 반드시 설치되어
     정상적으로 설치되었다면, 위의 메뉴를 확인할 수 있습니다.
 2. **ReaImGui의 설치**
     1. REAPER 상단 메뉴에서 **Extensions → ReaPack → Browse Packages** 를 선택합니다.
-    2. 검색창에 **`ReaImGui`**를 입력합니다. (만약 여기서 검색되지 않는다면, [**이 사이트**](https://github.com/cfillion/reaimgui)에서 안내하는 가이드를 따르십시오.)
+    2. 검색창에 `ReaImGui`를 입력합니다. (만약 여기서 검색되지 않는다면, [**이 사이트**](https://github.com/cfillion/reaimgui)에서 안내하는 가이드를 따르십시오.)
     3. **ReaImGui / Extensions(Type)** 라는 패키지를 확인했다면, 해당 패키지를 **우클릭 → Install 선택**합니다.
     4. **우측 하단의 Apply 클릭**합니다.
     5. 설치가 완료되었다면, REAPER를 재시작하면 됩니다.
