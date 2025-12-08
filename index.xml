@@ -1,54 +1,99 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="JKK_ReaTools" commit="58a3e39ba95bd0f35846aa1f39aa4cb2574295e1">
-  <category name="Example">
-    <reapack name="cfillion_Hello world.lua" type="script" desc="Hello world">
-      <metadata>
-        <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
-{\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
-\widowctrl\hyphauto
-
-{\pard \ql \f0 \sa180 \li0 \fi0 This is an example of a package file. It installs itself as a ReaScript that does nothing but show "Hello World!" in REAPER's scripting console.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Packages may also include additional files specified using the @provides tag.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 This text is the documentation shown when using ReaPack's "About this package" feature. {\field{\*\fldinst{HYPERLINK "https://commonmark.org/"}}{\fldrslt{\ul
-Markdown
-}}}
- {\i formatting} is supported.\par}
-}
-]]></description>
-      </metadata>
-      <version name="1.0" author="cfillion" time="2021-01-04T23:30:32Z">
-        <source main="main">https://github.com/cfillion/reapack-repository-template/raw/58a3e39ba95bd0f35846aa1f39aa4cb2574295e1/Example/cfillion_Hello%20world.lua</source>
+<index version="1" name="JKK_ReaTools" commit="524d1a78a27d57ccf54de221571486d1d9565be4">
+  <category name="JJK_Item Manager">
+    <reapack name="JKK_Item Manager.lua" type="script">
+      <version name="1.0.0" author="Junki Kim" time="2025-12-08T22:56:37Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/524d1a78a27d57ccf54de221571486d1d9565be4/JJK_Item%20Manager/JKK_Item%20Manager.lua</source>
+      </version>
+    </reapack>
+  </category>
+  <category name="JJK_Item Manager/JJK_Item Manager_Functions">
+    <reapack name="JKK_Item Manager_Arrange Items to Current Setting.lua" type="script">
+      <version name="1.0.0" author="Junki Kim" time="2025-12-08T22:56:37Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/524d1a78a27d57ccf54de221571486d1d9565be4/JJK_Item%20Manager/JJK_Item%20Manager_Functions/JKK_Item%20Manager_Arrange%20Items%20to%20Current%20Setting.lua</source>
+      </version>
+    </reapack>
+  </category>
+  <category name="JJK_Track Manager">
+    <reapack name="JKK_Track Manager.lua" type="script">
+      <version name="1.0.0" author="Junki Kim" time="2025-12-08T22:56:37Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/524d1a78a27d57ccf54de221571486d1d9565be4/JJK_Track%20Manager/JKK_Track%20Manager.lua</source>
+      </version>
+    </reapack>
+  </category>
+  <category name="JJK_Track Manager/JJK_Track Manager_Functions">
+    <reapack name="JKK_Track Manager_Create Regions From Selected Track Items.lua" type="script">
+      <version name="1.0.0" author="Junki Kim" time="2025-12-08T22:56:37Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/524d1a78a27d57ccf54de221571486d1d9565be4/JJK_Track%20Manager/JJK_Track%20Manager_Functions/JKK_Track%20Manager_Create%20Regions%20From%20Selected%20Track%20Items.lua</source>
+      </version>
+    </reapack>
+    <reapack name="JKK_Track Manager_Set Time Selection From Selected Track Items.lua" type="script">
+      <version name="1.0.0" author="Junki Kim" time="2025-12-08T22:56:37Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/524d1a78a27d57ccf54de221571486d1d9565be4/JJK_Track%20Manager/JJK_Track%20Manager_Functions/JKK_Track%20Manager_Set%20Time%20Selection%20From%20Selected%20Track%20Items.lua</source>
       </version>
     </reapack>
   </category>
   <metadata>
-    <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 Courier;}}
+    <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
 \widowctrl\hyphauto
 
-{\pard \ql \f0 \sa180 \li0 \fi0 \b \fs36 ReaPack Repository Template\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 A template for GitHub-hosted ReaPack repositories with automated {\field{\*\fldinst{HYPERLINK "https://github.com/cfillion/reapack-index"}}{\fldrslt{\ul
-reapack-index
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 JKK_ReaTools\par}
+{\pard \qc \f0 \sa180 \li0 \fi0 \emdash\emdash\emdash\emdash\emdash\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 1. \u49444 ?\u52824 ?\u54616 ?\u44592 ?\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 JKK_ReaTools\u47484 ? \u49324 ?\u50857 ?\u54616 ?\u44592 ? \u50948 ?\u54644 ?\u49436 ?\u45716 ? {\b ReaImGui}\u44032 ? \u48152 ?\u46300 ?\u49884 ? \u49444 ?\u52824 ?\u46104 ?\u50612 ? \u51080 ?\u50612 ?\u50556 ? \u54633 ?\u45768 ?\u45796 ?.\par}
+{\pard \ql \f0 \sa180 \li720 \fi0 ReaImGui\u45716 ? REAPER\u50640 ?\u49436 ? \u54788 ?\u45824 ?\u51201 ?\u51064 ? \u51064 ?\u53552 ?\u54168 ?\u51060 ?\u49828 ?(UI)\u47484 ? \u47564 ?\u46308 ? \u49688 ? \u51080 ?\u44172 ? \u54644 ?\u51452 ?\u45716 ? \u54869 ?\u51109 ? \u46972 ?\u51060 ?\u48652 ?\u47084 ?\u47532 ?\u47196 ?, \u51060 ? \u49828 ?\u53356 ?\u47549 ?\u53944 ?\u45716 ? \u47784 ?\u46304 ? UI\u47484 ? ReaImGui \u44592 ?\u48152 ?\u51004 ?\u47196 ? \u44396 ?\u49457 ?\u54616 ?\u44256 ? \u51080 ?\u44592 ? \u46412 ?\u47928 ?\u50640 ? \u54596 ?\u49688 ? \u44396 ?\u49457 ?\u50836 ?\u49548 ?\u51077 ?\u45768 ?\u45796 ?.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab {\b {\field{\*\fldinst{HYPERLINK "https://reapack.com/"}}{\fldrslt{\ul
+ReaPack
 }}}
- running from GitHub Actions.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Replace the name of the repository in {\field{\*\fldinst{HYPERLINK "/index.xml"}}{\fldrslt{\ul
-index.xml
+\u51032 ? \u49444 ?\u52824 ?} ReaImGui\u45716 ? {\field{\*\fldinst{HYPERLINK "https://reapack.com/"}}{\fldrslt{\ul
+{\b ReaPack}
 }}}
- when using this template. This will be the name shown in ReaPack.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 \f1 <index version="1" name="Name of your repository here">\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Replace the contents of this file ({\field{\*\fldinst{HYPERLINK "/README.md"}}{\fldrslt{\ul
-README.md
+\u51060 ?\u46972 ?\u45716 ? Extension\u51012 ? \u53685 ?\u54644 ? \u49444 ?\u52824 ?\u54616 ?\u45716 ? \u44163 ?\u51060 ? \u44032 ?\u51109 ? \u44036 ?\u45800 ?\u54616 ?\u44256 ? \u50504 ?\u51204 ?\u54633 ?\u45768 ?\u45796 ?. \u44536 ?\u47084 ?\u48064 ?\u47196 ? \u47676 ?\u51200 ? {\field{\*\fldinst{HYPERLINK "https://reapack.com/"}}{\fldrslt{\ul
+{\b ReaPack}
 }}}
-). This will be the text shown when using ReaPack's "About this repository" feature.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 reapack-index looks for package files in subfolders. The folder tree represents the package categories shown in ReaPack.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 Each package file is expected to begin with a metadata header. See {\field{\*\fldinst{HYPERLINK "https://github.com/cfillion/reapack-index/wiki/Packaging-Documentation"}}{\fldrslt{\ul
-Packaging Documentation
+\u51012 ? \u49444 ?\u52824 ?\u54644 ?\u50556 ? \u54633 ?\u45768 ?\u45796 ?. {\field{\*\fldinst{HYPERLINK "https://reapack.com/"}}{\fldrslt{\ul
+{\b ReaPack}
 }}}
- on reapack-index's wiki.\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 The URL to import in ReaPack is {\field{\*\fldinst{HYPERLINK "https://github.com/cfillion/reapack-repository-template/raw/master/index.xml"}}{\fldrslt{\ul
-https://github.com/{\f1 <your username>}/{\f1 <repository name>}/raw/master/index.xml
+\u51032 ? \u49444 ?\u52824 ? \u44032 ?\u51060 ?\u46300 ?\u45716 ? {\field{\*\fldinst{HYPERLINK "https://reapack.com/"}}{\fldrslt{\ul
+\u54644 ?\u45817 ? \u49324 ?\u51060 ?\u53944 ?
 }}}
-.\par}
+\u47484 ? \u52280 ?\u44256 ?\u54644 ?\u51452 ?\u49901 ?\u49884 ?\u50724 ?. \u49444 ?\u52824 ?\u44032 ? \u51221 ?\u49345 ?\u51201 ?\u51004 ?\u47196 ? \u50756 ?\u47308 ?\u46104 ?\u50632 ?\u45796 ?\u47732 ?, \u50952 ?\u46020 ?\u50864 ? \u49345 ?\u45800 ? \u47700 ?\u45684 ?\u48148 ?\u50640 ? {\b Extension \u8594 ? ReaPack}\u51060 ?\u46972 ?\u45716 ? \u47700 ?\u45684 ?\u47484 ? \u54869 ?\u51064 ?\u54624 ? \u49688 ? \u51080 ?\u49845 ?\u45768 ?\u45796 ?. \u51221 ?\u49345 ?\u51201 ?\u51004 ?\u47196 ? \u49444 ?\u52824 ?\u46104 ?\u50632 ?\u45796 ?\u47732 ?, \u50948 ?\u51032 ? \u47700 ?\u45684 ?\u47484 ? \u54869 ?\u51064 ?\u54624 ? \u49688 ? \u51080 ?\u49845 ?\u45768 ?\u45796 ?.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab {\b ReaImGui\u51032 ? \u49444 ?\u52824 ?}\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 1.\tx360\tab REAPER \u49345 ?\u45800 ? \u47700 ?\u45684 ?\u50640 ?\u49436 ? {\b Extensions \u8594 ? ReaPack \u8594 ? Browse Packages} \u47484 ? \u49440 ?\u53469 ?\u54633 ?\u45768 ?\u45796 ?.\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 2.\tx360\tab \u44160 ?\u49353 ?\u52285 ?\u50640 ? {\f1 ReaImGui}\u47484 ? \u51077 ?\u47141 ?\u54633 ?\u45768 ?\u45796 ?. (\u47564 ?\u50557 ? \u50668 ?\u44592 ?\u49436 ? \u44160 ?\u49353 ?\u46104 ?\u51648 ? \u50506 ?\u45716 ?\u45796 ?\u47732 ?, {\field{\*\fldinst{HYPERLINK "https://github.com/cfillion/reaimgui"}}{\fldrslt{\ul
+{\b \u51060 ? \u49324 ?\u51060 ?\u53944 ?}
+}}}
+\u50640 ?\u49436 ? \u50504 ?\u45236 ?\u54616 ?\u45716 ? \u44032 ?\u51060 ?\u46300 ?\u47484 ? \u46384 ?\u47476 ?\u49901 ?\u49884 ?\u50724 ?.)\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 3.\tx360\tab {\b ReaImGui / Extensions(Type)} \u46972 ?\u45716 ? \u54056 ?\u53412 ?\u51648 ?\u47484 ? \u54869 ?\u51064 ?\u54664 ?\u45796 ?\u47732 ?, \u54644 ?\u45817 ? \u54056 ?\u53412 ?\u51648 ?\u47484 ? {\b \u50864 ?\u53364 ?\u47533 ? \u8594 ? Install \u49440 ?\u53469 ?}\u54633 ?\u45768 ?\u45796 ?.\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 4.\tx360\tab {\b \u50864 ?\u52769 ? \u54616 ?\u45800 ?\u51032 ? Apply \u53364 ?\u47533 ?}\u54633 ?\u45768 ?\u45796 ?.\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 5.\tx360\tab \u49444 ?\u52824 ?\u44032 ? \u50756 ?\u47308 ?\u46104 ?\u50632 ?\u45796 ?\u47732 ?, REAPER\u47484 ? \u51116 ?\u49884 ?\u51089 ?\u54616 ?\u47732 ? \u46121 ?\u45768 ?\u45796 ?.\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 3.\tx360\tab {\b ReaImGui\u51060 ? \u51221 ?\u49345 ?\u51201 ?\u51004 ?\u47196 ? \u49444 ?\u52824 ?\u46104 ?\u50632 ?\u45716 ?\u51648 ? \u54869 ?\u51064 ?\u54616 ?\u44592 ?}\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 1.\tx360\tab REAPER\u51032 ? Action List (\u45800 ?\u52629 ?\u53412 ?: ? ) \u52285 ?\u51012 ? \u50685 ?\u45768 ?\u45796 ?.\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 2.\tx360\tab \u44160 ?\u49353 ?\u52285 ?\u50640 ? {\f1 ImGui} \u51077 ?\u47141 ?\u54620 ? \u54980 ?, \u50500 ?\u47000 ?\u50752 ? \u44057 ?\u51008 ? \u50529 ?\u49496 ? \u46608 ?\u45716 ? \u49828 ?\u53356 ?\u47549 ?\u53944 ?\u44032 ? \u48372 ?\u51060 ?\u47732 ? \u51221 ?\u49345 ? \u49444 ?\u52824 ?\u46108 ? \u44163 ?\u51077 ?\u45768 ?\u45796 ?.\line {\b ReaImGui: Demo.lua \u46972 ?\u45716 ? \u49828 ?\u53356 ?\u47549 ?\u53944 ?\u47484 ? \u52286 ?\u51004 ?\u49464 ?\u50836 ?!}\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 4.\tx360\tab "https://github.com/JUNKIKIM-SOUND/JKK_ReaTools/raw/master/index.xml"\sa180\par}
+{\pard \qc \f0 \sa180 \li0 \fi0 \emdash\emdash\emdash\emdash\emdash\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 2. \u49548 ?\u44060 ?\u54616 ?\u44592 ?\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab {\b JKK_Item Manager}\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Item Batch Controller\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Item Arranger & Randomizer\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Region Creator (from Selected Items)\par}
+{\pard \ql \f0 \sa0 \li1080 \fi-360 \bullet \tx360\tab {\i This feature exists as a separate script.}\sa180\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab {\b JKK_Track Manager}\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Track Batch Controller (Vol & Pan)\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Track Selector (by Folder Level)\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Time Selection Creator (from Selected Track Items)\par}
+{\pard \ql \f0 \sa0 \li1080 \fi-360 \bullet \tx360\tab {\i This feature exists as a separate script.}\sa180\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Region Creator (from Selected Track Items)\par}
+{\pard \ql \f0 \sa0 \li1080 \fi-360 \bullet \tx360\tab {\i This feature exists as a separate script.}\sa180\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Unused Tracks Remover\par}
+{\pard \ql \f0 \sa0 \li1080 \fi-360 \bullet \tx360\tab {\i This feature exists as a separate script.}\sa180\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 3.\tx360\tab {\b JKK_Resion Manager}\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab JJK_FastFileRenamer - Batch File Renamer Tool region \u51060 ?\u47492 ? \u54620 ?\u48264 ?\u50640 ? \u49688 ?\u51221 ?\u54616 ?\u44592 ? Fast File Renamer\u44057 ?\u51008 ?\u44144 ?\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab JJK_Auto Increment Items\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab {\i mc_Create Region from Selected Items}\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u53440 ?\u51076 ? \u49472 ?\u47113 ?\u49496 ?\u50640 ? \u44152 ?\u52432 ?\u51080 ?\u45716 ? region\u47564 ? \u54620 ?\u48264 ?\u50640 ? \u49440 ?\u53469 ?\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u50689 ?\u50669 ? \u49353 ?\u44628 ? \u54620 ?\u48264 ?\u50640 ? \u48320 ?\u44221 ?\sa180\sa180\par}
 }
 ]]></description>
   </metadata>
