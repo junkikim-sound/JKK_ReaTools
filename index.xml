@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="JKK_ReaTools" commit="524d1a78a27d57ccf54de221571486d1d9565be4">
+<index version="1" name="JKK_ReaTools" commit="d61a7669dd0ea966bab7bf19f7ee14e3f00f4318">
   <category name="JJK_Item Manager">
     <reapack name="JKK_Item Manager.lua" type="script">
       <version name="1.0.0" author="Junki Kim" time="2025-12-08T22:56:37Z">
@@ -30,6 +30,13 @@
     <reapack name="JKK_Track Manager_Set Time Selection From Selected Track Items.lua" type="script">
       <version name="1.0.0" author="Junki Kim" time="2025-12-08T22:56:37Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/524d1a78a27d57ccf54de221571486d1d9565be4/JJK_Track%20Manager/JJK_Track%20Manager_Functions/JKK_Track%20Manager_Set%20Time%20Selection%20From%20Selected%20Track%20Items.lua</source>
+      </version>
+    </reapack>
+  </category>
+  <category name="JKK_Theme">
+    <reapack name="JKK_Theme.lua" type="script">
+      <version name="1.0.0" author="Junki Kim" time="2025-12-08T23:15:05Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/d61a7669dd0ea966bab7bf19f7ee14e3f00f4318/JKK_Theme/JKK_Theme.lua</source>
       </version>
     </reapack>
   </category>
