@@ -17,7 +17,7 @@ JKK_ReaTools를 사용하기 위해서는 **ReaImGui**가 반드시 설치되어
     1. REAPER의 Action List (단축키: ? ) 창을 엽니다.
     2. 검색창에 `ImGui` 입력한 후, 아래와 같은 액션 또는 스크립트가 보이면 정상 설치된 것입니다.    
       **ReaImGui: Demo.lua 라는 스크립트를 찾으세요!**
-4. https://github.com/JUNKIKIM-SOUND/JKK_ReaTools/raw/master/index.xml
+4. "https://github.com/JUNKIKIM-SOUND/JKK_ReaTools/raw/master/index.xml"
      
 ---
 ## 2. 소개하기
