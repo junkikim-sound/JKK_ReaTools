@@ -7,7 +7,6 @@
 local ctx = reaper.ImGui_CreateContext('JKK_Item Manager')
 local open = true
 
--- Theme Load
 local theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_Theme/JKK_Theme.lua"
 local theme_module = nil
 if reaper.file_exists(theme_path) then
