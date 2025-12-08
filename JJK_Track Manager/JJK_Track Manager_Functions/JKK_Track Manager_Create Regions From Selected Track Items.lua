@@ -1,0 +1,140 @@
+--========================================================
+-- CreateRegions_From_Selected_Tracks.lua (경고 메시지 제거됨)
+-- 선택된 트랙/폴더별로 아이템 전체 범위를 Region으로 지정
+--========================================================
+
+-- Helpers
+local function GetTrackCount() return reaper.CountTracks(0) end
+
+local function CalcTrackLevelByIndex(idx)
+    local level = 0
+    for i = 0, idx do
+        local tr = reaper.GetTrack(0, i)
+        if not tr then break end
+        local d = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH")
+        level = level + d
+    end
+    return level
+end
+
+local function GetSortedSelectedTracksWithLevel()
+    local out = {}
+    local selcnt = reaper.CountSelectedTracks(0)
+    for i = 0, selcnt - 1 do
+        local tr = reaper.GetSelectedTrack(0, i)
+        local idx = reaper.GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER") - 1
+        local level = CalcTrackLevelByIndex(idx)
+        table.insert(out, {track = tr, idx = idx, level = level})
+    end
+    table.sort(out, function(a,b) return a.idx < b.idx end)
+    return out
+end
+
+-- =================================================================================
+-- GetFullFolderRangeIndicesByIndex
+-- =================================================================================
+local function GetFullFolderRangeIndicesByIndex(start_idx)
+    local tr = reaper.GetTrack(0, start_idx)
+    if not tr then return {start_idx} end
+
+    local folderDepth = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH")
+    
+    if folderDepth <= 0 then
+        return {start_idx}
+    end
+    
+    local L_parent = 0
+    if start_idx > 0 then
+        L_parent = CalcTrackLevelByIndex(start_idx - 1)
+    end
+    
+    local start_level = CalcTrackLevelByIndex(start_idx)
+    
+    local out = {start_idx}
+    local folder_level = start_level
+
+    local trackCount = GetTrackCount()
+    for i = start_idx + 1, trackCount - 1 do
+        local t = reaper.GetTrack(0, i)
+        if not t then break end
+        local d = reaper.GetMediaTrackInfo_Value(t, "I_FOLDERDEPTH")
+        
+        folder_level = folder_level + d
+        table.insert(out, i)
+        
+        if folder_level <= L_parent then
+            break
+        end
+    end
+
+    return out
+end
+
+local function GetItemRangeFromTrackIndices(indices)
+    local min_pos = math.huge
+    local max_end = -math.huge
+    for _, idx in ipairs(indices) do
+        local tr = reaper.GetTrack(0, idx)
+        if tr then
+            local cnt = reaper.CountTrackMediaItems(tr)
+            for j = 0, cnt - 1 do
+                local item = reaper.GetTrackMediaItem(tr, j)
+                local pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+                local len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+                if pos < min_pos then min_pos = pos end
+                if pos + len > max_end then max_end = pos + len end
+            end
+        end
+    end
+    if min_pos == math.huge then return nil, nil end
+    return min_pos, max_end
+end
+
+local function CreateRegion(start_pos, end_pos, name)
+    if start_pos and end_pos and end_pos > start_pos then
+        reaper.AddProjectMarker2(0, true, start_pos, end_pos, name or "", -1, 0) 
+    end
+end
+
+-- =================================================================================
+-- GetTopLevelSelectedTracks 
+-- =================================================================================
+local function GetTopLevelSelectedTracks()
+    local sel = GetSortedSelectedTracksWithLevel()
+    return sel 
+end
+
+------------------------------------------------------------
+-- Main Action: Create Regions
+------------------------------------------------------------
+local function Action_CreateRegions()
+    reaper.Undo_BeginBlock()
+    local topSel = GetTopLevelSelectedTracks()
+    
+    -- [수정]: 선택된 트랙이 없으면 조용히 종료
+    if #topSel == 0 then 
+        reaper.Undo_EndBlock("JKK: CreateRegions (none)", -1) 
+        return 
+    end
+
+    local regions_created = 0
+    
+    for _, e in ipairs(topSel) do
+        local indices = GetFullFolderRangeIndicesByIndex(e.idx) 
+        local min_pos, max_end = GetItemRangeFromTrackIndices(indices)
+        
+        if min_pos then
+            local _, name = reaper.GetSetMediaTrackInfo_String(e.track, "P_NAME", "", false)
+            local region_name = (name ~= "") and name or ("Region_"..(e.idx+1))
+            
+            CreateRegion(min_pos, max_end, region_name)
+            regions_created = regions_created + 1
+        end
+    end
+    -- [수정]: 아이템이 없어 Region이 생성되지 않아도 메시지 없이 조용히 종료
+
+    reaper.Undo_EndBlock("JKK: CreateRegions (per selected track)", -1)
+end
+
+-- 스크립트 실행
+Action_CreateRegions()

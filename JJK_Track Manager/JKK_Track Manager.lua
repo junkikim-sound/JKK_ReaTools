@@ -1,0 +1,357 @@
+--========================================================
+-- JKK_Track Manager
+--========================================================
+
+local ctx = reaper.ImGui_CreateContext('JKK_Track Manager')
+local open = true
+
+-- Theme Load
+local theme_module = dofile(reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_Theme.lua")
+if not theme_module then
+    reaper.MB("Error: JKK_Theme.lua not found or failed to load. Check file path: JKK_ReaScripts/JKK_Theme.lua", "Error", 0)
+    return
+end
+local ApplyTheme = theme_module.ApplyTheme
+local style_pop_count, color_pop_count
+
+local select_level = 0
+local volume_db = 0.0
+local pan_val = 0.0
+
+local first_sel_tr = reaper.GetSelectedTrack(0, 0)
+if first_sel_tr then
+    local linear_vol = reaper.GetMediaTrackInfo_Value(first_sel_tr, "D_VOL")
+    
+    if linear_vol > 0 then
+        volume_db = 20.0 * math.log(linear_vol) / math.log(10) 
+    else
+        volume_db = -100.0
+    end
+    volume_db = math.min(volume_db, 12.0)
+end
+
+------------------------------------------------------------
+-- Helpers
+------------------------------------------------------------
+local function GetTrackCount() return reaper.CountTracks(0) end
+
+local function CalcTrackLevelByIndex(idx)
+    local level = 0
+    for i = 0, idx - 1 do
+        local tr = reaper.GetTrack(0, i)
+        if not tr then break end
+        local d = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH")
+        level = level + d
+    end
+    return math.max(0, level)
+end
+
+local function GetSortedSelectedTracksWithLevel()
+    local out = {}
+    local selcnt = reaper.CountSelectedTracks(0)
+    for i = 0, selcnt - 1 do
+        local tr = reaper.GetSelectedTrack(0, i)
+        local idx = reaper.GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER") - 1
+        local level = CalcTrackLevelByIndex(idx) 
+        table.insert(out, {track = tr, idx = idx, level = level})
+    end
+    table.sort(out, function(a,b) return a.idx < b.idx end)
+    return out
+end
+
+-- =================================================================================
+-- Get Full Folder Range Indices By Index
+-- =================================================================================
+local function GetFullFolderRangeIndicesByIndex(start_idx)
+    local tr = reaper.GetTrack(0, start_idx)
+    if not tr then return {start_idx} end
+
+    local folderDepth = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH")
+    
+    if folderDepth == 0 then
+        return {start_idx}
+    end
+    
+    local L_parent = 0
+    if start_idx > 0 then
+        L_parent = CalcTrackLevelByIndex(start_idx - 1)
+    end
+    
+    local start_level = CalcTrackLevelByIndex(start_idx)
+    
+    local out = {start_idx}
+    local folder_level = start_level
+
+    local trackCount = GetTrackCount()
+    for i = start_idx + 1, trackCount - 1 do
+        local t = reaper.GetTrack(0, i)
+        if not t then break end
+        local d = reaper.GetMediaTrackInfo_Value(t, "I_FOLDERDEPTH")
+        
+        folder_level = folder_level + d
+        table.insert(out, i)
+        
+        if folder_level <= L_parent then
+            break
+        end
+    end
+
+    return out
+end
+
+local function GetItemRangeFromTrackIndices(indices)
+    local min_pos = math.huge
+    local max_end = -math.huge
+    for _, idx in ipairs(indices) do
+        local tr = reaper.GetTrack(0, idx)
+        if tr then
+            local cnt = reaper.CountTrackMediaItems(tr)
+            for j = 0, cnt - 1 do
+                local item = reaper.GetTrackMediaItem(tr, j)
+                local pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+                local len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+                if pos < min_pos then min_pos = pos end
+                if pos + len > max_end then max_end = pos + len end
+            end
+        end
+    end
+    if min_pos == math.huge then return nil, nil end
+    return min_pos, max_end
+end
+
+local function CreateRegion(start_pos, end_pos, name)
+    if start_pos and end_pos and end_pos > start_pos then
+        reaper.AddProjectMarker2(0, true, start_pos, end_pos, name or "", -1, 0)
+    end
+end
+
+local function GetTopLevelSelectedTracks()
+    local sel = GetSortedSelectedTracksWithLevel()
+    if #sel == 0 then return {} end
+    
+    return sel 
+end
+
+------------------------------------------------------------
+-- Select Track by Level
+------------------------------------------------------------
+local function Action_SelectTracksByLevel(target_level)
+    reaper.Undo_BeginBlock()
+
+    local trackCount = GetTrackCount()
+    
+    local effective_level = target_level
+    if effective_level > 0 then
+        effective_level = effective_level - 1 
+    end
+
+    for idx = 0, trackCount - 1 do
+        local tr = reaper.GetTrack(0, idx)
+        if tr then
+            local current_level = CalcTrackLevelByIndex(idx)
+            
+            local select_it = false
+            
+            if target_level == 0 then
+                select_it = true
+            elseif current_level == effective_level then
+                select_it = true
+            end
+            
+            reaper.SetTrackSelected(tr, select_it)
+        end
+    end
+    
+    reaper.Undo_EndBlock("JKK: Select Tracks by Level", -1)
+end
+
+------------------------------------------------------------
+-- Set Selected Tracks Volume
+------------------------------------------------------------
+local function Action_SetSelectedTracksVolume(vol_val)
+    reaper.Undo_BeginBlock()
+    local selcnt = reaper.CountSelectedTracks(0)
+    for i = 0, selcnt - 1 do
+        local tr = reaper.GetSelectedTrack(0, i)
+        reaper.SetMediaTrackInfo_Value(tr, "D_VOL", vol_val) 
+    end
+    reaper.Undo_EndBlock("JKK: Set Selected Tracks Volume", -1)
+end
+
+------------------------------------------------------------
+-- Set Selected Tracks Pan
+------------------------------------------------------------
+local function Action_SetSelectedTracksPan(pan_val)
+    reaper.Undo_BeginBlock()
+    local selcnt = reaper.CountSelectedTracks(0)
+    for i = 0, selcnt - 1 do
+        local tr = reaper.GetSelectedTrack(0, i)
+        reaper.SetMediaTrackInfo_Value(tr, "D_PAN", pan_val)
+    end
+    reaper.Undo_EndBlock("JKK: Set Selected Tracks Panning", -1)
+end
+
+
+local function Action_TimeSelection()
+    reaper.Undo_BeginBlock()
+    local topSel = GetTopLevelSelectedTracks() 
+    if #topSel == 0 then 
+        reaper.Undo_EndBlock("JKK: TimeSelection (none)", -1) 
+        return 
+    end
+    
+    local idxSet = {}
+    for _, e in ipairs(topSel) do
+        local indices = GetFullFolderRangeIndicesByIndex(e.idx)
+        for _, ii in ipairs(indices) do idxSet[ii] = true end
+    end
+
+    local indicesList = {}
+    for k,_ in pairs(idxSet) do table.insert(indicesList, k) end
+    table.sort(indicesList)
+
+    local min_pos, max_end = GetItemRangeFromTrackIndices(indicesList)
+    if min_pos then
+        reaper.GetSet_LoopTimeRange(true, false, min_pos, max_end, false)
+    end
+
+    reaper.Undo_EndBlock("JKK: TimeSelection (merged all selected tracks)", -1)
+end
+
+
+local function Action_CreateRegions()
+    reaper.Undo_BeginBlock()
+    local topSel = GetTopLevelSelectedTracks()
+    if #topSel == 0 then reaper.Undo_EndBlock("JKK: CreateRegions (none)", -1) return end
+
+    for _, e in ipairs(topSel) do
+        local indices = GetFullFolderRangeIndicesByIndex(e.idx)
+        local min_pos, max_end = GetItemRangeFromTrackIndices(indices)
+        if min_pos then
+            local _, name = reaper.GetSetMediaTrackInfo_String(e.track, "P_NAME", "", false)
+            CreateRegion(min_pos, max_end, (name ~= "") and name or ("Region_"..(e.idx+1)))
+        end
+    end
+
+    reaper.Undo_EndBlock("JKK: CreateRegions (per selected track)", -1)
+end
+
+
+------------------------------------------------------------
+-- ReaImGui UI
+------------------------------------------------------------
+function loop()
+    -- Theme Push
+    reaper.ImGui_SetNextWindowSize(ctx, 240, 360, reaper.ImGui_Cond_FirstUseEver()) 
+    style_pop_count, color_pop_count = ApplyTheme(ctx)
+
+    local visible, open = reaper.ImGui_Begin(ctx, 'JKK_Track Manager', true)
+
+    if visible then
+        -- === [볼륨 / 패닝 컨트롤 섹션] ===
+        reaper.ImGui_Text(ctx, "볼륨/패닝 조정 (선택 트랙):")
+        reaper.ImGui_Separator(ctx)
+        
+        local sel_tr = reaper.GetSelectedTrack(0, 0)
+        if sel_tr and not reaper.ImGui_IsItemActive(ctx) then 
+            local linear_vol = reaper.GetMediaTrackInfo_Value(sel_tr, "D_VOL")
+            
+            if linear_vol > 0 then
+                local current_db = 20.0 * math.log(linear_vol) / math.log(10)
+                volume_db = math.min(current_db, 12.0)
+            else
+                volume_db = -100.0
+            end
+        end
+
+        local min_db = -100.0
+        local max_db = 12.0
+        
+        local function db_to_slider_pos(db)
+            if db <= 0 then
+                return ((db + 100.0) * 0.75) / 100.0
+            
+            else
+                return 0.75 + (db / max_db) * 0.25
+            end
+        end
+
+        local function slider_pos_to_db(pos)
+            if pos <= 0.75 then
+                local attenuation_factor = 100.0
+                return (pos / 0.75) * attenuation_factor + min_db 
+            
+            else
+                return ((pos - 0.75) / 0.25) * max_db
+            end
+        end
+        
+        local current_slider_pos = db_to_slider_pos(volume_db)
+        
+        local changed_vol, new_slider_pos = reaper.ImGui_SliderDouble(ctx, 'Volume', current_slider_pos, 0.0, 1.0, nil)
+        local reset_vol = reaper.ImGui_IsItemClicked(ctx, 1)
+        local display_db = volume_db
+        if volume_db < 0 then
+             display_db = volume_db
+        end
+        reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_Text(ctx, string.format('%.1f dB', display_db))
+        
+        if reset_vol then
+            volume_db = 0.0
+            Action_SetSelectedTracksVolume(1.0)
+        elseif changed_vol then
+            volume_db = slider_pos_to_db(new_slider_pos)
+            local linear_vol = 10 ^ (volume_db / 20.0) 
+            linear_vol = math.min(linear_vol, 3.98107) 
+            Action_SetSelectedTracksVolume(linear_vol) 
+        end
+
+        -- 패닝 슬라이더
+        local changed_pan, new_pan = reaper.ImGui_SliderDouble(ctx, 'Pan', pan_val, -1.0, 1.0, '%.2f')
+        local reset_pan = reaper.ImGui_IsItemClicked(ctx, 1)
+        
+        if reset_pan then
+            pan_val = 0.0
+            Action_SetSelectedTracksPan(pan_val)
+        elseif changed_pan then
+            pan_val = new_pan
+            Action_SetSelectedTracksPan(pan_val) 
+        end
+        
+        reaper.ImGui_Dummy(ctx, 0, 10)
+        reaper.ImGui_Separator(ctx)
+        
+        -- === [트랙 레벨 선택 섹션] ===
+        reaper.ImGui_Text(ctx, "선택 규칙: 선택된 모든 트랙 기준으로 처리합니다.")
+        reaper.ImGui_Text(ctx, "트랙 레벨 선택 (0: 전체, 1: Root):\n") 
+        local changed, new_level = reaper.ImGui_SliderInt(ctx, '##SelectLevel', select_level, 0, 8, '%d')
+        if changed then
+            select_level = new_level
+            Action_SelectTracksByLevel(select_level) 
+        end
+        reaper.ImGui_Separator(ctx)
+        
+        -- === [타임 셀렉션 / 리전 섹션] ===
+        if reaper.ImGui_Button(ctx, 'Create Time Selection', 180, 30) then
+            Action_TimeSelection()
+        end
+
+        reaper.ImGui_Dummy(ctx, 0, 6)
+
+        if reaper.ImGui_Button(ctx, 'Create Regions', 180, 30) then
+            Action_CreateRegions()
+        end
+
+        -- Theme Pop
+        reaper.ImGui_PopStyleVar(ctx, style_pop_count)
+        reaper.ImGui_PopStyleColor(ctx, color_pop_count)
+        reaper.ImGui_End(ctx)
+    end
+
+    if open then
+        reaper.defer(loop)
+    end
+end
+
+loop()
