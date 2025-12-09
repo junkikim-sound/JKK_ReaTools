@@ -1,12 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="JKK_ReaTools" commit="e57e4c052ccfc28b4f66861dd4b05d00a4c1755e">
+<index version="1" name="JKK_ReaTools" commit="6123ed9afcb86a545283da3f2065eadad8bea80c">
   <category name="JJK_Item Manager">
     <reapack name="JKK_Item Manager.lua" type="script">
-      <version name="1.0.0" author="Junki Kim" time="2025-12-08T22:56:37Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/524d1a78a27d57ccf54de221571486d1d9565be4/JJK_Item%20Manager/JKK_Item%20Manager.lua</source>
-      </version>
-      <version name="1.0.1" author="Junki Kim" time="2025-12-08T23:51:40Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/5f1a196611631dd04afd26412f514143bf2d0d7d/JJK_Item%20Manager/JKK_Item%20Manager.lua</source>
+      <version name="0.9.0" author="Junki Kim" time="2025-12-09T00:04:17Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/6123ed9afcb86a545283da3f2065eadad8bea80c/JJK_Item%20Manager/JKK_Item%20Manager.lua</source>
       </version>
     </reapack>
   </category>
@@ -19,14 +16,8 @@
   </category>
   <category name="JJK_Track Manager">
     <reapack name="JKK_Track Manager.lua" type="script">
-      <version name="1.0.0" author="Junki Kim" time="2025-12-08T22:56:37Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/524d1a78a27d57ccf54de221571486d1d9565be4/JJK_Track%20Manager/JKK_Track%20Manager.lua</source>
-      </version>
-      <version name="1.0.1" author="Junki Kim" time="2025-12-08T23:51:40Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/5f1a196611631dd04afd26412f514143bf2d0d7d/JJK_Track%20Manager/JKK_Track%20Manager.lua</source>
-      </version>
-      <version name="1.0.11" author="Junki Kim" time="2025-12-08T23:57:21Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/e57e4c052ccfc28b4f66861dd4b05d00a4c1755e/JJK_Track%20Manager/JKK_Track%20Manager.lua</source>
+      <version name="0.5.0" author="Junki Kim" time="2025-12-09T00:04:17Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/6123ed9afcb86a545283da3f2065eadad8bea80c/JJK_Track%20Manager/JKK_Track%20Manager.lua</source>
       </version>
     </reapack>
   </category>
@@ -87,7 +78,7 @@ ReaPack
 {\pard \ql \f0 \sa0 \li360 \fi-360 3.\tx360\tab {\b ReaImGui\u51060 ? \u51221 ?\u49345 ?\u51201 ?\u51004 ?\u47196 ? \u49444 ?\u52824 ?\u46104 ?\u50632 ?\u45716 ?\u51648 ? \u54869 ?\u51064 ?\u54616 ?\u44592 ?}\par}
 {\pard \ql \f0 \sa0 \li720 \fi-360 1.\tx360\tab REAPER\u51032 ? Action List (\u45800 ?\u52629 ?\u53412 ?: ? ) \u52285 ?\u51012 ? \u50685 ?\u45768 ?\u45796 ?.\par}
 {\pard \ql \f0 \sa0 \li720 \fi-360 2.\tx360\tab \u44160 ?\u49353 ?\u52285 ?\u50640 ? {\f1 ImGui} \u51077 ?\u47141 ?\u54620 ? \u54980 ?, \u50500 ?\u47000 ?\u50752 ? \u44057 ?\u51008 ? \u50529 ?\u49496 ? \u46608 ?\u45716 ? \u49828 ?\u53356 ?\u47549 ?\u53944 ?\u44032 ? \u48372 ?\u51060 ?\u47732 ? \u51221 ?\u49345 ? \u49444 ?\u52824 ?\u46108 ? \u44163 ?\u51077 ?\u45768 ?\u45796 ?.\line {\b ReaImGui: Demo.lua \u46972 ?\u45716 ? \u49828 ?\u53356 ?\u47549 ?\u53944 ?\u47484 ? \u52286 ?\u51004 ?\u49464 ?\u50836 ?!}\sa180\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 4.\tx360\tab "https://github.com/JUNKIKIM-SOUND/JKK_ReaTools/raw/master/index.xml"\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 4.\tx360\tab "https://github.com/junkikim-sound/JKK_ReaTools/raw/master/index.xml"\sa180\par}
 {\pard \qc \f0 \sa180 \li0 \fi0 \emdash\emdash\emdash\emdash\emdash\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 2. \u49548 ?\u44060 ?\u54616 ?\u44592 ?\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab {\b JKK_Item Manager}\par}
