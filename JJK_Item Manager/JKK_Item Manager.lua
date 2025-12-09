@@ -576,44 +576,6 @@ function main()
         reaper.ImGui_Spacing(ctx)
 
         -- ========================================================
-        -- NEW: Item Color Palette Section
-        -- ========================================================
-        reaper.ImGui_SeparatorText(ctx, 'Item Color Palette')
-
-        local palette_columns = 12
-        
-        for i, col in ipairs(item_colors) do
-          local r, g, b = col[1], col[2], col[3]
-          
-          -- Packed Integer for ColorButton
-          local packed_col = reaper.ImGui_ColorConvertDouble4ToU32(r/255, g/255, b/255, 1.0)
-          
-          reaper.ImGui_PushID(ctx, "col"..i)
-          
-          -- Color Button (Size 30x30)
-          if reaper.ImGui_ColorButton(ctx, "##Color", packed_col, 0, 30, 30) then
-            SetItemColors(r, g, b)
-          end
-          
-          reaper.ImGui_PopID(ctx)
-          
-          -- Layout: SameLine if not the last column
-          if i % palette_columns ~= 0 then
-            reaper.ImGui_SameLine(ctx)
-          end
-        end
-
-            reaper.ImGui_SameLine(ctx)
-        reaper.ImGui_PushID(ctx, "col_default")
-        local packed_default_col = reaper.ImGui_ColorConvertDouble4ToU32(0.3, 0.3, 0.3, 1.0)
-        if reaper.ImGui_ColorButton(ctx, "##DefaultColor", packed_default_col, 0, 45, 30) then
-            SetItemColors(0, 0, 0)
-        end
-        reaper.ImGui_SameLine(ctx)
-        reaper.ImGui_Text(ctx, "Set Default")
-        reaper.ImGui_PopID(ctx)
-
-        -- ========================================================
         reaper.ImGui_SeparatorText(ctx, 'Item Arranger & Randomizer')
         reaper.ImGui_Spacing(ctx)
 
@@ -664,7 +626,7 @@ function main()
         reaper.ImGui_SeparatorText(ctx, 'Actions')
 
         -- Buttons
-        if reaper.ImGui_Button(ctx, 'Apply Arrange', 120, 35) then
+        if reaper.ImGui_Button(ctx, 'Apply', 70, 35) then
             arrange_items()
             update_prev()
             SaveSettings()
@@ -672,7 +634,7 @@ function main()
         
         reaper.ImGui_SameLine(ctx)
         
-        if reaper.ImGui_Button(ctx, 'Play/Stop', 120, 35) then
+        if reaper.ImGui_Button(ctx, 'Play/Stop', 70, 35) then
             local is_playing = reaper.GetPlayState() & 1 == 1
             if is_playing then reaper.Main_OnCommand(1016, 0)
             else reaper.Main_OnCommand(40044, 0) end
@@ -680,11 +642,47 @@ function main()
 
         reaper.ImGui_SameLine(ctx, 0, 53)
         
-        if reaper.ImGui_Button(ctx, 'Create Regions', 120, 35) then
+        if reaper.ImGui_Button(ctx, 'Regions Creator', 100, 35) then
             CreateRegionsFromSelectedItems()
         end
         
         reaper.ImGui_Spacing(ctx)
+
+        -- ========================================================
+        reaper.ImGui_SeparatorText(ctx, 'Item Color Palette')
+
+        local palette_columns = 12
+        
+        for i, col in ipairs(item_colors) do
+          local r, g, b = col[1], col[2], col[3]
+          
+          -- Packed Integer for ColorButton
+          local packed_col = reaper.ImGui_ColorConvertDouble4ToU32(r/255, g/255, b/255, 1.0)
+          
+          reaper.ImGui_PushID(ctx, "col"..i)
+          
+          -- Color Button (Size 30x30)
+          if reaper.ImGui_ColorButton(ctx, "##Color", packed_col, 0, 30, 30) then
+            SetItemColors(r, g, b)
+          end
+          
+          reaper.ImGui_PopID(ctx)
+          
+          -- Layout: SameLine if not the last column
+          if i % palette_columns ~= 0 then
+            reaper.ImGui_SameLine(ctx)
+          end
+        end
+
+        reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_PushID(ctx, "col_default")
+        local packed_default_col = reaper.ImGui_ColorConvertDouble4ToU32(0.3, 0.3, 0.3, 1.0)
+        if reaper.ImGui_ColorButton(ctx, "##DefaultColor", packed_default_col, 0, 45, 30) then
+            SetItemColors(0, 0, 0)
+        end
+        reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_Text(ctx, "Set Default")
+        reaper.ImGui_PopID(ctx)
 
         -- Live refresh logic for Arranger
         if has_changed() then
