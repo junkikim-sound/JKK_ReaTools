@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Item Manager
 -- @author Junki Kim
--- @version 0.9.0
+-- @version 0.9.1
 --========================================================
 
 local ctx = reaper.ImGui_CreateContext('JKK_Item Manager')
@@ -20,6 +20,9 @@ local style_pop_count, color_pop_count
 local adjust_vol = 0.0
 local adjust_pitch = 0
 local adjust_rate = 1.0
+
+local group_stretch_ratio = 1.0
+local prev_group_stretch_ratio = 1.0
 
 local start_offset = 1
 local width        = 5
@@ -51,7 +54,40 @@ local stored_vols       = {}  -- item -> volume (0..1)
 -- Slot Persistent
 local persistentSlots = {}
 
+-- Color Palette Data (24 Colors)
+local item_colors = {
+  {255, 100, 100}, {255, 150, 100}, {255, 200, 100}, {255, 255, 100}, {200, 255, 100}, {100, 255, 100},
+  {100, 255, 150}, {100, 255, 200}, {100, 255, 255}, {100, 200, 255}, {100, 150, 255}, {100, 100, 255},
+  {150, 100, 255}, {200, 100, 255}, {255, 100, 255}, {255, 100, 200}, {255, 100, 150}, {200, 200, 200},
+  {128, 0, 0},     {128, 128, 0},   {0, 128, 0},     {0, 128, 128},   {0, 0, 128},     {128, 0, 128}
+}
+
 math.randomseed(os.time())
+
+----------------------------------------------------------
+-- Color Palette Function
+----------------------------------------------------------
+local function SetItemColors(r, g, b)
+  local count = reaper.CountSelectedMediaItems(0)
+  if count == 0 then return end
+
+  reaper.Undo_BeginBlock()
+
+  local native_color
+  if r == 0 and g == 0 and b == 0 then
+    native_color = 0 
+  else
+    native_color = reaper.ColorToNative(r, g, b) | 0x1000000
+  end
+  
+  for i = 0, count - 1 do
+    local item = reaper.GetSelectedMediaItem(0, i)
+    reaper.SetMediaItemInfo_Value(item, "I_CUSTOMCOLOR", native_color)
+  end
+  
+  reaper.UpdateArrange()
+  reaper.Undo_EndBlock("Set Item Color", -1)
+end
 
 ----------------------------------------------------------
 -- JKK_Item Manager_RegionCreate.lua (Integrated)
@@ -80,7 +116,6 @@ function CreateRegionsFromSelectedItems()
         return
     end
 
-    -- 시간 겹침을 고려하여 Region 영역을 계산합니다.
     table.sort(sel_items, function(a, b) return a.start < b.start end)
 
     local regions_to_create = {}
@@ -106,7 +141,6 @@ function CreateRegionsFromSelectedItems()
         table.insert(regions_to_create, {start=current_start, end_=current_end})
     end
 
-    -- Region을 생성하고 이름을 부여합니다.
     local region_index = 0
     for i, region_data in ipairs(regions_to_create) do
         local start = region_data.start
@@ -160,6 +194,59 @@ function ApplyBatchChanges()
     end
     reaper.Undo_EndBlock("Batch Item Control applied", -1)
     reaper.UpdateArrange()
+end
+
+----------------------------------------------------------
+-- Group Time Stretch Logic
+----------------------------------------------------------
+function ApplyGroupStretch(stretch_ratio)
+    local cnt = reaper.CountSelectedMediaItems(0)
+    if cnt < 2 then 
+      return 
+    end
+
+    reaper.Undo_BeginBlock()
+
+    local selected_items = {}
+    local min_pos = 999999999
+    
+    for i = 0, cnt - 1 do
+        local item = reaper.GetSelectedMediaItem(0, i)
+        local take = reaper.GetActiveTake(item)
+        
+        local item_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+        local item_len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+        local item_rate = reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE")
+        
+        if item_pos < min_pos then min_pos = item_pos end
+        
+        table.insert(selected_items, {
+            item = item,
+            take = take,
+            pos = item_pos,
+            len = item_len,
+            rate = item_rate
+        })
+    end
+
+    local stretch_factor = stretch_ratio / prev_group_stretch_ratio
+
+    for _, data in ipairs(selected_items) do
+        local item = data.item
+        local take = data.take
+        
+        local pos_offset = data.pos - min_pos
+        local new_pos = min_pos + (pos_offset * stretch_factor)
+        local new_len = data.len * stretch_factor
+        local new_rate = data.rate / stretch_factor
+        
+        reaper.SetMediaItemInfo_Value(item, "D_POSITION", new_pos)
+        reaper.SetMediaItemInfo_Value(item, "D_LENGTH", new_len)
+        reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", new_rate)
+    end
+    
+    reaper.UpdateArrange()
+    reaper.Undo_EndBlock("Group Time Stretch Applied", -1)
 end
 
 ----------------------------------------------------------
@@ -324,7 +411,7 @@ function arrange_items()
             end
         end
         
-        -- Freeze logic preservation (omitted details for brevity but kept logic structure)
+        -- Freeze logic preservation
         if prev_random_pitch and not random_pitch then
             for slot_index = 1, max_count do
                 local item = slots[slot_index]
@@ -334,7 +421,7 @@ function arrange_items()
                 end
             end
         end
-        -- (Repeat for playrates and vols as per original script...)
+        
         if prev_random_play and not random_play then
             for slot_index = 1, max_count do
                 local item = slots[slot_index]
@@ -438,7 +525,8 @@ end
 function main()
     if not open then return end
 
-    reaper.ImGui_SetNextWindowSize(ctx, 650, 420, reaper.ImGui_Cond_Once())
+    -- Increased height from 420 to 620 to fit color palette
+    reaper.ImGui_SetNextWindowSize(ctx, 650, 530, reaper.ImGui_Cond_Once())
     style_pop_count, color_pop_count = ApplyTheme(ctx)
     
     local visible, open_flag = reaper.ImGui_Begin(ctx, 'JKK_Item Manager', open,
@@ -467,7 +555,63 @@ function main()
             ApplyBatchChanges()
         end
         
+        -- Group Stretch Ratio Slider
+        local changed_group_stretch, new_ratio = reaper.ImGui_SliderDouble(ctx, "Group Stretch Factor", group_stretch_ratio, 0.25, 4.0, "%.2f")
+        
+        if reaper.ImGui_IsItemClicked(ctx, 1) then 
+            new_ratio = 1.0
+            group_stretch_ratio = 1.0
+            ApplyGroupStretch(group_stretch_ratio)
+            update_prev()
+        end
+        
+        if changed_group_stretch then
+            group_stretch_ratio = new_ratio
+            if group_stretch_ratio ~= prev_group_stretch_ratio then
+                ApplyGroupStretch(group_stretch_ratio)
+                update_prev()
+            end
+        end
+        
         reaper.ImGui_Spacing(ctx)
+
+        -- ========================================================
+        -- NEW: Item Color Palette Section
+        -- ========================================================
+        reaper.ImGui_SeparatorText(ctx, 'Item Color Palette')
+
+        local palette_columns = 12
+        
+        for i, col in ipairs(item_colors) do
+          local r, g, b = col[1], col[2], col[3]
+          
+          -- Packed Integer for ColorButton
+          local packed_col = reaper.ImGui_ColorConvertDouble4ToU32(r/255, g/255, b/255, 1.0)
+          
+          reaper.ImGui_PushID(ctx, "col"..i)
+          
+          -- Color Button (Size 30x30)
+          if reaper.ImGui_ColorButton(ctx, "##Color", packed_col, 0, 30, 30) then
+            SetItemColors(r, g, b)
+          end
+          
+          reaper.ImGui_PopID(ctx)
+          
+          -- Layout: SameLine if not the last column
+          if i % palette_columns ~= 0 then
+            reaper.ImGui_SameLine(ctx)
+          end
+        end
+
+            reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_PushID(ctx, "col_default")
+        local packed_default_col = reaper.ImGui_ColorConvertDouble4ToU32(0.3, 0.3, 0.3, 1.0)
+        if reaper.ImGui_ColorButton(ctx, "##DefaultColor", packed_default_col, 0, 45, 30) then
+            SetItemColors(0, 0, 0)
+        end
+        reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_Text(ctx, "Set Default")
+        reaper.ImGui_PopID(ctx)
 
         -- ========================================================
         reaper.ImGui_SeparatorText(ctx, 'Item Arranger & Randomizer')
@@ -539,6 +683,8 @@ function main()
         if reaper.ImGui_Button(ctx, 'Create Regions', 120, 35) then
             CreateRegionsFromSelectedItems()
         end
+        
+        reaper.ImGui_Spacing(ctx)
 
         -- Live refresh logic for Arranger
         if has_changed() then
