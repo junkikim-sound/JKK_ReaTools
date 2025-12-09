@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Item Manager
 -- @author Junki Kim
--- @version 1.0.1
+-- @version 0.9.0
 --========================================================
 
 local ctx = reaper.ImGui_CreateContext('JKK_Item Manager')
