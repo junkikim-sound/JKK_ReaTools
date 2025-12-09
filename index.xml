@@ -2,12 +2,6 @@
 <index version="1" name="JKK_ReaTools" commit="6123ed9afcb86a545283da3f2065eadad8bea80c">
   <category name="JJK_Item Manager">
     <reapack name="JKK_Item Manager.lua" type="script">
-      <version name="1.0.0" author="Junki Kim" time="2025-12-08T22:56:37Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/524d1a78a27d57ccf54de221571486d1d9565be4/JJK_Item%20Manager/JKK_Item%20Manager.lua</source>
-      </version>
-      <version name="1.0.1" author="Junki Kim" time="2025-12-08T23:51:40Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/5f1a196611631dd04afd26412f514143bf2d0d7d/JJK_Item%20Manager/JKK_Item%20Manager.lua</source>
-      </version>
       <version name="0.9.0" author="Junki Kim" time="2025-12-09T00:04:17Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/6123ed9afcb86a545283da3f2065eadad8bea80c/JJK_Item%20Manager/JKK_Item%20Manager.lua</source>
       </version>
@@ -22,15 +16,6 @@
   </category>
   <category name="JJK_Track Manager">
     <reapack name="JKK_Track Manager.lua" type="script">
-      <version name="1.0.0" author="Junki Kim" time="2025-12-08T22:56:37Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/524d1a78a27d57ccf54de221571486d1d9565be4/JJK_Track%20Manager/JKK_Track%20Manager.lua</source>
-      </version>
-      <version name="1.0.1" author="Junki Kim" time="2025-12-08T23:51:40Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/5f1a196611631dd04afd26412f514143bf2d0d7d/JJK_Track%20Manager/JKK_Track%20Manager.lua</source>
-      </version>
-      <version name="1.0.11" author="Junki Kim" time="2025-12-08T23:57:21Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/e57e4c052ccfc28b4f66861dd4b05d00a4c1755e/JJK_Track%20Manager/JKK_Track%20Manager.lua</source>
-      </version>
       <version name="0.5.0" author="Junki Kim" time="2025-12-09T00:04:17Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/6123ed9afcb86a545283da3f2065eadad8bea80c/JJK_Track%20Manager/JKK_Track%20Manager.lua</source>
       </version>
