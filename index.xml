@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="JKK_ReaTools" commit="2f8521e176d68feaf09ddf2c050de92c272068db">
+<index version="1" name="JKK_ReaTools" commit="132622a85c18fd3dc1c0377857749aa42d042119">
   <category name="JJK_Item Manager">
     <reapack name="JKK_Item Manager 2.lua" type="script">
       <version name="0.9.1" author="Junki Kim" time="2025-12-11T00:51:56Z">
@@ -61,6 +61,13 @@
     <reapack name="JKK_Track Manager.lua" type="script">
       <version name="0.5.0" author="Junki Kim" time="2025-12-09T00:04:17Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/6123ed9afcb86a545283da3f2065eadad8bea80c/JJK_Track%20Manager/JKK_Track%20Manager.lua</source>
+      </version>
+    </reapack>
+  </category>
+  <category name="JKK_Theme">
+    <reapack name="JKK_Theme.lua" type="script" desc="Theme for JKK_ReaTools">
+      <version name="0.5.2" author="Junki Kim" time="2025-12-11T02:08:21Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/132622a85c18fd3dc1c0377857749aa42d042119/JKK_Theme/JKK_Theme.lua</source>
       </version>
     </reapack>
   </category>
