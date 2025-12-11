@@ -1,7 +1,8 @@
 --========================================================
+-- @title JKK_Theme
 -- @description Theme for JKK_ReaTools
--- @version 0.5.0
--- @noindex
+-- @author Junki Kim
+-- @version 0.5.2
 --========================================================
 
 function ApplyTheme(ctx)
@@ -105,5 +106,6 @@ function ApplyTheme(ctx)
 
     return 36, 60
 end
+
 
 return { ApplyTheme = ApplyTheme }

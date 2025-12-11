@@ -1,6 +1,11 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="JKK_ReaTools" commit="9bf3fbd810153f3c0525fbf94f3fd3e1a450fbba">
+<index version="1" name="JKK_ReaTools" commit="132622a85c18fd3dc1c0377857749aa42d042119">
   <category name="JJK_Item Manager">
+    <reapack name="JKK_Item Manager 2.lua" type="script">
+      <version name="0.9.1" author="Junki Kim" time="2025-12-11T00:51:56Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/2f8521e176d68feaf09ddf2c050de92c272068db/JJK_Item%20Manager/JKK_Item%20Manager%202.lua</source>
+      </version>
+    </reapack>
     <reapack name="JKK_Item Manager.lua" type="script">
       <version name="0.9.0" author="Junki Kim" time="2025-12-09T00:04:17Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/6123ed9afcb86a545283da3f2065eadad8bea80c/JJK_Item%20Manager/JKK_Item%20Manager.lua</source>
@@ -8,12 +13,30 @@
       <version name="0.9.1" author="Junki Kim" time="2025-12-09T22:56:55Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/f1cf2d3fb342baa7c21323ae384eed0cf4945b57/JJK_Item%20Manager/JKK_Item%20Manager.lua</source>
       </version>
+      <version name="0.9.2" author="Junki Kim" time="2025-12-11T00:51:56Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/2f8521e176d68feaf09ddf2c050de92c272068db/JJK_Item%20Manager/JKK_Item%20Manager.lua</source>
+      </version>
     </reapack>
   </category>
   <category name="JJK_Item Manager/JJK_Item Manager_Actions">
     <reapack name="JKK_Item Manager_Arrange Items to Current Setting.lua" type="script">
       <version name="1.0.0" author="Junki Kim" time="2025-12-09T22:56:55Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/f1cf2d3fb342baa7c21323ae384eed0cf4945b57/JJK_Item%20Manager/JJK_Item%20Manager_Actions/JKK_Item%20Manager_Arrange%20Items%20to%20Current%20Setting.lua</source>
+      </version>
+    </reapack>
+    <reapack name="JKK_Item Manager_Move items to Edit Cursor.lua" type="script">
+      <version name="0.5.0" author="Junki Kim" time="2025-12-11T00:51:56Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/2f8521e176d68feaf09ddf2c050de92c272068db/JJK_Item%20Manager/JJK_Item%20Manager_Actions/JKK_Item%20Manager_Move%20items%20to%20Edit%20Cursor.lua</source>
+      </version>
+    </reapack>
+    <reapack name="JKK_Item Manager_Move items to mouse location.lua" type="script">
+      <version name="0.5.0" author="Junki Kim" time="2025-12-11T00:51:56Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/2f8521e176d68feaf09ddf2c050de92c272068db/JJK_Item%20Manager/JJK_Item%20Manager_Actions/JKK_Item%20Manager_Move%20items%20to%20mouse%20location.lua</source>
+      </version>
+    </reapack>
+    <reapack name="JKK_Item Manager_Render selected items to stereo.lua" type="script">
+      <version name="0.5.0" author="Junki Kim" time="2025-12-11T00:51:56Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/2f8521e176d68feaf09ddf2c050de92c272068db/JJK_Item%20Manager/JJK_Item%20Manager_Actions/JKK_Item%20Manager_Render%20selected%20items%20to%20stereo.lua</source>
       </version>
     </reapack>
   </category>
@@ -38,6 +61,13 @@
     <reapack name="JKK_Track Manager.lua" type="script">
       <version name="0.5.0" author="Junki Kim" time="2025-12-09T00:04:17Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/6123ed9afcb86a545283da3f2065eadad8bea80c/JJK_Track%20Manager/JKK_Track%20Manager.lua</source>
+      </version>
+    </reapack>
+  </category>
+  <category name="JKK_Theme">
+    <reapack name="JKK_Theme.lua" type="script" desc="Theme for JKK_ReaTools">
+      <version name="0.5.2" author="Junki Kim" time="2025-12-11T02:08:21Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/132622a85c18fd3dc1c0377857749aa42d042119/JKK_Theme/JKK_Theme.lua</source>
       </version>
     </reapack>
   </category>
