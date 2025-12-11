@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Item Manager_Arrange Items to Current Setting
 -- @author Junki Kim
--- @version 1.0.0
+-- @version 1.0.1
 --========================================================
 
 local EXTSTATE_KEY = "JKK_Item Manager"
@@ -145,7 +145,6 @@ function arrange_items()
         end
 
         if prev_random_vol and not random_vol then
-            -- 이 블록은 Quick Apply에서는 항상 false이므로, 원본 코드를 그대로 둡니다.
             for slot_index = 1, max_count do
                 local item = slots[slot_index]
                 if item then
@@ -179,6 +178,13 @@ function arrange_items()
                     if random_play then
                         local rnd = (math.random() * playback_range * 2) - playback_range
                         local rate = 2 ^ (rnd / 12)
+                        
+                        local current_length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+                        local current_rate = reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE")
+                        local origin_length = current_length * current_rate
+                        local adjust_length = origin_length / rate
+                        reaper.SetMediaItemLength(item, adjust_length, true)
+
                         reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", rate)
                         stored_playrates[take] = rate
                     else
@@ -213,11 +219,11 @@ function arrange_items()
                         if v < 0 then v = 0 end
                     end
 
-                    stored_vols[slot_index] = v
+                    stored_vols[item] = v
                     reaper.SetMediaItemInfo_Value(item, "D_VOL", v)
                 else
-                    if stored_vols[slot_index] ~= nil then
-                        reaper.SetMediaItemInfo_Value(item, "D_VOL", stored_vols[slot_index])
+                    if stored_vols[item] ~= nil then
+                        reaper.SetMediaItemInfo_Value(item, "D_VOL", stored_vols[item])
                     end
                 end
             end

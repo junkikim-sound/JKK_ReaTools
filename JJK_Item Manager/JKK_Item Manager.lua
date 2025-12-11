@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Item Manager
 -- @author Junki Kim
--- @version 0.9.2
+-- @version 0.9.3
 --========================================================
 
 local ctx = reaper.ImGui_CreateContext('JKK_Item Manager')
@@ -32,7 +32,6 @@ local playback_range   = 0
 local vol_range        = 0
 
 
-
 -- Checkbox Default Value
 local random_pos     = true
 local random_pitch   = true
@@ -40,6 +39,9 @@ local random_play    = true
 local random_vol     = true
 local random_order   = false
 local live_update    = true
+
+-- State tracking for selection change and initialization
+local prev_project_state_count = reaper.GetProjectStateChangeCount(0) 
 
 -- Save
 local prev_start_offset, prev_width, prev_pos_range = start_offset, width, pos_range
@@ -209,31 +211,52 @@ function MoveItemsToEditCursor()
 end
 
 ----------------------------------------------------------
--- Batch Apply Changes
+-- Batch Item Controller (Functions Separated)
 ----------------------------------------------------------
-function ApplyBatchChanges()
+
+function ApplyBatchVolume()
     local cnt = reaper.CountSelectedMediaItems(0)
     if cnt == 0 then return end
+    reaper.Undo_BeginBlock()
 
+    local linear_vol = 10^(adjust_vol / 20)
+    for i = 0, cnt - 1 do
+        local item = reaper.GetSelectedMediaItem(0, i)
+        reaper.SetMediaItemInfo_Value(item, "D_VOL", linear_vol)
+    end
+    
+    reaper.UpdateArrange()
+    reaper.Undo_EndBlock("Batch Volume Applied", -1)
+end
+
+function ApplyBatchPitch()
+    local cnt = reaper.CountSelectedMediaItems(0)
+    if cnt == 0 then return end
     reaper.Undo_BeginBlock()
 
     for i = 0, cnt - 1 do
         local item = reaper.GetSelectedMediaItem(0, i)
-
-        -- Items Volume
-        local linear_vol = 10^(adjust_vol / 20)
-        reaper.SetMediaItemInfo_Value(item, "D_VOL", linear_vol)
-
-        -- Items Pitch
         reaper.SetMediaItemTakeInfo_Value(reaper.GetActiveTake(item), "D_PITCH", adjust_pitch)
+    end
+    
+    reaper.UpdateArrange()
+    reaper.Undo_EndBlock("Batch Pitch Applied", -1)
+end
 
-        -- Items Playback Rate
-        reaper.SetMediaItemInfo_Value(item, "B_PPITCH", 0)
-        local current_length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
-        local current_rate = reaper.GetMediaItemTakeInfo_Value(reaper.GetActiveTake(item), "D_PLAYRATE")
+function ApplyBatchRate()
+    local cnt = reaper.CountSelectedMediaItems(0)
+    if cnt == 0 then return end
+    reaper.Undo_BeginBlock()
 
+    for i = 0, cnt - 1 do
+        local item = reaper.GetSelectedMediaItem(0, i)
         local take = reaper.GetActiveTake(item)
         if take then
+            reaper.SetMediaItemInfo_Value(item, "B_PPITCH", 0) -- Turn off preserve pitch
+            
+            local current_length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+            local current_rate = reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE")
+            
             local source = reaper.GetMediaItemTake_Source(take)
             if source then
                 local origin_length = current_length * current_rate
@@ -243,9 +266,11 @@ function ApplyBatchChanges()
             end
         end
     end
-    reaper.Undo_EndBlock("Batch Item Control applied", -1)
+    
     reaper.UpdateArrange()
+    reaper.Undo_EndBlock("Batch Playback Rate Applied", -1)
 end
+
 
 ----------------------------------------------------------
 -- Group Time Stretch Logic
@@ -301,9 +326,26 @@ function ApplyGroupStretch(stretch_ratio)
 end
 
 ----------------------------------------------------------
--- Live Update Check
+-- Live Update Check & Settings Load/Save
 ----------------------------------------------------------
 function has_changed()
+    return (
+        start_offset ~= prev_start_offset or
+        width        ~= prev_width or
+        pos_range    ~= prev_pos_range or
+        pitch_range  ~= prev_pitch_range or
+        playback_range ~= prev_playback_range or
+        vol_range    ~= prev_vol_range or
+        random_pos   ~= prev_random_pos or
+        random_pitch ~= prev_random_pitch or
+        random_play  ~= prev_random_play or
+        random_vol   ~= prev_random_vol or
+        random_order ~= prev_random_order
+    )
+end
+
+-- Range 슬라이더 값만 변경되었는지 확인하는 함수
+function has_range_value_changed()
     return (
         pos_range    ~= prev_pos_range or
         pitch_range  ~= prev_pitch_range or
@@ -326,9 +368,6 @@ function update_prev()
     prev_random_order = random_order
 end
 
-----------------------------------------------------------
--- ExtState Load/Save
-----------------------------------------------------------
 local function LoadSettings()
     start_offset = tonumber(reaper.GetExtState("JKK_Item Manager", "start_offset")) or 1.0
     width = tonumber(reaper.GetExtState("JKK_Item Manager", "width")) or 5.0
@@ -392,45 +431,69 @@ local function create_default_slots(items, max_count)
 end
 
 ----------------------------------------------------------
--- Arrange Items Logic
+-- Spacing Only Logic (Start Offset & Width)
 ----------------------------------------------------------
-function arrange_items(force_spacing_mode)
+function apply_spacing_only()
     local cnt = reaper.CountSelectedMediaItems(0)
     if cnt == 0 then return end
 
-    local only_spacing_changed = (
-        (start_offset ~= prev_start_offset or width ~= prev_width) and
-        pos_range == prev_pos_range and
-        pitch_range == prev_pitch_range and
-        playback_range == prev_playback_range and
-        vol_range == prev_vol_range and
-        random_pos == prev_random_pos and
-        random_pitch == prev_random_pitch and
-        random_play == prev_random_play and
-        random_vol == prev_random_vol and
-        random_order == prev_random_order
-    )
+    local _, grid_size = reaper.GetSetProjectGrid(0, false)
+    local start_pos = reaper.GetCursorPosition() + grid_size * start_offset * 2
+    local spacing   = grid_size * width * 2
+
+    local track_items = {}
+    for i = 0, cnt - 1 do
+        local item  = reaper.GetSelectedMediaItem(0, i)
+        local track = reaper.GetMediaItem_Track(item)
+        track_items[track] = track_items[track] or {}
+        table.insert(track_items[track], item)
+    end
+
+    local max_count = 0
+    for _, items in pairs(track_items) do
+        if #items > max_count then max_count = #items end
+    end
+    if max_count < 1 then max_count = 1 end
+
+    reaper.Undo_BeginBlock()
+    reaper.PreventUIRefresh(1)
+
+    for track, items in pairs(track_items) do
+        local slots = persistentSlots[track] or create_default_slots(items, max_count)
+        
+        for slot_index = 1, max_count do
+            local item = slots[slot_index]
+            if item then
+                local base_pos  = start_pos + spacing * (slot_index - 1)
+                local final_pos = base_pos
+
+                if stored_offsets[item] ~= nil then
+                    final_pos = base_pos + stored_offsets[item]
+                end
+
+                reaper.SetMediaItemInfo_Value(item, "D_POSITION", final_pos)
+            end
+        end
+    end
+
+    reaper.PreventUIRefresh(-1)
+    reaper.Undo_EndBlock("Spacing Updated", -1)
+    reaper.UpdateArrange()
+end
+
+
+----------------------------------------------------------
+-- Arrange Items Logic (Full Randomization/Arrangement)
+----------------------------------------------------------
+function arrange_items()
+    local cnt = reaper.CountSelectedMediaItems(0)
+    if cnt == 0 then return end
 
     local current_random_pos   = random_pos
     local current_random_pitch = random_pitch
     local current_random_play  = random_play
     local current_random_vol   = random_vol
     local current_random_order = random_order
-
-    if force_spacing_mode then
-        current_random_pos   = false
-        current_random_pitch = false
-        current_random_play  = false
-        current_random_vol   = false
-        current_random_order = false
-
-    elseif only_spacing_changed then
-        current_random_pos   = false
-        current_random_pitch = false
-        current_random_play  = false
-        current_random_vol   = false
-        current_random_order = false
-    end
 
     local _, grid_size = reaper.GetSetProjectGrid(0, false)
     local start_pos = reaper.GetCursorPosition() + grid_size * start_offset * 2
@@ -510,6 +573,7 @@ function arrange_items(force_spacing_mode)
                 local take = reaper.GetActiveTake(item)
 
                 if take then
+                    -- Pitch Randomization
                     if current_random_pitch then
                         local rnd = (math.random() * pitch_range * 2) - pitch_range
                         reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", rnd)
@@ -522,6 +586,7 @@ function arrange_items(force_spacing_mode)
                 end
 
                 if take then
+                    -- Playrate Randomization
                     if current_random_play then
                         local rnd = (math.random() * playback_range * 2) - playback_range
                         local rate = 2 ^ (rnd / 12)
@@ -544,6 +609,7 @@ function arrange_items(force_spacing_mode)
                 local base_pos  = start_pos + spacing * (slot_index - 1)
                 local final_pos = base_pos
 
+                -- Position Randomization
                 if current_random_pos then
                     local offset = (math.random() * pos_range * 2) - pos_range
                     final_pos = base_pos + offset
@@ -558,17 +624,18 @@ function arrange_items(force_spacing_mode)
 
                 reaper.SetMediaItemInfo_Value(item, "D_POSITION", final_pos)
 
+                -- Volume Randomization
                 if current_random_vol then
                     local v = 1.0
                     if vol_range > 0 then
-                        v = 1.0 + ((math.random() * 2 - 0.5) * (vol_range / 8) )
+                        v = 1.0 + ((math.random() * 2 - 0.5) * (vol_range / 8) ) 
                         if v < 0 then v = 0 end
                     end
-                    stored_vols[slot_index] = v
+                    stored_vols[item] = v -- Use item as key for vol storage
                     reaper.SetMediaItemInfo_Value(item, "D_VOL", v)
                 else
-                    if stored_vols[slot_index] ~= nil then
-                        reaper.SetMediaItemInfo_Value(item, "D_VOL", stored_vols[slot_index])
+                    if stored_vols[item] ~= nil then
+                        reaper.SetMediaItemInfo_Value(item, "D_VOL", stored_vols[item])
                     end
                 end
             end
@@ -586,6 +653,8 @@ end
 ----------------------------------------------------------
 function main()
     if not open then return end
+    
+    local current_project_state_count = reaper.GetProjectStateChangeCount(0)
 
     reaper.ImGui_SetNextWindowSize(ctx, 650, 550, reaper.ImGui_Cond_Once())
     style_pop_count, color_pop_count = ApplyTheme(ctx)
@@ -601,28 +670,31 @@ function main()
         
         -- Volume Slider
         changed_vol, adjust_vol = reaper.ImGui_SliderDouble(ctx, "Items Volume", adjust_vol, -30.00, 30.00, "%.2f")
-        if reaper.ImGui_IsItemClicked(ctx, 1) then adjust_vol = 0.0; ApplyBatchChanges() end
+        if reaper.ImGui_IsItemClicked(ctx, 1) then adjust_vol = 0.0; ApplyBatchVolume() end
         
         -- Pitch Slider
         changed_pitch, adjust_pitch = reaper.ImGui_SliderDouble(ctx, "Items Pitch", adjust_pitch, -12, 12, "%.1f")
-        if reaper.ImGui_IsItemClicked(ctx, 1) then adjust_pitch = 0.0; ApplyBatchChanges() end
+        if reaper.ImGui_IsItemClicked(ctx, 1) then adjust_pitch = 0.0; ApplyBatchPitch() end
         
         -- Rate Slider
         changed_rate, adjust_rate = reaper.ImGui_SliderDouble(ctx, "Items Playback Rate", adjust_rate, 0.25, 4.0, "%.2f")
-        if reaper.ImGui_IsItemClicked(ctx, 1) then adjust_rate = 1.0; ApplyBatchChanges() end
+        if reaper.ImGui_IsItemClicked(ctx, 1) then adjust_rate = 1.0; ApplyBatchRate() end
 
-        -- Update
-        if changed_vol or changed_pitch or changed_rate then
-            ApplyBatchChanges()
-        end
+        -- Update: Call only the function corresponding to the changed slider
+        if changed_vol then ApplyBatchVolume() end
+        if changed_pitch then ApplyBatchPitch() end
+        if changed_rate then ApplyBatchRate() end
         
         -- Group Stretch Ratio Slider
         local changed_group_stretch, new_ratio = reaper.ImGui_SliderDouble(ctx, "Group Stretch Factor", group_stretch_ratio, 0.25, 4.0, "%.2f")
+        
+        local is_group_stretch_slider_active = reaper.ImGui_IsItemActive(ctx) 
         
         if reaper.ImGui_IsItemClicked(ctx, 1) then 
             new_ratio = 1.0
             group_stretch_ratio = 1.0
             ApplyGroupStretch(group_stretch_ratio)
+            prev_group_stretch_ratio = 1.0
             update_prev()
         end
         
@@ -636,6 +708,16 @@ function main()
         end
         
         reaper.ImGui_Spacing(ctx)
+        
+        if current_project_state_count ~= prev_project_state_count and not is_group_stretch_slider_active then
+            
+            if group_stretch_ratio ~= 1.0 or prev_group_stretch_ratio ~= 1.0 then
+                group_stretch_ratio = 1.0
+                prev_group_stretch_ratio = 1.0
+            end
+            
+            prev_project_state_count = current_project_state_count
+        end
 
         -- ========================================================
         reaper.ImGui_SeparatorText(ctx, 'Item Arranger & Randomizer')
@@ -645,17 +727,17 @@ function main()
         -- Start Offset
         changed, start_offset = reaper.ImGui_SliderDouble(ctx, 'Start Offset (Grid)', start_offset, 0, 3, '%.1f')
         start_offset = math.floor(start_offset * 10 + 0.5) / 10
-        if reaper.ImGui_IsItemClicked(ctx, 1) then start_offset = 1 end
+        if reaper.ImGui_IsItemClicked(ctx, 1) then start_offset = 1; apply_spacing_only() end
         if changed then
-            arrange_items(true)
+            apply_spacing_only() -- Only apply spacing logic
         end
 
         -- Width
         changed, width = reaper.ImGui_SliderDouble(ctx, 'Width (Grid)', width, 1, 15, '%.0f')
         width = math.floor(width)
-        if reaper.ImGui_IsItemClicked(ctx, 1) then width = 5 arrange_items(true) end
+        if reaper.ImGui_IsItemClicked(ctx, 1) then width = 5; apply_spacing_only() end
         if changed then
-            arrange_items(true)
+            apply_spacing_only() -- Only apply spacing logic
         end
         reaper.ImGui_Spacing(ctx)
 
@@ -685,7 +767,7 @@ function main()
         reaper.ImGui_Spacing(ctx)
         
         -- Buttons
-        if reaper.ImGui_Button(ctx, 'Apply Arrange', 80, 35) then
+        if reaper.ImGui_Button(ctx, 'Apply', 80, 35) then
             arrange_items()
             update_prev()
             SaveSettings()
@@ -726,19 +808,16 @@ function main()
         for i, col in ipairs(item_colors) do
           local r, g, b = col[1], col[2], col[3]
           
-          -- Packed Integer for ColorButton
           local packed_col = reaper.ImGui_ColorConvertDouble4ToU32(r/255, g/255, b/255, 1.0)
           
           reaper.ImGui_PushID(ctx, "col"..i)
           
-          -- Color Button (Size 30x30)
           if reaper.ImGui_ColorButton(ctx, "##Color", packed_col, 0, 30, 30) then
             SetItemColors(r, g, b)
           end
           
           reaper.ImGui_PopID(ctx)
           
-          -- Layout: SameLine if not the last column
           if i % palette_columns ~= 0 then
             reaper.ImGui_SameLine(ctx)
           end
@@ -752,9 +831,10 @@ function main()
         end
         reaper.ImGui_PopID(ctx)
 
-        -- Live refresh logic for Arranger
-        if has_changed() then
-            if live_update then
+        local general_state_changed = has_changed()
+        
+        if general_state_changed then
+            if has_range_value_changed() and live_update then
                 arrange_items()
             end
             update_prev()
