@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Item Manager
 -- @author Junki Kim
--- @version 0.9.2
+-- @version 0.9.1
 --========================================================
 
 local ctx = reaper.ImGui_CreateContext('JKK_Item Manager')
@@ -31,8 +31,6 @@ local pitch_range      = 0
 local playback_range   = 0
 local vol_range        = 0
 
-
-
 -- Checkbox Default Value
 local random_pos     = true
 local random_pitch   = true
@@ -48,10 +46,10 @@ local prev_random_pos, prev_random_pitch, prev_random_play, prev_random_vol, pre
     random_pos, random_pitch, random_play, random_vol, random_order
 
 -- freeze
-local stored_offsets    = {}
-local stored_pitch      = {}
-local stored_playrates  = {}
-local stored_vols       = {}
+local stored_offsets    = {}  -- item -> offset (seconds)
+local stored_pitch      = {}  -- take -> pitch (semitone)
+local stored_playrates  = {}  -- take -> playrate
+local stored_vols       = {}  -- item -> volume (0..1)
 
 -- Slot Persistent
 local persistentSlots = {}
@@ -92,7 +90,7 @@ local function SetItemColors(r, g, b)
 end
 
 ----------------------------------------------------------
--- JKK_Item Manager_RegionCreate
+-- JKK_Item Manager_RegionCreate.lua (Integrated)
 ----------------------------------------------------------
 function CreateRegionsFromSelectedItems()
     local project = reaper.EnumProjects(-1, 0)
@@ -158,55 +156,6 @@ function CreateRegionsFromSelectedItems()
     reaper.UpdateArrange()
 end
 
-----------------------------------------------------------
--- Move Items to Edit Cursor Logic
-----------------------------------------------------------
-function MoveItemsToEditCursor()
-    local cnt = reaper.CountSelectedMediaItems(0)
-    if cnt == 0 then return end
-
-    local cursor = reaper.GetCursorPosition()
-
-    local items = {}
-    local min_start = math.huge
-
-    for i = 0, cnt - 1 do
-        local item = reaper.GetSelectedMediaItem(0, i)
-        local pos  = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
-
-        items[#items+1] = {item=item, pos=pos}
-        if pos < min_start then
-            min_start = pos
-        end
-    end
-
-    local offset = cursor - min_start
-
-    local min_new = math.huge
-    for i = 1, #items do
-        local p = items[i].pos + offset
-        if p < min_new then min_new = p end
-    end
-
-    if min_new < 0 then
-        offset = offset - min_new
-    end
-
-    reaper.Undo_BeginBlock()
-    reaper.PreventUIRefresh(1)
-
-    for i = 1, #items do
-        reaper.SetMediaItemInfo_Value(
-            items[i].item,
-            "D_POSITION",
-            items[i].pos + offset
-        )
-    end
-
-    reaper.PreventUIRefresh(0)
-    reaper.UpdateArrange()
-    reaper.Undo_EndBlock("Move items to edit cursor (keep spacing)", -1)
-end
 
 ----------------------------------------------------------
 -- Batch Apply Changes
@@ -305,6 +254,8 @@ end
 ----------------------------------------------------------
 function has_changed()
     return (
+        start_offset ~= prev_start_offset or
+        width        ~= prev_width or
         pos_range    ~= prev_pos_range or
         pitch_range  ~= prev_pitch_range or
         playback_range ~= prev_playback_range or
@@ -336,19 +287,13 @@ local function LoadSettings()
     pitch_range = tonumber(reaper.GetExtState("JKK_Item Manager", "pitch_range")) or 0.0
     playback_range = tonumber(reaper.GetExtState("JKK_Item Manager", "playback_range")) or 0.0
     vol_range = tonumber(reaper.GetExtState("JKK_Item Manager", "vol_range")) or 0.0
-    local function LoadFlag(namespace, key, default)
-        local v = reaper.GetExtState(namespace, key)
-        if v == "1" then return true end
-        if v == "0" then return false end
-        return default
-    end
-
-    random_pos   = LoadFlag("JKK_Item Manager", "random_pos", true)
-    random_pitch = LoadFlag("JKK_Item Manager", "random_pitch", true)
-    random_play  = LoadFlag("JKK_Item Manager", "random_play", true)
-    random_vol   = LoadFlag("JKK_Item Manager", "random_vol", true)
-    random_order = LoadFlag("JKK_Item Manager", "random_order", false)
-    live_update  = LoadFlag("JKK_Item Manager", "live_update", true)
+    
+    random_pos = (reaper.GetExtState("JKK_Item Manager", "random_pos") == "1") or true
+    random_pitch = (reaper.GetExtState("JKK_Item Manager", "random_pitch") == "1") or true
+    random_play = (reaper.GetExtState("JKK_Item Manager", "random_play") == "1") or true
+    random_vol = (reaper.GetExtState("JKK_Item Manager", "random_vol") == "1") or true
+    random_order = (reaper.GetExtState("JKK_Item Manager", "random_order") == "1") or false
+    live_update = (reaper.GetExtState("JKK_Item Manager", "live_update") == "1") or true
 
     update_prev() 
 end
@@ -394,7 +339,7 @@ end
 ----------------------------------------------------------
 -- Arrange Items Logic
 ----------------------------------------------------------
-function arrange_items(force_spacing_mode)
+function arrange_items()
     local cnt = reaper.CountSelectedMediaItems(0)
     if cnt == 0 then return end
 
@@ -417,14 +362,7 @@ function arrange_items(force_spacing_mode)
     local current_random_vol   = random_vol
     local current_random_order = random_order
 
-    if force_spacing_mode then
-        current_random_pos   = false
-        current_random_pitch = false
-        current_random_play  = false
-        current_random_vol   = false
-        current_random_order = false
-
-    elseif only_spacing_changed then
+    if only_spacing_changed then
         current_random_pos   = false
         current_random_pitch = false
         current_random_play  = false
@@ -587,7 +525,8 @@ end
 function main()
     if not open then return end
 
-    reaper.ImGui_SetNextWindowSize(ctx, 650, 550, reaper.ImGui_Cond_Once())
+    -- Increased height from 420 to 620 to fit color palette
+    reaper.ImGui_SetNextWindowSize(ctx, 650, 530, reaper.ImGui_Cond_Once())
     style_pop_count, color_pop_count = ApplyTheme(ctx)
     
     local visible, open_flag = reaper.ImGui_Begin(ctx, 'JKK_Item Manager', open,
@@ -630,7 +569,6 @@ function main()
             group_stretch_ratio = new_ratio
             if group_stretch_ratio ~= prev_group_stretch_ratio then
                 ApplyGroupStretch(group_stretch_ratio)
-                prev_group_stretch_ratio = group_stretch_ratio
                 update_prev()
             end
         end
@@ -646,17 +584,11 @@ function main()
         changed, start_offset = reaper.ImGui_SliderDouble(ctx, 'Start Offset (Grid)', start_offset, 0, 3, '%.1f')
         start_offset = math.floor(start_offset * 10 + 0.5) / 10
         if reaper.ImGui_IsItemClicked(ctx, 1) then start_offset = 1 end
-        if changed then
-            arrange_items(true)
-        end
 
         -- Width
         changed, width = reaper.ImGui_SliderDouble(ctx, 'Width (Grid)', width, 1, 15, '%.0f')
         width = math.floor(width)
-        if reaper.ImGui_IsItemClicked(ctx, 1) then width = 5 arrange_items(true) end
-        if changed then
-            arrange_items(true)
-        end
+        if reaper.ImGui_IsItemClicked(ctx, 1) then width = 5 end
         reaper.ImGui_Spacing(ctx)
 
         -- Position Range
@@ -683,39 +615,37 @@ function main()
         reaper.ImGui_SameLine(ctx); reaper.ImGui_SameLine(ctx, 0, 33)
         changed, random_vol = reaper.ImGui_Checkbox(ctx, 'Rand##vol', random_vol)
         reaper.ImGui_Spacing(ctx)
-        
-        -- Buttons
-        if reaper.ImGui_Button(ctx, 'Apply Arrange', 80, 35) then
-            arrange_items()
-            update_prev()
-            SaveSettings()
-        end
-        reaper.ImGui_SameLine(ctx)
-        
-        if reaper.ImGui_Button(ctx, 'Play/Stop', 80, 35) then
-            local is_playing = reaper.GetPlayState() & 1 == 1
-            if is_playing then reaper.Main_OnCommand(1016, 0)
-            else reaper.Main_OnCommand(40044, 0) end
-        end
-        reaper.ImGui_SameLine(ctx)
 
         -- Live Update + Random Order
         changed, live_update = reaper.ImGui_Checkbox(ctx, 'Live Update', live_update)
         reaper.ImGui_SameLine(ctx)
         changed, random_order = reaper.ImGui_Checkbox(ctx, 'Random Arrangement', random_order)
         reaper.ImGui_Spacing(ctx)
-
+        
         -- ========================================================
         reaper.ImGui_SeparatorText(ctx, 'Actions')
+
+        -- Buttons
+        if reaper.ImGui_Button(ctx, 'Apply', 70, 35) then
+            arrange_items()
+            update_prev()
+            SaveSettings()
+        end
         
-        if reaper.ImGui_Button(ctx, 'Regions (**_01)', 120, 35) then
+        reaper.ImGui_SameLine(ctx)
+        
+        if reaper.ImGui_Button(ctx, 'Play/Stop', 70, 35) then
+            local is_playing = reaper.GetPlayState() & 1 == 1
+            if is_playing then reaper.Main_OnCommand(1016, 0)
+            else reaper.Main_OnCommand(40044, 0) end
+        end
+
+        reaper.ImGui_SameLine(ctx, 0, 53)
+        
+        if reaper.ImGui_Button(ctx, 'Regions Creator', 100, 35) then
             CreateRegionsFromSelectedItems()
         end
-        reaper.ImGui_SameLine(ctx)
-
-        if reaper.ImGui_Button(ctx, 'Move to Cursor', 120, 35) then
-            MoveItemsToEditCursor()
-        end
+        
         reaper.ImGui_Spacing(ctx)
 
         -- ========================================================
@@ -744,12 +674,14 @@ function main()
           end
         end
 
-            reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_SameLine(ctx)
         reaper.ImGui_PushID(ctx, "col_default")
         local packed_default_col = reaper.ImGui_ColorConvertDouble4ToU32(0.3, 0.3, 0.3, 1.0)
         if reaper.ImGui_ColorButton(ctx, "##DefaultColor", packed_default_col, 0, 45, 30) then
             SetItemColors(0, 0, 0)
         end
+        reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_Text(ctx, "Set Default")
         reaper.ImGui_PopID(ctx)
 
         -- Live refresh logic for Arranger

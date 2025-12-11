@@ -1,8 +1,8 @@
--- Move Items to Mouse Location (robust mouse position, keep relative spacing)
--- 작성자: Jungi Kim (수정본)
--- 설명: 여러 아이템 선택 시, 선택된 아이템들의 맨 앞 아이템 시작 지점을 마우스 위치로 이동시키고
---       나머지 아이템들은 그 간격을 유지하도록 이동시킵니다.
---       SWS/BR 함수가 없는 환경에도 편집 커서 위치를 fallback으로 사용합니다.
+--========================================================
+-- @title JKK_Item Manager_Move Items To Mouse Location
+-- @author Junki Kim
+-- @version 0.5.0
+--========================================================
 
 local function get_mouse_position_fallback()
     if reaper.BR_PositionAtMouseCursor ~= nil then
@@ -21,7 +21,6 @@ end
 local function main()
     local cnt = reaper.CountSelectedMediaItems(0)
     if cnt == 0 then
-        reaper.ShowMessageBox("선택된 아이템이 없습니다.", "Move items to mouse", 0)
         return
     end
 
@@ -73,3 +72,4 @@ local function main()
 end
 
 main()
+
