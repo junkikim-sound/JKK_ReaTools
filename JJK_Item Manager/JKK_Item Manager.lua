@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Item Manager
 -- @author Junki Kim
--- @version 0.9.3
+-- @version 0.9.4
 --========================================================
 
 local ctx = reaper.ImGui_CreateContext('JKK_Item Manager')
@@ -31,7 +31,6 @@ local pitch_range      = 0
 local playback_range   = 0
 local vol_range        = 0
 
-
 -- Checkbox Default Value
 local random_pos     = true
 local random_pitch   = true
@@ -58,6 +57,10 @@ local stored_vols       = {}
 -- Slot Persistent
 local persistentSlots = {}
 
+-- Regions Renamer
+local reaper = reaper
+local base_name = ""
+
 -- Color Palette Data (24 Colors)
 local item_colors = {
   {255, 100, 100}, {255, 150, 100}, {255, 200, 100}, {255, 255, 100}, {200, 255, 100}, {100, 255, 100},
@@ -69,151 +72,8 @@ local item_colors = {
 math.randomseed(os.time())
 
 ----------------------------------------------------------
--- Color Palette Function
+-- Function: Batch Item Controller
 ----------------------------------------------------------
-local function SetItemColors(r, g, b)
-  local count = reaper.CountSelectedMediaItems(0)
-  if count == 0 then return end
-
-  reaper.Undo_BeginBlock()
-
-  local native_color
-  if r == 0 and g == 0 and b == 0 then
-    native_color = 0 
-  else
-    native_color = reaper.ColorToNative(r, g, b) | 0x1000000
-  end
-  
-  for i = 0, count - 1 do
-    local item = reaper.GetSelectedMediaItem(0, i)
-    reaper.SetMediaItemInfo_Value(item, "I_CUSTOMCOLOR", native_color)
-  end
-  
-  reaper.UpdateArrange()
-  reaper.Undo_EndBlock("Set Item Color", -1)
-end
-
-----------------------------------------------------------
--- JKK_Item Manager_RegionCreate
-----------------------------------------------------------
-function CreateRegionsFromSelectedItems()
-    local project = reaper.EnumProjects(-1, 0)
-    if not project then return end
-
-    local sel_items = {}
-    local item_count = reaper.CountSelectedMediaItems(project)
-
-    if item_count == 0 then
-        return
-    end
-
-    for i = 0, item_count - 1 do
-        local item = reaper.GetSelectedMediaItem(project, i)
-        local start_time = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
-        local length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
-        local end_time = start_time + length
-        table.insert(sel_items, {start=start_time, end_=end_time})
-    end
-
-    local retval, name_base = reaper.GetUserInputs("Enter Region Name", 1, "Region Name", "New_Region")
-    if retval == 0 then
-        return
-    end
-
-    table.sort(sel_items, function(a, b) return a.start < b.start end)
-
-    local regions_to_create = {}
-    local current_start, current_end = -1, -1
-
-    for _, item_data in ipairs(sel_items) do
-        local start_time = item_data.start
-        local end_time = item_data.end_
-        
-        if current_start == -1 then
-            current_start = start_time
-            current_end = end_time
-        elseif start_time <= current_end then
-            current_end = math.max(current_end, end_time)
-        else
-            table.insert(regions_to_create, {start=current_start, end_=current_end})
-            current_start = start_time
-            current_end = end_time
-        end
-    end
-
-    if current_start ~= -1 then
-        table.insert(regions_to_create, {start=current_start, end_=current_end})
-    end
-
-    local region_index = 0
-    for i, region_data in ipairs(regions_to_create) do
-        local start = region_data.start
-        local end_ = region_data.end_
-        
-        local region_num = string.format("_%02d", i)
-        local region_name = name_base .. region_num
-
-        reaper.AddProjectMarker(project, 1, start, end_, region_name, 0)
-        region_index = region_index + 1
-    end
-
-    reaper.UpdateArrange()
-end
-
-----------------------------------------------------------
--- Move Items to Edit Cursor Logic
-----------------------------------------------------------
-function MoveItemsToEditCursor()
-    local cnt = reaper.CountSelectedMediaItems(0)
-    if cnt == 0 then return end
-
-    local cursor = reaper.GetCursorPosition()
-
-    local items = {}
-    local min_start = math.huge
-
-    for i = 0, cnt - 1 do
-        local item = reaper.GetSelectedMediaItem(0, i)
-        local pos  = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
-
-        items[#items+1] = {item=item, pos=pos}
-        if pos < min_start then
-            min_start = pos
-        end
-    end
-
-    local offset = cursor - min_start
-
-    local min_new = math.huge
-    for i = 1, #items do
-        local p = items[i].pos + offset
-        if p < min_new then min_new = p end
-    end
-
-    if min_new < 0 then
-        offset = offset - min_new
-    end
-
-    reaper.Undo_BeginBlock()
-    reaper.PreventUIRefresh(1)
-
-    for i = 1, #items do
-        reaper.SetMediaItemInfo_Value(
-            items[i].item,
-            "D_POSITION",
-            items[i].pos + offset
-        )
-    end
-
-    reaper.PreventUIRefresh(0)
-    reaper.UpdateArrange()
-    reaper.Undo_EndBlock("Move items to edit cursor (keep spacing)", -1)
-end
-
-----------------------------------------------------------
--- Batch Item Controller (Functions Separated)
-----------------------------------------------------------
-
 function ApplyBatchVolume()
     local cnt = reaper.CountSelectedMediaItems(0)
     if cnt == 0 then return end
@@ -271,9 +131,8 @@ function ApplyBatchRate()
     reaper.Undo_EndBlock("Batch Playback Rate Applied", -1)
 end
 
-
 ----------------------------------------------------------
--- Group Time Stretch Logic
+-- Function: Group Time Stretch
 ----------------------------------------------------------
 function ApplyGroupStretch(stretch_ratio)
     local cnt = reaper.CountSelectedMediaItems(0)
@@ -647,16 +506,150 @@ function arrange_items()
     reaper.UpdateArrange()
 end
 
+----------------------------------------------------------
+-- Function: RegionCreate
+----------------------------------------------------------
+local function CreateRegionsFromSelectedItems()
+    local project = reaper.EnumProjects(-1, 0)
+    if not project then return end
+
+    local sel_items = {}
+    local item_count = reaper.CountSelectedMediaItems(project)
+
+    if item_count == 0 then
+        return
+    end
+
+    -- Collect item start/end
+    for i = 0, item_count - 1 do
+        local item = reaper.GetSelectedMediaItem(project, i)
+        local start_time = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+        local length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+        local end_time = start_time + length
+        table.insert(sel_items, {start=start_time, end_=end_time})
+    end
+
+    -- Sort by start time
+    table.sort(sel_items, function(a, b) return a.start < b.start end)
+
+    local regions_to_create = {}
+    local current_start, current_end = -1, -1
+
+    for _, item_data in ipairs(sel_items) do
+        local s = item_data.start
+        local e = item_data.end_
+        
+        if current_start == -1 then
+            current_start = s
+            current_end = e
+        elseif s <= current_end then
+            current_end = math.max(current_end, e)
+        else
+            table.insert(regions_to_create, {start=current_start, end_=current_end})
+            current_start = s
+            current_end = e
+        end
+    end
+
+    if current_start ~= -1 then
+        table.insert(regions_to_create, {start=current_start, end_=current_end})
+    end
+
+    -- Create Regions
+    for i, region_data in ipairs(regions_to_create) do
+        local start = region_data.start
+        local end_ = region_data.end_
+        local n = string.format("%s_%02d", base_name, i)
+        reaper.AddProjectMarker(project, 1, start, end_, n, -1)
+    end
+
+    reaper.UpdateArrange()
+end
 
 ----------------------------------------------------------
--- UI / main loop
+-- Function: Move Items to Edit Cursor
+----------------------------------------------------------
+function MoveItemsToEditCursor()
+    local cnt = reaper.CountSelectedMediaItems(0)
+    if cnt == 0 then return end
+
+    local cursor = reaper.GetCursorPosition()
+
+    local items = {}
+    local min_start = math.huge
+
+    for i = 0, cnt - 1 do
+        local item = reaper.GetSelectedMediaItem(0, i)
+        local pos  = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+
+        items[#items+1] = {item=item, pos=pos}
+        if pos < min_start then
+            min_start = pos
+        end
+    end
+
+    local offset = cursor - min_start
+
+    local min_new = math.huge
+    for i = 1, #items do
+        local p = items[i].pos + offset
+        if p < min_new then min_new = p end
+    end
+
+    if min_new < 0 then
+        offset = offset - min_new
+    end
+
+    reaper.Undo_BeginBlock()
+    reaper.PreventUIRefresh(1)
+
+    for i = 1, #items do
+        reaper.SetMediaItemInfo_Value(
+            items[i].item,
+            "D_POSITION",
+            items[i].pos + offset
+        )
+    end
+
+    reaper.PreventUIRefresh(0)
+    reaper.UpdateArrange()
+    reaper.Undo_EndBlock("Move items to edit cursor (keep spacing)", -1)
+end
+
+----------------------------------------------------------
+-- Function: Color Palette 
+----------------------------------------------------------
+local function SetItemColors(r, g, b)
+  local count = reaper.CountSelectedMediaItems(0)
+  if count == 0 then return end
+
+  reaper.Undo_BeginBlock()
+
+  local native_color
+  if r == 0 and g == 0 and b == 0 then
+    native_color = 0 
+  else
+    native_color = reaper.ColorToNative(r, g, b) | 0x1000000
+  end
+  
+  for i = 0, count - 1 do
+    local item = reaper.GetSelectedMediaItem(0, i)
+    reaper.SetMediaItemInfo_Value(item, "I_CUSTOMCOLOR", native_color)
+  end
+  
+  reaper.UpdateArrange()
+  reaper.Undo_EndBlock("Set Item Color", -1)
+end
+
+----------------------------------------------------------
+-- UI
 ----------------------------------------------------------
 function main()
     if not open then return end
     
     local current_project_state_count = reaper.GetProjectStateChangeCount(0)
 
-    reaper.ImGui_SetNextWindowSize(ctx, 650, 550, reaper.ImGui_Cond_Once())
+    reaper.ImGui_SetNextWindowSize(ctx, 650, 510, reaper.ImGui_Cond_Once())
     style_pop_count, color_pop_count = ApplyTheme(ctx)
     
     local visible, open_flag = reaper.ImGui_Begin(ctx, 'JKK_Item Manager', open,
@@ -664,7 +657,7 @@ function main()
 
     if visible then        
         -- ========================================================
-        reaper.ImGui_SeparatorText(ctx, 'Item Batch Controller')
+        reaper.ImGui_SeparatorText(ctx, 'Items Batch Controller')
         
         local changed_vol, changed_pitch, changed_rate
         
@@ -686,7 +679,7 @@ function main()
         if changed_rate then ApplyBatchRate() end
         
         -- Group Stretch Ratio Slider
-        local changed_group_stretch, new_ratio = reaper.ImGui_SliderDouble(ctx, "Group Stretch Factor", group_stretch_ratio, 0.25, 4.0, "%.2f")
+        local changed_group_stretch, new_ratio = reaper.ImGui_SliderDouble(ctx, "Group Stretch", group_stretch_ratio, 0.25, 4.0, "%.2f")
         
         local is_group_stretch_slider_active = reaper.ImGui_IsItemActive(ctx) 
         
@@ -720,8 +713,7 @@ function main()
         end
 
         -- ========================================================
-        reaper.ImGui_SeparatorText(ctx, 'Item Arranger & Randomizer')
-        reaper.ImGui_Spacing(ctx)
+        reaper.ImGui_SeparatorText(ctx, 'Items Arranger & Randomizer')
 
         local changed
         -- Start Offset
@@ -767,14 +759,14 @@ function main()
         reaper.ImGui_Spacing(ctx)
         
         -- Buttons
-        if reaper.ImGui_Button(ctx, 'Apply', 80, 35) then
+        if reaper.ImGui_Button(ctx, 'Apply', 80, 22) then
             arrange_items()
             update_prev()
             SaveSettings()
         end
         reaper.ImGui_SameLine(ctx)
         
-        if reaper.ImGui_Button(ctx, 'Play/Stop', 80, 35) then
+        if reaper.ImGui_Button(ctx, 'Play/Stop', 80, 22) then
             local is_playing = reaper.GetPlayState() & 1 == 1
             if is_playing then reaper.Main_OnCommand(1016, 0)
             else reaper.Main_OnCommand(40044, 0) end
@@ -790,12 +782,16 @@ function main()
         -- ========================================================
         reaper.ImGui_SeparatorText(ctx, 'Actions')
         
-        if reaper.ImGui_Button(ctx, 'Regions (**_01)', 120, 35) then
-            CreateRegionsFromSelectedItems()
+        changed, base_name = reaper.ImGui_InputTextMultiline(ctx, ' ', base_name, 200, 22)
+        reaper.ImGui_SameLine(ctx)
+        if reaper.ImGui_Button(ctx, 'Create Regions', 110, 22) then
+            if base_name ~= "" then
+                CreateRegionsFromSelectedItems()
+            end
         end
         reaper.ImGui_SameLine(ctx)
 
-        if reaper.ImGui_Button(ctx, 'Move to Cursor', 120, 35) then
+        if reaper.ImGui_Button(ctx, 'Move to Cursor', 110, 22) then
             MoveItemsToEditCursor()
         end
         reaper.ImGui_Spacing(ctx)
@@ -823,7 +819,7 @@ function main()
           end
         end
 
-            reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_SameLine(ctx)
         reaper.ImGui_PushID(ctx, "col_default")
         local packed_default_col = reaper.ImGui_ColorConvertDouble4ToU32(0.3, 0.3, 0.3, 1.0)
         if reaper.ImGui_ColorButton(ctx, "##DefaultColor", packed_default_col, 0, 45, 30) then
@@ -831,6 +827,7 @@ function main()
         end
         reaper.ImGui_PopID(ctx)
 
+        -- ========================================================
         local general_state_changed = has_changed()
         
         if general_state_changed then
@@ -841,6 +838,7 @@ function main()
             SaveSettings()
         end
 
+        -- ========================================================
         reaper.ImGui_PopStyleVar(ctx, style_pop_count)
         reaper.ImGui_PopStyleColor(ctx, color_pop_count)
         reaper.ImGui_End(ctx)

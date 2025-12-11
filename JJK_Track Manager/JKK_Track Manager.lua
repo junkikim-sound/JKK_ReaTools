@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Track Manager
 -- @author Junki Kim
--- @version 0.5.0
+-- @version 0.5.2
 --========================================================
 
 local ctx = reaper.ImGui_CreateContext('JKK_Track Manager')
@@ -32,8 +32,46 @@ if first_sel_tr then
     volume_db = math.min(volume_db, 12.0)
 end
 
+-- Track Renamer
+local reaper = reaper
+local base_name = ""
+
+-- Color Palette Data (24 Colors)
+local track_colors = {
+  {255, 100, 100}, {255, 150, 100}, {255, 200, 100}, {255, 255, 100}, {200, 255, 100}, {100, 255, 100},
+  {100, 255, 150}, {100, 255, 200}, {100, 255, 255}, {100, 200, 255}, {100, 150, 255}, {100, 100, 255},
+  {150, 100, 255}, {200, 100, 255}, {255, 100, 255}, {255, 100, 200}, {255, 100, 150}, {200, 200, 200},
+  {128, 0, 0},     {128, 128, 0},   {0, 128, 0},     {0, 128, 128},   {0, 0, 128},     {128, 0, 128}
+}
+
 ------------------------------------------------------------
--- Helpers
+-- Function: Set Selected Tracks Volume
+------------------------------------------------------------
+local function Action_SetSelectedTracksVolume(vol_val)
+    reaper.Undo_BeginBlock()
+    local selcnt = reaper.CountSelectedTracks(0)
+    for i = 0, selcnt - 1 do
+        local tr = reaper.GetSelectedTrack(0, i)
+        reaper.SetMediaTrackInfo_Value(tr, "D_VOL", vol_val) 
+    end
+    reaper.Undo_EndBlock("JKK: Set Selected Tracks Volume", -1)
+end
+
+------------------------------------------------------------
+-- Function: Set Selected Tracks Pan
+------------------------------------------------------------
+local function Action_SetSelectedTracksPan(pan_val)
+    reaper.Undo_BeginBlock()
+    local selcnt = reaper.CountSelectedTracks(0)
+    for i = 0, selcnt - 1 do
+        local tr = reaper.GetSelectedTrack(0, i)
+        reaper.SetMediaTrackInfo_Value(tr, "D_PAN", pan_val)
+    end
+    reaper.Undo_EndBlock("JKK: Set Selected Tracks Panning", -1)
+end
+
+------------------------------------------------------------
+-- Function: Select Track by Level
 ------------------------------------------------------------
 local function GetTrackCount() return reaper.CountTracks(0) end
 
@@ -46,6 +84,36 @@ local function CalcTrackLevelByIndex(idx)
         level = level + d
     end
     return math.max(0, level)
+end
+
+local function Action_SelectTracksByLevel(target_level)
+    reaper.Undo_BeginBlock()
+
+    local trackCount = GetTrackCount()
+    
+    local effective_level = target_level
+    if effective_level > 0 then
+        effective_level = effective_level - 1 
+    end
+
+    for idx = 0, trackCount - 1 do
+        local tr = reaper.GetTrack(0, idx)
+        if tr then
+            local current_level = CalcTrackLevelByIndex(idx)
+            
+            local select_it = false
+            
+            if target_level == 0 then
+                select_it = true
+            elseif current_level == effective_level then
+                select_it = true
+            end
+            
+            reaper.SetTrackSelected(tr, select_it)
+        end
+    end
+    
+    reaper.Undo_EndBlock("JKK: Select Tracks by Level", -1)
 end
 
 local function GetSortedSelectedTracksWithLevel()
@@ -61,9 +129,6 @@ local function GetSortedSelectedTracksWithLevel()
     return out
 end
 
--- =================================================================================
--- Get Full Folder Range Indices By Index
--- =================================================================================
 local function GetFullFolderRangeIndicesByIndex(start_idx)
     local tr = reaper.GetTrack(0, start_idx)
     if not tr then return {start_idx} end
@@ -121,12 +186,6 @@ local function GetItemRangeFromTrackIndices(indices)
     return min_pos, max_end
 end
 
-local function CreateRegion(start_pos, end_pos, name)
-    if start_pos and end_pos and end_pos > start_pos then
-        reaper.AddProjectMarker2(0, true, start_pos, end_pos, name or "", -1, 0)
-    end
-end
-
 local function GetTopLevelSelectedTracks()
     local sel = GetSortedSelectedTracksWithLevel()
     if #sel == 0 then return {} end
@@ -135,65 +194,8 @@ local function GetTopLevelSelectedTracks()
 end
 
 ------------------------------------------------------------
--- Select Track by Level
+-- Function: Create Time Selection
 ------------------------------------------------------------
-local function Action_SelectTracksByLevel(target_level)
-    reaper.Undo_BeginBlock()
-
-    local trackCount = GetTrackCount()
-    
-    local effective_level = target_level
-    if effective_level > 0 then
-        effective_level = effective_level - 1 
-    end
-
-    for idx = 0, trackCount - 1 do
-        local tr = reaper.GetTrack(0, idx)
-        if tr then
-            local current_level = CalcTrackLevelByIndex(idx)
-            
-            local select_it = false
-            
-            if target_level == 0 then
-                select_it = true
-            elseif current_level == effective_level then
-                select_it = true
-            end
-            
-            reaper.SetTrackSelected(tr, select_it)
-        end
-    end
-    
-    reaper.Undo_EndBlock("JKK: Select Tracks by Level", -1)
-end
-
-------------------------------------------------------------
--- Set Selected Tracks Volume
-------------------------------------------------------------
-local function Action_SetSelectedTracksVolume(vol_val)
-    reaper.Undo_BeginBlock()
-    local selcnt = reaper.CountSelectedTracks(0)
-    for i = 0, selcnt - 1 do
-        local tr = reaper.GetSelectedTrack(0, i)
-        reaper.SetMediaTrackInfo_Value(tr, "D_VOL", vol_val) 
-    end
-    reaper.Undo_EndBlock("JKK: Set Selected Tracks Volume", -1)
-end
-
-------------------------------------------------------------
--- Set Selected Tracks Pan
-------------------------------------------------------------
-local function Action_SetSelectedTracksPan(pan_val)
-    reaper.Undo_BeginBlock()
-    local selcnt = reaper.CountSelectedTracks(0)
-    for i = 0, selcnt - 1 do
-        local tr = reaper.GetSelectedTrack(0, i)
-        reaper.SetMediaTrackInfo_Value(tr, "D_PAN", pan_val)
-    end
-    reaper.Undo_EndBlock("JKK: Set Selected Tracks Panning", -1)
-end
-
-
 local function Action_TimeSelection()
     reaper.Undo_BeginBlock()
     local topSel = GetTopLevelSelectedTracks() 
@@ -220,6 +222,14 @@ local function Action_TimeSelection()
     reaper.Undo_EndBlock("JKK: TimeSelection (merged all selected tracks)", -1)
 end
 
+------------------------------------------------------------
+-- Function: Create Regions
+------------------------------------------------------------
+local function CreateRegion(start_pos, end_pos, name)
+    if start_pos and end_pos and end_pos > start_pos then
+        reaper.AddProjectMarker2(0, true, start_pos, end_pos, name or "", -1, 0)
+    end
+end
 
 local function Action_CreateRegions()
     reaper.Undo_BeginBlock()
@@ -238,21 +248,185 @@ local function Action_CreateRegions()
     reaper.Undo_EndBlock("JKK: CreateRegions (per selected track)", -1)
 end
 
+------------------------------------------------------------
+-- Function: Remove Unused Tracks
+------------------------------------------------------------
+
+local function Safe_GetTrack(proj, idx)
+    return reaper.GetTrack(proj, idx)
+end
+
+local function TrackHasItems(track)
+    if not track then return false end
+    return reaper.CountTrackMediaItems(track) > 0
+end
+
+local function IsFolderStart(track)
+    if not track then return false end
+    return reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") == 1
+end
+
+local function FolderIsEmpty(proj, start_index, track_count)
+    local depth = 1
+    local has_items = TrackHasItems(Safe_GetTrack(proj, start_index))
+    if has_items then return false end
+
+    for i = start_index + 1, track_count - 1 do
+        local tr = Safe_GetTrack(proj, i)
+        if not tr then break end
+        local d = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH")
+        depth = depth + d
+        if depth <= 0 then
+            if i == start_index + 1 then
+                return true
+            else
+                return false
+            end
+        end
+    end
+
+    return true
+end
+
+local function DeleteEmptyTracksAndFolders()
+    local proj = 0
+    local track_count = reaper.CountTracks(proj)
+    if track_count == 0 then return end
+
+    reaper.Undo_BeginBlock()
+
+    local i = track_count - 1
+    while i >= 0 do
+        local tr = Safe_GetTrack(proj, i)
+        if tr then
+            local folder_start = IsFolderStart(tr)
+            local has_items = TrackHasItems(tr)
+
+            if folder_start then
+                if FolderIsEmpty(proj, i, track_count) then
+                    reaper.DeleteTrack(tr)
+                end
+            else
+                if not has_items then
+                    reaper.DeleteTrack(tr)
+                end
+            end
+        end
+        i = i - 1
+        track_count = reaper.CountTracks(proj)
+    end
+
+    reaper.TrackList_AdjustWindows(false)
+    reaper.UpdateArrange()
+    reaper.Undo_EndBlock("Delete empty tracks and folders", -1)
+end
 
 ------------------------------------------------------------
--- ReaImGui UI
+-- Function: Floow Group Track's Name
+------------------------------------------------------------
+local function Safe_GetTrack(idx)
+    return reaper.GetSelectedTrack(0, idx)
+end
+
+local function GetSelectedTrackCount()
+    return reaper.CountSelectedTracks(0)
+end
+
+local function GetParentFolderTrack(track)
+    if not track then return nil end
+    local depth = reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH")
+    local idx = reaper.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER") - 1
+
+    for i = idx - 1, 0, -1 do
+        local tr = reaper.GetTrack(0, i)
+        if tr then
+            local d = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH")
+            if d == 1 then
+                return tr
+            end
+        end
+    end
+    return nil
+end
+
+local function FollowFolderName()
+    local count = GetSelectedTrackCount()
+    if count == 0 then return end
+
+    reaper.Undo_BeginBlock()
+
+    for i = 0, count - 1 do
+        local track = Safe_GetTrack(i)
+        if track then
+            local parent = GetParentFolderTrack(track)
+            if parent then
+                local retval, parent_name = reaper.GetSetMediaTrackInfo_String(parent, "P_NAME", "", false)
+                if retval then
+                    local new_name = string.format("%s_%02d", parent_name, i+1)
+                    reaper.GetSetMediaTrackInfo_String(track, "P_NAME", new_name, true)
+                end
+            end
+        end
+    end
+
+    reaper.UpdateArrange()
+    reaper.Undo_EndBlock("Batch Rename Tracks by Parent Folder", -1)
+end
+
+------------------------------------------------------------
+-- Function: Batch Track Rename
+------------------------------------------------------------
+function RenameTracks()
+    local sel_cnt = reaper.CountSelectedTracks(0)
+    if sel_cnt == 0 then return end
+
+    reaper.Undo_BeginBlock()
+    for i = 0, sel_cnt - 1 do
+        local tr = reaper.GetSelectedTrack(0, i)
+        local new_name = string.format("%s_%02d", base_name, i+1)
+        reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", new_name, true)
+    end
+    reaper.Undo_EndBlock('Rename Selected Tracks', -1)
+end
+
+----------------------------------------------------------
+-- Function: Color Palette 
+----------------------------------------------------------
+local function SetTrackColors(r, g, b)
+  local count = reaper.CountSelectedTracks(0)
+  if count == 0 then return end
+
+  reaper.Undo_BeginBlock()
+
+  local native_color
+  if r == 0 and g == 0 and b == 0 then
+    native_color = 0 -- Remove custom color
+  else
+    native_color = reaper.ColorToNative(r, g, b) | 0x1000000
+  end
+
+  for i = 0, count - 1 do
+    local track = reaper.GetSelectedTrack(0, i)
+    reaper.SetMediaTrackInfo_Value(track, "I_CUSTOMCOLOR", native_color)
+  end
+
+  reaper.UpdateArrange()
+  reaper.Undo_EndBlock("Set Track Color", -1)
+end
+
+------------------------------------------------------------
+-- UI
 ------------------------------------------------------------
 function loop()
     -- Theme Push
-    reaper.ImGui_SetNextWindowSize(ctx, 240, 360, reaper.ImGui_Cond_FirstUseEver()) 
+    reaper.ImGui_SetNextWindowSize(ctx, 650, 510, reaper.ImGui_Cond_FirstUseEver()) 
     style_pop_count, color_pop_count = ApplyTheme(ctx)
 
     local visible, open = reaper.ImGui_Begin(ctx, 'JKK_Track Manager', true)
 
     if visible then
-        -- === [볼륨 / 패닝 컨트롤 섹션] ===
-        reaper.ImGui_Text(ctx, "볼륨/패닝 조정 (선택 트랙):")
-        reaper.ImGui_Separator(ctx)
+        -- ========================================================
+        reaper.ImGui_SeparatorText(ctx, 'Tracks Batch Controller')
         
         local sel_tr = reaper.GetSelectedTrack(0, 0)
         if sel_tr and not reaper.ImGui_IsItemActive(ctx) then 
@@ -309,7 +483,6 @@ function loop()
             Action_SetSelectedTracksVolume(linear_vol) 
         end
 
-        -- 패닝 슬라이더
         local changed_pan, new_pan = reaper.ImGui_SliderDouble(ctx, 'Pan', pan_val, -1.0, 1.0, '%.2f')
         local reset_pan = reaper.ImGui_IsItemClicked(ctx, 1)
         
@@ -320,32 +493,78 @@ function loop()
             pan_val = new_pan
             Action_SetSelectedTracksPan(pan_val) 
         end
+        reaper.ImGui_Spacing(ctx)
         
-        reaper.ImGui_Dummy(ctx, 0, 10)
-        reaper.ImGui_Separator(ctx)
-        
-        -- === [트랙 레벨 선택 섹션] ===
-        reaper.ImGui_Text(ctx, "선택 규칙: 선택된 모든 트랙 기준으로 처리합니다.")
-        reaper.ImGui_Text(ctx, "트랙 레벨 선택 (0: 전체, 1: Root):\n") 
+        -- ========================================================
+        reaper.ImGui_SeparatorText(ctx, 'Tracks Selector by Folder Level')
+
         local changed, new_level = reaper.ImGui_SliderInt(ctx, '##SelectLevel', select_level, 0, 8, '%d')
         if changed then
             select_level = new_level
             Action_SelectTracksByLevel(select_level) 
         end
-        reaper.ImGui_Separator(ctx)
+        reaper.ImGui_Spacing(ctx)
         
-        -- === [타임 셀렉션 / 리전 섹션] ===
-        if reaper.ImGui_Button(ctx, 'Create Time Selection', 180, 30) then
+        -- ========================================================
+        reaper.ImGui_SeparatorText(ctx, 'Actions')
+        if reaper.ImGui_Button(ctx, 'Create Selection', 98, 22) then
             Action_TimeSelection()
         end
+        reaper.ImGui_SameLine(ctx)
 
-        reaper.ImGui_Dummy(ctx, 0, 6)
-
-        if reaper.ImGui_Button(ctx, 'Create Regions', 180, 30) then
+        if reaper.ImGui_Button(ctx, 'Create Regions', 99, 22) then
             Action_CreateRegions()
         end
+        reaper.ImGui_SameLine(ctx)
 
-        -- Theme Pop
+        if reaper.ImGui_Button(ctx, "Rmve Unusd Trks", 99, 22) then
+            DeleteEmptyTracksAndFolders()
+        end
+        reaper.ImGui_SameLine(ctx)
+
+        if reaper.ImGui_Button(ctx, "Fllow Grp Name", 98, 22) then
+            FollowFolderName()
+        end
+        reaper.ImGui_Spacing(ctx)
+
+        changed, base_name = reaper.ImGui_InputTextMultiline(ctx, " ", text, 295, 22)
+        reaper.ImGui_SameLine(ctx)
+        if reaper.ImGui_Button(ctx, 'Batch Rename', 110, 22) then
+            if base_name ~= "" then
+                RenameTracks()
+            end
+        end
+        -- ========================================================
+        reaper.ImGui_SeparatorText(ctx, 'Track Color Palette')
+
+        local palette_columns = 12
+        for i, col in ipairs(track_colors) do
+            local r, g, b = col[1], col[2], col[3]
+              
+            local packed_col = reaper.ImGui_ColorConvertDouble4ToU32(r/255, g/255, b/255, 1.0)
+              
+            reaper.ImGui_PushID(ctx, "col"..i)
+              
+            if reaper.ImGui_ColorButton(ctx, "##Color", packed_col, 0, 30, 30) then
+                SetTrackColors(r, g, b)
+            end
+          
+            reaper.ImGui_PopID(ctx)
+          
+            if i % palette_columns ~= 0 then
+                reaper.ImGui_SameLine(ctx)
+            end
+        end
+
+        reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_PushID(ctx, "col_default")
+        local packed_default_col = reaper.ImGui_ColorConvertDouble4ToU32(0.3, 0.3, 0.3, 1.0)
+        if reaper.ImGui_ColorButton(ctx, "##DefaultColor", packed_default_col, 0, 45, 30) then
+            SetTrackColors(0, 0, 0)
+        end
+        reaper.ImGui_PopID(ctx)
+
+        -- ========================================================
         reaper.ImGui_PopStyleVar(ctx, style_pop_count)
         reaper.ImGui_PopStyleColor(ctx, color_pop_count)
         reaper.ImGui_End(ctx)
