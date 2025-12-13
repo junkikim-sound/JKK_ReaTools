@@ -1,0 +1,457 @@
+--========================================================
+-- @title JKK_Timeline Manager_Module
+-- @author Junki Kim
+-- @version 1.0.0
+-- @description A tool for creating, deleting, renaming, and coloring project regions based on time selection or selected media items.
+--========================================================
+
+-- local ctx = reaper.ImGui_CreateContext("JKK_Timeline Manager")
+local open = true
+
+local theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_Theme/JKK_Theme.txt"
+local theme_module = nil
+if reaper.file_exists(theme_path) then
+    theme_module = dofile(theme_path)
+end
+
+local ApplyTheme = theme_module and theme_module.ApplyTheme or function(ctx) return 0, 0 end
+local style_pop_count, color_pop_count
+
+-- Color Palette Data (24 Colors)
+local region_colors = {
+  {255, 100, 100}, {255, 150, 100}, {255, 200, 100}, {255, 255, 100}, {200, 255, 100}, {100, 255, 100},
+  {100, 255, 150}, {100, 255, 200}, {100, 255, 255}, {100, 200, 255}, {100, 150, 255}, {100, 100, 255},
+  {150, 100, 255}, {200, 100, 255}, {255, 100, 255}, {255, 100, 200}, {255, 100, 150}, {200, 200, 200},
+  {128, 0, 0},     {128, 128, 0},   {0, 128, 0},     {0, 128, 128},   {0, 0, 128},     {128, 0, 128}
+}
+
+local create_base_name = ""
+local rename_base_name = ""
+local selectedColor = nil
+local MAX_NAME_LEN = 256
+
+---------------------------------------------------------
+-- Functions: Timeline Helpers
+---------------------------------------------------------
+local function GetTimeSelection()
+    local ts, te = reaper.GetSet_LoopTimeRange(false, false, 0, 0, false)
+    if ts == te then return nil end
+    return ts, te
+end
+
+local function GetOverlappingRegions()
+    local ts, te = GetTimeSelection()
+    if not ts then return nil end
+
+    local _, numMarkers, numRegions = reaper.CountProjectMarkers(0)
+    local total = numMarkers + numRegions
+
+    local list = {}
+
+    for i = 0, total - 1 do
+        local retval, isRegion, pos, rgnEnd, name, index, color =
+            reaper.EnumProjectMarkers3(0, i)
+
+        if isRegion and rgnEnd > ts and pos < te then
+            list[#list+1] = {
+                index = index,
+                pos = pos,
+                rgnEnd = rgnEnd,
+                name = name,
+                color = color
+            }
+        end
+    end
+
+    return list
+end
+
+---------------------------------------------------------
+-- Functions: Region Actions
+---------------------------------------------------------
+local function DeleteOverlappingRegions()
+    local regions = GetOverlappingRegions()
+    if not regions or #regions == 0 then return end
+
+    reaper.Undo_BeginBlock()
+
+    -- 역순 삭제
+    for i = #regions, 1, -1 do
+        local rgn = regions[i]
+        reaper.DeleteProjectMarker(0, rgn.index, true)
+    end
+
+    reaper.Undo_EndBlock("Delete Overlapping Regions", -1)
+    reaper.UpdateArrange()
+end
+
+local function DeleteAllRegions()
+    local _, numMarkers, numRegions = reaper.CountProjectMarkers(0)
+    local total = numMarkers + numRegions
+
+    if numRegions == 0 then return end
+
+    reaper.Undo_BeginBlock()
+
+    -- 역순으로 삭제 (index 오류 방지)
+    for i = total - 1, 0, -1 do
+        local _, isRegion, _, _, _, index = reaper.EnumProjectMarkers3(0, i)
+        if isRegion then
+            reaper.DeleteProjectMarker(0, index, true)
+        end
+    end
+
+    reaper.Undo_EndBlock("Delete All Regions", -1)
+    reaper.UpdateArrange()
+end
+
+local function RenameRegions(regionList, baseName)
+    if not baseName or baseName == "" then return end
+    for i, rgn in ipairs(regionList) do
+        local newName = string.format("%s_%02d", baseName, i)
+        reaper.SetProjectMarker3(0, rgn.index, true, rgn.pos, rgn.rgnEnd, newName, rgn.color)
+    end
+end
+
+local function ApplyChanges()
+    local regions = GetOverlappingRegions()
+    if not regions or #regions == 0 then
+        return
+    end
+
+    reaper.Undo_BeginBlock()
+    RenameRegions(regions, rename_base_name) -- rename_base_name 사용
+    reaper.Undo_EndBlock("Batch Edit Regions", -1)
+end
+
+----------------------------------------------------------
+-- Function: Create Regions from Selected Items (Item-based)
+----------------------------------------------------------
+local function CreateRegionsFromSelectedItems(base_name)
+    if not base_name or base_name:len() == 0 then
+        return
+    end
+    
+    local project = reaper.EnumProjects(-1, 0)
+    if not project then
+        return
+    end
+
+    local sel_items = {}
+    local item_count = reaper.CountSelectedMediaItems(project)
+
+    if item_count == 0 then
+        return
+    end
+
+    -- Collect item start/end
+    for i = 0, item_count - 1 do
+        local item = reaper.GetSelectedMediaItem(project, i)
+        local start_time = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+        local length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+        local end_time = start_time + length
+        table.insert(sel_items, {start=start_time, end_=end_time})
+    end
+
+    -- Sort by start time to handle overlaps correctly
+    table.sort(sel_items, function(a, b) return a.start < b.start end)
+
+    local regions_to_create = {}
+    local current_start, current_end = -1, -1
+
+    -- Merge overlapping/adjacent item ranges
+    for _, item_data in ipairs(sel_items) do
+        local s = item_data.start
+        local e = item_data.end_
+        
+        if current_start == -1 then
+            current_start = s
+            current_end = e
+        elseif s <= current_end then
+            current_end = math.max(current_end, e)
+        else
+            table.insert(regions_to_create, {start=current_start, end_=current_end})
+            current_start = s
+            current_end = e
+        end
+    end
+
+    -- Add the last collected region
+    if current_start ~= -1 then
+        table.insert(regions_to_create, {start=current_start, end_=current_end})
+    end
+
+    reaper.Undo_BeginBlock()
+    
+    -- Create Regions
+    for i, region_data in ipairs(regions_to_create) do
+        local start = region_data.start
+        local end_ = region_data.end_
+        local n = string.format("%s_%02d", base_name, i)
+        reaper.AddProjectMarker(project, 1, start, end_, n, -1)
+    end
+    
+    reaper.Undo_EndBlock(string.format("Create %d Regions from Selected Items", #regions_to_create), -1)
+    reaper.UpdateArrange()
+end
+
+
+------------------------------------------------------------
+-- Functions: Track/Folder/Item Helpers (Track-based actions)
+------------------------------------------------------------
+local function GetTrackCount() return reaper.CountTracks(0) end
+
+local function CalcTrackLevelByIndex(idx)
+    local level = 0
+    for i = 0, idx do
+        local tr = reaper.GetTrack(0, i)
+        if not tr then break end
+        local d = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH")
+        level = level + d
+    end
+    return level
+end
+
+local function GetSortedSelectedTracksWithLevel()
+    local out = {}
+    local selcnt = reaper.CountSelectedTracks(0)
+    for i = 0, selcnt - 1 do
+        local tr = reaper.GetSelectedTrack(0, i)
+        local idx = reaper.GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER") - 1
+        local level = CalcTrackLevelByIndex(idx)
+        table.insert(out, {track = tr, idx = idx, level = level})
+    end
+    table.sort(out, function(a,b) return a.idx < b.idx end)
+    return out
+end
+
+local function GetFullFolderRangeIndicesByIndex(start_idx)
+    local tr = reaper.GetTrack(0, start_idx)
+    if not tr then return {start_idx} end
+
+    local folderDepth = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH")
+    
+    if folderDepth <= 0 then
+        return {start_idx}
+    end
+    
+    local L_parent = 0
+    if start_idx > 0 then
+        L_parent = CalcTrackLevelByIndex(start_idx - 1)
+    end
+    
+    local start_level = CalcTrackLevelByIndex(start_idx)
+    
+    local out = {start_idx}
+    local folder_level = start_level
+
+    local trackCount = GetTrackCount()
+    for i = start_idx + 1, trackCount - 1 do
+        local t = reaper.GetTrack(0, i)
+        if not t then break end
+        local d = reaper.GetMediaTrackInfo_Value(t, "I_FOLDERDEPTH")
+        
+        folder_level = folder_level + d
+        table.insert(out, i)
+        
+        if folder_level <= L_parent then
+            break
+        end
+    end
+
+    return out
+end
+
+local function GetItemRangeFromTrackIndices(indices)
+    local min_pos = math.huge
+    local max_end = -math.huge
+    for _, idx in ipairs(indices) do
+        local tr = reaper.GetTrack(0, idx)
+        if tr then
+            local cnt = reaper.CountTrackMediaItems(tr)
+            for j = 0, cnt - 1 do
+                local item = reaper.GetTrackMediaItem(tr, j)
+                local pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+                local len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+                if pos < min_pos then min_pos = pos end
+                if pos + len > max_end then max_end = pos + len end
+            end
+        end
+    end
+    if min_pos == math.huge then return nil, nil end
+    return min_pos, max_end
+end
+
+local function GetTopLevelSelectedTracks()
+    local sel = GetSortedSelectedTracksWithLevel()
+    return sel 
+end
+
+local function CreateRegion(start_pos, end_pos, name)
+    if start_pos and end_pos and end_pos > start_pos then
+        reaper.AddProjectMarker2(0, true, start_pos, end_pos, name or "", -1, 0)
+    end
+end
+------------------------------------------------------------
+-- Main Action: Time Selection (Track-based)
+------------------------------------------------------------
+local function Action_TimeSelection()
+    reaper.Undo_BeginBlock()
+    local topSel = GetTopLevelSelectedTracks() 
+    
+    if #topSel == 0 then 
+        reaper.Undo_EndBlock("JKK: TimeSelection (none)", -1) 
+        return 
+    end
+    
+    local idxSet = {}
+    for _, e in ipairs(topSel) do
+        local indices = GetFullFolderRangeIndicesByIndex(e.idx)
+        for _, ii in ipairs(indices) do idxSet[ii] = true end
+    end
+
+    local indicesList = {}
+    for k,_ in pairs(idxSet) do table.insert(indicesList, k) end
+    table.sort(indicesList)
+
+    local min_pos, max_end = GetItemRangeFromTrackIndices(indicesList)
+    
+    if min_pos then
+        reaper.GetSet_LoopTimeRange(true, false, min_pos, max_end, false)
+    end
+
+    reaper.Undo_EndBlock("JKK: TimeSelection (merged all selected tracks)", -1)
+end
+
+------------------------------------------------------------
+-- Main Action: Create Regions (Track-based)
+------------------------------------------------------------
+local function Action_CreateRegions()
+    reaper.Undo_BeginBlock()
+    local topSel = GetTopLevelSelectedTracks()
+    
+    if #topSel == 0 then 
+        reaper.Undo_EndBlock("JKK: CreateRegions (none)", -1) 
+        return 
+    end
+
+    local regions_created = 0
+    
+    for _, e in ipairs(topSel) do
+        local indices = GetFullFolderRangeIndicesByIndex(e.idx) 
+        local min_pos, max_end = GetItemRangeFromTrackIndices(indices)
+        
+        if min_pos then
+            local _, name = reaper.GetSetMediaTrackInfo_String(e.track, "P_NAME", "", false)
+            local region_name = (name ~= "") and name or ("Region_"..(e.idx+1))
+            
+            CreateRegion(min_pos, max_end, region_name)
+            regions_created = regions_created + 1
+        end
+    end
+
+    reaper.Undo_EndBlock("JKK: CreateRegions (per selected track)", -1)
+end
+---------------------------------------------------------
+-- Function: Region Color
+---------------------------------------------------------
+local function SetRegionColors(colorTable)
+    if colorTable == nil then return end
+
+    local regions = GetOverlappingRegions()
+    if not regions or #regions == 0 then
+        return
+    end
+
+    local newColor
+    
+    if colorTable == 0 then
+        newColor = 0
+    
+    elseif type(colorTable) == "table" and #colorTable >= 3 then
+        local r, g, b = colorTable[1], colorTable[2], colorTable[3]
+        newColor = reaper.ColorToNative(r, g, b) | 0x1000000
+    
+    else
+        return
+    end
+
+    reaper.Undo_BeginBlock()
+    for _, rgn in ipairs(regions) do
+        reaper.SetProjectMarker3(0, rgn.index, true, rgn.pos, rgn.rgnEnd, rgn.name, newColor)
+    end
+    reaper.Undo_EndBlock("Recolor Regions", -1)
+end
+
+---------------------------------------------------------
+-- UI_Module 
+---------------------------------------------------------
+function JKK_Timeline_Manager_Draw(ctx)
+    -- ========================================================
+    reaper.ImGui_SeparatorText(ctx, 'Items/Tracks Actions')
+    reaper.ImGui_Text(ctx, 'Select ITEMS before using this feature.')
+
+    changed, create_base_name = reaper.ImGui_InputTextMultiline(ctx, '##CreateRegionBaseName', create_base_name, 292, 22)
+    reaper.ImGui_SameLine(ctx, 0, 16)
+    
+    if reaper.ImGui_Button(ctx, "Create Regions", 116, 22) then
+        CreateRegionsFromSelectedItems(create_base_name)
+    end
+    reaper.ImGui_Spacing(ctx)
+
+    reaper.ImGui_Text(ctx, 'Select TRACKS before using this feature.')
+    if reaper.ImGui_Button(ctx, 'Create Time Selection', 208, 22) then
+        Action_TimeSelection()
+    end
+    reaper.ImGui_SameLine(ctx)
+
+    if reaper.ImGui_Button(ctx, 'Create Regions from Tracks', 208, 22) then
+        Action_CreateRegions()
+    end
+    reaper.ImGui_Spacing(ctx)
+
+    -- ========================================================
+    reaper.ImGui_SeparatorText(ctx, 'Region Actions')
+    reaper.ImGui_Text(ctx, 'Create a TIME SELECTION to use this feature.')
+
+    changed, rename_base_name = reaper.ImGui_InputTextMultiline(ctx, '##RenameRegionBaseName', rename_base_name, 292, 22)
+    reaper.ImGui_SameLine(ctx, 0, 16)
+    
+    if reaper.ImGui_Button(ctx, "Rename Regions", 116, 22) then
+        ApplyChanges()
+    end
+    reaper.ImGui_Spacing(ctx)
+    
+    if reaper.ImGui_Button(ctx, "Delete Regions in Time Selection", 208, 22) then
+        DeleteOverlappingRegions()
+    end
+    reaper.ImGui_SameLine(ctx)
+
+    if reaper.ImGui_Button(ctx, "Delete All Regions", 208, 22) then
+        DeleteAllRegions()
+    end
+    reaper.ImGui_Spacing(ctx)
+    reaper.ImGui_Spacing(ctx)
+
+    local columns = 12
+    for i, col in ipairs(region_colors) do
+        local r, g, b = col[1], col[2], col[3]
+        local packed = reaper.ImGui_ColorConvertDouble4ToU32(r/255, g/255, b/255, 1)
+
+        reaper.ImGui_PushID(ctx, "col"..i)
+
+        if reaper.ImGui_ColorButton(ctx, "##Color", packed, 0, 30, 30) then
+            selectedColor = col
+            SetRegionColors(selectedColor)
+        end
+
+        reaper.ImGui_PopID(ctx)
+
+        if i % columns ~= 0 then
+            reaper.ImGui_SameLine(ctx)
+        end
+    end
+end
+return {
+    JKK_Timeline_Manager_Draw = JKK_Timeline_Manager_Draw,
+}

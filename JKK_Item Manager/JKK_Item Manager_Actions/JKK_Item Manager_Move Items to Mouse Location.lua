@@ -1,7 +1,8 @@
 --========================================================
 -- @title JKK_Item Manager_Move Items To Mouse Location
 -- @author Junki Kim
--- @version 0.5.0
+-- @version 1.0.0
+-- @description A tool for moving all selected items to the track and position currently under the mouse cursor.
 --========================================================
 
 local function get_mouse_position_fallback()
@@ -26,7 +27,6 @@ local function main()
 
     local mouse_pos = get_mouse_position_fallback()
     if not mouse_pos or type(mouse_pos) ~= "number" then
-        reaper.ShowMessageBox("마우스 위치를 얻지 못했습니다.\n(편집 커서를 사용하세요)", "Move items to mouse", 0)
         return
     end
 
@@ -43,7 +43,6 @@ local function main()
     end
 
     if min_start == math.huge then
-        reaper.ShowMessageBox("아이템 위치를 읽을 수 없습니다.", "Move items to mouse", 0)
         return
     end
 

@@ -1,7 +1,8 @@
 --========================================================
--- @title JJK_Timeline Manager_Region Creator (from Selected Track Items)
+-- @title JJK_Timeline Manager_Time Selection Creator (from Selected Track Items)
 -- @author Junki Kim
--- @version 0.5.0
+-- @version 1.0.0
+-- @description A tool for setting the time selection to span the total time range from the start of the first selected item to the end of the last.
 --========================================================
 
 local function GetTrackCount() return reaper.CountTracks(0) end
@@ -23,16 +24,16 @@ local function GetSortedSelectedTracksWithLevel()
     for i = 0, selcnt - 1 do
         local tr = reaper.GetSelectedTrack(0, i)
         local idx = reaper.GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER") - 1
-        local level = CalcTrackLevelByIndex(idx)
+        local level = CalcTrackLevelByIndex(idx) 
         table.insert(out, {track = tr, idx = idx, level = level})
     end
     table.sort(out, function(a,b) return a.idx < b.idx end)
     return out
 end
 
--- =================================================================================
--- Get Full Folder Range Indices By Index
--- =================================================================================
+----------------------------------------------------------
+-- Function: Get Full Folder Range Indices By Index
+----------------------------------------------------------
 local function GetFullFolderRangeIndicesByIndex(start_idx)
     local tr = reaper.GetTrack(0, start_idx)
     if not tr then return {start_idx} end
@@ -90,48 +91,43 @@ local function GetItemRangeFromTrackIndices(indices)
     return min_pos, max_end
 end
 
-local function CreateRegion(start_pos, end_pos, name)
-    if start_pos and end_pos and end_pos > start_pos then
-        reaper.AddProjectMarker2(0, true, start_pos, end_pos, name or "", -1, 0) 
-    end
-end
-
--- =================================================================================
--- Get Top Level Selected Tracks 
--- =================================================================================
+----------------------------------------------------------
+-- Function: Get Top Level Selected Tracks 
+----------------------------------------------------------
 local function GetTopLevelSelectedTracks()
     local sel = GetSortedSelectedTracksWithLevel()
     return sel 
 end
 
-------------------------------------------------------------
--- Main Action: Create Regions
-------------------------------------------------------------
-local function Action_CreateRegions()
+----------------------------------------------------------
+-- Function: Main Action: Time Selection
+----------------------------------------------------------
+local function Action_TimeSelection()
     reaper.Undo_BeginBlock()
-    local topSel = GetTopLevelSelectedTracks()
+    local topSel = GetTopLevelSelectedTracks() 
     
     if #topSel == 0 then 
-        reaper.Undo_EndBlock("JKK: CreateRegions (none)", -1) 
+        reaper.Undo_EndBlock("JKK: TimeSelection (none)", -1) 
         return 
     end
-
-    local regions_created = 0
     
+    local idxSet = {}
     for _, e in ipairs(topSel) do
-        local indices = GetFullFolderRangeIndicesByIndex(e.idx) 
-        local min_pos, max_end = GetItemRangeFromTrackIndices(indices)
-        
-        if min_pos then
-            local _, name = reaper.GetSetMediaTrackInfo_String(e.track, "P_NAME", "", false)
-            local region_name = (name ~= "") and name or ("Region_"..(e.idx+1))
-            
-            CreateRegion(min_pos, max_end, region_name)
-            regions_created = regions_created + 1
-        end
+        local indices = GetFullFolderRangeIndicesByIndex(e.idx)
+        for _, ii in ipairs(indices) do idxSet[ii] = true end
     end
 
-    reaper.Undo_EndBlock("JKK: CreateRegions (per selected track)", -1)
+    local indicesList = {}
+    for k,_ in pairs(idxSet) do table.insert(indicesList, k) end
+    table.sort(indicesList)
+
+    local min_pos, max_end = GetItemRangeFromTrackIndices(indicesList)
+    
+    if min_pos then
+        reaper.GetSet_LoopTimeRange(true, false, min_pos, max_end, false)
+    end
+
+    reaper.Undo_EndBlock("JKK: TimeSelection (merged all selected tracks)", -1)
 end
 
-Action_CreateRegions()
+Action_TimeSelection()

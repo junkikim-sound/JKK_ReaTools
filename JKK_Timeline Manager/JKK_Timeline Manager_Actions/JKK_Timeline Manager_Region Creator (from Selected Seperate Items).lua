@@ -1,7 +1,8 @@
 --========================================================
 -- @title JJK_Timeline Manager_Region Creator (from Selected Seperate Items)
 -- @author Junki Kim
--- @version 0.7.0
+-- @version 1.0.0
+-- @description A tool for creating an independent region for the time range of each selected media item.
 --========================================================
 
 function main()

@@ -1,7 +1,8 @@
 --========================================================
 -- @title JKK_Item Manager_Arrange Items to Current Setting
 -- @author Junki Kim
--- @version 1.0.1
+-- @version 1.0.0
+-- @description A tool for instantly applying the currently configured arrangement settings (position, volume, pitch, etc.) to selected items.
 --========================================================
 
 local EXTSTATE_KEY = "JKK_Item Manager"

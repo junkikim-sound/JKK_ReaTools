@@ -1,13 +1,14 @@
 --========================================================
--- @title JKK_Item Manager
+-- @title JKK_Item Manager_Module
 -- @author Junki Kim
--- @version 0.9.4
+-- @version 0.9.5
+-- @description A tool to batch/randomly adjust properties like volume, pitch, play rate, and position of selected media items, and perform group time stretching.
 --========================================================
 
-local ctx = reaper.ImGui_CreateContext('JKK_Item Manager')
+-- local ctx = reaper.ImGui_CreateContext('JKK_Item Manager')
 local open = true
 
-local theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_Theme/JKK_Theme.lua"
+local theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_Theme/JKK_Theme.txt"
 local theme_module = nil
 if reaper.file_exists(theme_path) then
     theme_module = dofile(theme_path)
@@ -644,210 +645,194 @@ end
 ----------------------------------------------------------
 -- UI
 ----------------------------------------------------------
-function main()
-    if not open then return end
+function JKK_Item_Manager_Draw(ctx, prev_count, current_count)
+    local current_project_state_count = current_count
     
-    local current_project_state_count = reaper.GetProjectStateChangeCount(0)
-
-    reaper.ImGui_SetNextWindowSize(ctx, 650, 510, reaper.ImGui_Cond_Once())
-    style_pop_count, color_pop_count = ApplyTheme(ctx)
+    reaper.ImGui_Text(ctx, 'Select ITEMS before using this feature.')
+    -- ========================================================
+    reaper.ImGui_SeparatorText(ctx, 'Items Batch Controller')
     
-    local visible, open_flag = reaper.ImGui_Begin(ctx, 'JKK_Item Manager', open,
-        reaper.ImGui_WindowFlags_NoCollapse())
+    local changed_vol, changed_pitch, changed_rate
+    
+    -- Volume Slider
+    changed_vol, adjust_vol = reaper.ImGui_SliderDouble(ctx, "Items Volume", adjust_vol, -30.00, 30.00, "%.2f")
+    if reaper.ImGui_IsItemClicked(ctx, 1) then adjust_vol = 0.0; ApplyBatchVolume() end
+    
+    -- Pitch Slider
+    changed_pitch, adjust_pitch = reaper.ImGui_SliderDouble(ctx, "Items Pitch", adjust_pitch, -12, 12, "%.1f")
+    if reaper.ImGui_IsItemClicked(ctx, 1) then adjust_pitch = 0.0; ApplyBatchPitch() end
+    
+    -- Rate Slider
+    changed_rate, adjust_rate = reaper.ImGui_SliderDouble(ctx, "Items Playback Rate", adjust_rate, 0.25, 4.0, "%.2f")
+    if reaper.ImGui_IsItemClicked(ctx, 1) then adjust_rate = 1.0; ApplyBatchRate() end
 
-    if visible then        
-        -- ========================================================
-        reaper.ImGui_SeparatorText(ctx, 'Items Batch Controller')
-        
-        local changed_vol, changed_pitch, changed_rate
-        
-        -- Volume Slider
-        changed_vol, adjust_vol = reaper.ImGui_SliderDouble(ctx, "Items Volume", adjust_vol, -30.00, 30.00, "%.2f")
-        if reaper.ImGui_IsItemClicked(ctx, 1) then adjust_vol = 0.0; ApplyBatchVolume() end
-        
-        -- Pitch Slider
-        changed_pitch, adjust_pitch = reaper.ImGui_SliderDouble(ctx, "Items Pitch", adjust_pitch, -12, 12, "%.1f")
-        if reaper.ImGui_IsItemClicked(ctx, 1) then adjust_pitch = 0.0; ApplyBatchPitch() end
-        
-        -- Rate Slider
-        changed_rate, adjust_rate = reaper.ImGui_SliderDouble(ctx, "Items Playback Rate", adjust_rate, 0.25, 4.0, "%.2f")
-        if reaper.ImGui_IsItemClicked(ctx, 1) then adjust_rate = 1.0; ApplyBatchRate() end
-
-        -- Update: Call only the function corresponding to the changed slider
-        if changed_vol then ApplyBatchVolume() end
-        if changed_pitch then ApplyBatchPitch() end
-        if changed_rate then ApplyBatchRate() end
-        
-        -- Group Stretch Ratio Slider
-        local changed_group_stretch, new_ratio = reaper.ImGui_SliderDouble(ctx, "Group Stretch", group_stretch_ratio, 0.25, 4.0, "%.2f")
-        
-        local is_group_stretch_slider_active = reaper.ImGui_IsItemActive(ctx) 
-        
-        if reaper.ImGui_IsItemClicked(ctx, 1) then 
-            new_ratio = 1.0
-            group_stretch_ratio = 1.0
+    -- Update: Call only the function corresponding to the changed slider
+    if changed_vol then ApplyBatchVolume() end
+    if changed_pitch then ApplyBatchPitch() end
+    if changed_rate then ApplyBatchRate() end
+    
+    -- Group Stretch Ratio Slider
+    local changed_group_stretch, new_ratio = reaper.ImGui_SliderDouble(ctx, "Group Stretch", group_stretch_ratio, 0.25, 4.0, "%.2f")
+    
+    local is_group_stretch_slider_active = reaper.ImGui_IsItemActive(ctx)
+    
+    if reaper.ImGui_IsItemClicked(ctx, 1) then 
+        new_ratio = 1.0
+        group_stretch_ratio = 1.0
+        ApplyGroupStretch(group_stretch_ratio)
+        prev_group_stretch_ratio = 1.0
+        update_prev()
+    end
+    
+    if changed_group_stretch then
+        group_stretch_ratio = new_ratio
+        if group_stretch_ratio ~= prev_group_stretch_ratio then
             ApplyGroupStretch(group_stretch_ratio)
+            prev_group_stretch_ratio = group_stretch_ratio
+            update_prev()
+        end
+    end
+    
+    reaper.ImGui_Spacing(ctx)
+    
+    if current_project_state_count ~= prev_count and not is_group_stretch_slider_active then
+        
+        if group_stretch_ratio ~= 1.0 or prev_group_stretch_ratio ~= 1.0 then
+            group_stretch_ratio = 1.0
             prev_group_stretch_ratio = 1.0
-            update_prev()
         end
         
-        if changed_group_stretch then
-            group_stretch_ratio = new_ratio
-            if group_stretch_ratio ~= prev_group_stretch_ratio then
-                ApplyGroupStretch(group_stretch_ratio)
-                prev_group_stretch_ratio = group_stretch_ratio
-                update_prev()
-            end
-        end
-        
-        reaper.ImGui_Spacing(ctx)
-        
-        if current_project_state_count ~= prev_project_state_count and not is_group_stretch_slider_active then
-            
-            if group_stretch_ratio ~= 1.0 or prev_group_stretch_ratio ~= 1.0 then
-                group_stretch_ratio = 1.0
-                prev_group_stretch_ratio = 1.0
-            end
-            
-            prev_project_state_count = current_project_state_count
-        end
-
-        -- ========================================================
-        reaper.ImGui_SeparatorText(ctx, 'Items Arranger & Randomizer')
-
-        local changed
-        -- Start Offset
-        changed, start_offset = reaper.ImGui_SliderDouble(ctx, 'Start Offset (Grid)', start_offset, 0, 3, '%.1f')
-        start_offset = math.floor(start_offset * 10 + 0.5) / 10
-        if reaper.ImGui_IsItemClicked(ctx, 1) then start_offset = 1; apply_spacing_only() end
-        if changed then
-            apply_spacing_only() -- Only apply spacing logic
-        end
-
-        -- Width
-        changed, width = reaper.ImGui_SliderDouble(ctx, 'Width (Grid)', width, 1, 15, '%.0f')
-        width = math.floor(width)
-        if reaper.ImGui_IsItemClicked(ctx, 1) then width = 5; apply_spacing_only() end
-        if changed then
-            apply_spacing_only() -- Only apply spacing logic
-        end
-        reaper.ImGui_Spacing(ctx)
-
-        -- Position Range
-        changed, pos_range = reaper.ImGui_SliderDouble(ctx, 'Pos Range', pos_range, 0, 1.0, '%.3f')
-        if reaper.ImGui_IsItemClicked(ctx, 1) then pos_range = 0.0 end
-        reaper.ImGui_SameLine(ctx); reaper.ImGui_SameLine(ctx, 0, 33)
-        changed, random_pos = reaper.ImGui_Checkbox(ctx, 'Rand##pos', random_pos)
-
-        -- Pitch Range
-        changed, pitch_range = reaper.ImGui_SliderDouble(ctx, 'Pitch Range', pitch_range, 0, 24, '%.3f')
-        if reaper.ImGui_IsItemClicked(ctx, 1) then pitch_range = 0.0 end
-        reaper.ImGui_SameLine(ctx); reaper.ImGui_SameLine(ctx, 0, 25)
-        changed, random_pitch = reaper.ImGui_Checkbox(ctx, 'Rand##pitch', random_pitch)
-
-        -- Playback Rate Range
-        changed, playback_range = reaper.ImGui_SliderDouble(ctx, 'Playrate Range', playback_range, 0, 24, '%.3f')
-        if reaper.ImGui_IsItemClicked(ctx, 1) then playback_range = 0.0 end
-        reaper.ImGui_SameLine(ctx)
-        changed, random_play = reaper.ImGui_Checkbox(ctx, 'Rand##playback', random_play)
-
-        -- Volume Range
-        changed, vol_range = reaper.ImGui_SliderDouble(ctx, 'Vol Range', vol_range, 0, 10, '%.02f')
-        if reaper.ImGui_IsItemClicked(ctx, 1) then vol_range = 0.0 end
-        reaper.ImGui_SameLine(ctx); reaper.ImGui_SameLine(ctx, 0, 33)
-        changed, random_vol = reaper.ImGui_Checkbox(ctx, 'Rand##vol', random_vol)
-        reaper.ImGui_Spacing(ctx)
-        
-        -- Buttons
-        if reaper.ImGui_Button(ctx, 'Apply', 80, 22) then
-            arrange_items()
-            update_prev()
-            SaveSettings()
-        end
-        reaper.ImGui_SameLine(ctx)
-        
-        if reaper.ImGui_Button(ctx, 'Play/Stop', 80, 22) then
-            local is_playing = reaper.GetPlayState() & 1 == 1
-            if is_playing then reaper.Main_OnCommand(1016, 0)
-            else reaper.Main_OnCommand(40044, 0) end
-        end
-        reaper.ImGui_SameLine(ctx)
-
-        -- Live Update + Random Order
-        changed, live_update = reaper.ImGui_Checkbox(ctx, 'Live Update', live_update)
-        reaper.ImGui_SameLine(ctx)
-        changed, random_order = reaper.ImGui_Checkbox(ctx, 'Random Arrangement', random_order)
-        reaper.ImGui_Spacing(ctx)
-
-        -- ========================================================
-        reaper.ImGui_SeparatorText(ctx, 'Actions')
-        
-        changed, base_name = reaper.ImGui_InputTextMultiline(ctx, ' ', base_name, 200, 22)
-        reaper.ImGui_SameLine(ctx)
-        if reaper.ImGui_Button(ctx, 'Create Regions', 110, 22) then
-            if base_name ~= "" then
-                CreateRegionsFromSelectedItems()
-            end
-        end
-        reaper.ImGui_SameLine(ctx)
-
-        if reaper.ImGui_Button(ctx, 'Move to Cursor', 110, 22) then
-            MoveItemsToEditCursor()
-        end
-        reaper.ImGui_Spacing(ctx)
-
-        -- ========================================================
-        reaper.ImGui_SeparatorText(ctx, 'Item Color Palette')
-
-        local palette_columns = 12
-        
-        for i, col in ipairs(item_colors) do
-          local r, g, b = col[1], col[2], col[3]
-          
-          local packed_col = reaper.ImGui_ColorConvertDouble4ToU32(r/255, g/255, b/255, 1.0)
-          
-          reaper.ImGui_PushID(ctx, "col"..i)
-          
-          if reaper.ImGui_ColorButton(ctx, "##Color", packed_col, 0, 30, 30) then
-            SetItemColors(r, g, b)
-          end
-          
-          reaper.ImGui_PopID(ctx)
-          
-          if i % palette_columns ~= 0 then
-            reaper.ImGui_SameLine(ctx)
-          end
-        end
-
-        reaper.ImGui_SameLine(ctx)
-        reaper.ImGui_PushID(ctx, "col_default")
-        local packed_default_col = reaper.ImGui_ColorConvertDouble4ToU32(0.3, 0.3, 0.3, 1.0)
-        if reaper.ImGui_ColorButton(ctx, "##DefaultColor", packed_default_col, 0, 45, 30) then
-            SetItemColors(0, 0, 0)
-        end
-        reaper.ImGui_PopID(ctx)
-
-        -- ========================================================
-        local general_state_changed = has_changed()
-        
-        if general_state_changed then
-            if has_range_value_changed() and live_update then
-                arrange_items()
-            end
-            update_prev()
-            SaveSettings()
-        end
-
-        -- ========================================================
-        reaper.ImGui_PopStyleVar(ctx, style_pop_count)
-        reaper.ImGui_PopStyleColor(ctx, color_pop_count)
-        reaper.ImGui_End(ctx)
-    else
-        reaper.ImGui_End(ctx)
+        -- prev_project_state_count = current_project_state_count -- 
+        -- 이제 이 변수 업데이트는 통합 파일(JKK_ReaTools.lua)에서 수행합니다.
     end
 
-    open = open_flag
-    if open then reaper.defer(main) end
-end
+    -- ========================================================
+    reaper.ImGui_SeparatorText(ctx, 'Items Arranger & Randomizer')
 
-main()
+    local changed
+    -- Start Offset
+    changed, start_offset = reaper.ImGui_SliderDouble(ctx, 'Start Offset (Grid)', start_offset, 0, 3, '%.1f')
+    start_offset = math.floor(start_offset * 10 + 0.5) / 10
+    if reaper.ImGui_IsItemClicked(ctx, 1) then start_offset = 1; apply_spacing_only() end
+    if changed then
+        apply_spacing_only() -- Only apply spacing logic
+    end
+
+    -- Width
+    changed, width = reaper.ImGui_SliderDouble(ctx, 'Width (Grid)', width, 1, 15, '%.0f')
+    width = math.floor(width)
+    if reaper.ImGui_IsItemClicked(ctx, 1) then width = 5; apply_spacing_only() end
+    if changed then
+        apply_spacing_only() -- Only apply spacing logic
+    end
+    reaper.ImGui_Spacing(ctx)
+
+    -- Position Range
+    changed, pos_range = reaper.ImGui_SliderDouble(ctx, 'Pos Range', pos_range, 0, 1.0, '%.3f')
+    if reaper.ImGui_IsItemClicked(ctx, 1) then pos_range = 0.0 end
+    reaper.ImGui_SameLine(ctx); reaper.ImGui_SameLine(ctx, 0, 33)
+    changed, random_pos = reaper.ImGui_Checkbox(ctx, 'Rand##pos', random_pos)
+
+    -- Pitch Range
+    changed, pitch_range = reaper.ImGui_SliderDouble(ctx, 'Pitch Range', pitch_range, 0, 24, '%.3f')
+    if reaper.ImGui_IsItemClicked(ctx, 1) then pitch_range = 0.0 end
+    reaper.ImGui_SameLine(ctx); reaper.ImGui_SameLine(ctx, 0, 25)
+    changed, random_pitch = reaper.ImGui_Checkbox(ctx, 'Rand##pitch', random_pitch)
+
+    -- Playback Rate Range
+    changed, playback_range = reaper.ImGui_SliderDouble(ctx, 'Playrate Range', playback_range, 0, 24, '%.3f')
+    if reaper.ImGui_IsItemClicked(ctx, 1) then playback_range = 0.0 end
+    reaper.ImGui_SameLine(ctx)
+    changed, random_play = reaper.ImGui_Checkbox(ctx, 'Rand##playback', random_play)
+
+    -- Volume Range
+    changed, vol_range = reaper.ImGui_SliderDouble(ctx, 'Vol Range', vol_range, 0, 10, '%.02f')
+    if reaper.ImGui_IsItemClicked(ctx, 1) then vol_range = 0.0 end
+    reaper.ImGui_SameLine(ctx); reaper.ImGui_SameLine(ctx, 0, 33)
+    changed, random_vol = reaper.ImGui_Checkbox(ctx, 'Rand##vol', random_vol)
+    reaper.ImGui_Spacing(ctx)
+    
+    -- Buttons
+    if reaper.ImGui_Button(ctx, 'Apply', 80, 22) then
+        arrange_items()
+        update_prev()
+        SaveSettings()
+    end
+    reaper.ImGui_SameLine(ctx)
+    
+    if reaper.ImGui_Button(ctx, 'Play/Stop', 80, 22) then
+        local is_playing = reaper.GetPlayState() & 1 == 1
+        if is_playing then reaper.Main_OnCommand(1016, 0)
+        else reaper.Main_OnCommand(40044, 0) end
+    end
+    reaper.ImGui_SameLine(ctx)
+
+    -- Live Update + Random Order
+    changed, live_update = reaper.ImGui_Checkbox(ctx, 'Live Update', live_update)
+    reaper.ImGui_SameLine(ctx)
+    changed, random_order = reaper.ImGui_Checkbox(ctx, 'Random Arrangement', random_order)
+    reaper.ImGui_Spacing(ctx)
+
+    -- ========================================================
+    reaper.ImGui_SeparatorText(ctx, 'Actions')
+    
+    changed, base_name = reaper.ImGui_InputTextMultiline(ctx, ' ', base_name, 200, 22)
+    reaper.ImGui_SameLine(ctx)
+    if reaper.ImGui_Button(ctx, 'Create Regions', 110, 22) then
+        if base_name ~= "" then
+            CreateRegionsFromSelectedItems()
+        end
+    end
+    reaper.ImGui_SameLine(ctx)
+
+    if reaper.ImGui_Button(ctx, 'Move to Edit Crsr', 110, 22) then
+        MoveItemsToEditCursor()
+    end
+    reaper.ImGui_Spacing(ctx)
+
+    -- ========================================================
+    reaper.ImGui_SeparatorText(ctx, 'Item Color Palette')
+
+    local palette_columns = 12
+    
+    for i, col in ipairs(item_colors) do
+      local r, g, b = col[1], col[2], col[3]
+      
+      local packed_col = reaper.ImGui_ColorConvertDouble4ToU32(r/255, g/255, b/255, 1.0)
+      
+      reaper.ImGui_PushID(ctx, "col"..i)
+      
+      if reaper.ImGui_ColorButton(ctx, "##Color", packed_col, 0, 30, 30) then
+        SetItemColors(r, g, b)
+      end
+      
+      reaper.ImGui_PopID(ctx)
+      
+      if i % palette_columns ~= 0 then
+        reaper.ImGui_SameLine(ctx)
+      end
+    end
+
+    reaper.ImGui_SameLine(ctx)
+    reaper.ImGui_PushID(ctx, "col_default")
+    local packed_default_col = reaper.ImGui_ColorConvertDouble4ToU32(0.3, 0.3, 0.3, 1.0)
+    if reaper.ImGui_ColorButton(ctx, "##DefaultColor", packed_default_col, 0, 45, 30) then
+        SetItemColors(0, 0, 0)
+    end
+    reaper.ImGui_PopID(ctx)
+
+    -- ========================================================
+    local general_state_changed = has_changed()
+    
+    if general_state_changed then
+        if has_range_value_changed() and live_update then
+            arrange_items()
+        end
+        update_prev()
+        SaveSettings()
+    end
+    
+end
+return {
+    JKK_Item_Manager_Draw = JKK_Item_Manager_Draw,
+}

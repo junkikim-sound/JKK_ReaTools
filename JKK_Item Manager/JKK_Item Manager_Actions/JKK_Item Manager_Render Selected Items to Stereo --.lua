@@ -1,9 +1,9 @@
--- JKK_DuplicateSelectedItemTracks_RemoveUnselectedItems.lua
--- 목적: 선택된 아이템이 속한 트랙들과 그 상위 폴더들을 복제,
---       복제된 트랙 내에서 선택되지 않은 아이템은 모두 삭제,
---       그리고 복제된 트랙들을 프로젝트 맨 아래에 임시 폴더로 그룹화.
--- 작성자: ChatGPT
--- 사용 전: 프로젝트 저장 권장
+--========================================================
+-- @title JKK_Item Manager_Render Selected Items to Stereo
+-- @author Junki Kim
+-- @version 0.9.5
+-- @description A tool for rendering (gluing) selected media items into a single new stereo media item.
+--========================================================
 
 local reaper = reaper
 

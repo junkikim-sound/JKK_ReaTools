@@ -1,7 +1,8 @@
 --========================================================
 -- @title JKK_Item Manager_Move Items to Edit Cursor
 -- @author Junki Kim
--- @version 0.5.0
+-- @version 1.0.0
+-- @description A tool for moving all selected items to the current position of the project's edit cursor.
 --========================================================
 
 function main()

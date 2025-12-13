@@ -1,30 +1,25 @@
---============================================================
--- JKK_Track Manager - Batch Rename Tracks by Parent Folder
---============================================================
+--========================================================
+-- @title JJK_Track Manager_Follow Group Name
+-- @author Junki Kim
+-- @version 1.0.0
+-- @description A tool for batch renaming selected tracks by appending a sequence number to the name of their parent folder (group) track.
+--========================================================
 
-local ctx = reaper.ImGui_CreateContext("Batch Rename Tracks by Parent Folder")
+local reaper = reaper
 
---============================================================
--- Helper Functions
---============================================================
-
--- 안전하게 GetTrack 호출
-local function Safe_GetTrack(idx)
+local function Safe_GetSelectedTrack(idx)
     return reaper.GetSelectedTrack(0, idx)
 end
 
--- 선택된 트랙 개수
 local function GetSelectedTrackCount()
     return reaper.CountSelectedTracks(0)
 end
 
--- 상위 폴더(그룹) 트랙 찾기
 local function GetParentFolderTrack(track)
     if not track then return nil end
-    local depth = reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH")
+    
     local idx = reaper.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER") - 1
 
-    -- 현재 트랙 바로 위 트랙부터 검색
     for i = idx - 1, 0, -1 do
         local tr = reaper.GetTrack(0, i)
         if tr then
@@ -37,27 +32,37 @@ local function GetParentFolderTrack(track)
     return nil
 end
 
--- 선택된 트랙 이름 일괄 변경
 local function FollowFolderName()
     local count = GetSelectedTrackCount()
-    if count == 0 then return end
+    if count == 0 then 
+        reaper.MB("Please select one or more tracks to rename.", "Info", 0)
+        return 
+    end
 
     reaper.Undo_BeginBlock()
 
     for i = 0, count - 1 do
-        local track = Safe_GetTrack(i)
+        local track = Safe_GetSelectedTrack(i)
         if track then
+            local depth_val = reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH")
+            if depth_val == 1 then 
+                goto continue_loop 
+            end
             local parent = GetParentFolderTrack(track)
             if parent then
                 local retval, parent_name = reaper.GetSetMediaTrackInfo_String(parent, "P_NAME", "", false)
-                if retval then
+                
+                if retval and parent_name ~= "" then
                     local new_name = string.format("%s_%02d", parent_name, i+1)
                     reaper.GetSetMediaTrackInfo_String(track, "P_NAME", new_name, true)
                 end
             end
         end
+        ::continue_loop::
     end
 
     reaper.UpdateArrange()
     reaper.Undo_EndBlock("Batch Rename Tracks by Parent Folder", -1)
 end
+
+FollowFolderName()
