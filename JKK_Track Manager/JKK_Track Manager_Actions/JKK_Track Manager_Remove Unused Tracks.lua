@@ -1,7 +1,7 @@
 --========================================================
 -- @title JJK_Track Manager_Remove Unused Tracks
 -- @author Junki Kim
--- @version 1.0.0
+-- @version 0.5.5
 --========================================================
 
 local reaper = reaper

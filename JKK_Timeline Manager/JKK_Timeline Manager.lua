@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Timeline Manager
 -- @author Junki Kim
--- @version 1.0.1
+-- @version 0.5.5
 --========================================================
 
 local ctx = reaper.ImGui_CreateContext("JKK_Timeline Manager")

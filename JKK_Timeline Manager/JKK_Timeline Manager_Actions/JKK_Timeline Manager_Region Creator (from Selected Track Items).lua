@@ -1,7 +1,7 @@
 --========================================================
 -- @title JJK_Timeline Manager_Region Creator (from Selected Track Items)
 -- @author Junki Kim
--- @version 1.0.0
+-- @version 0.5.5
 --========================================================
 
 local function GetTrackCount() return reaper.CountTracks(0) end

@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Item Manager_Move Items To Mouse Location
 -- @author Junki Kim
--- @version 1.0.0
+-- @version 0.5.5
 --========================================================
 
 local function get_mouse_position_fallback()

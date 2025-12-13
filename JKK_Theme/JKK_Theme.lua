@@ -1,7 +1,8 @@
 --========================================================
 -- @title JKK_Theme
 -- @author Junki Kim
--- @version 0.5.3
+-- @version 0.9.9
+-- @noindex
 --========================================================
 
 function ApplyTheme(ctx)

@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Item Manager_Move Items to Edit Cursor
 -- @author Junki Kim
--- @version 1.0.0
+-- @version 0.5.5
 --========================================================
 
 function main()

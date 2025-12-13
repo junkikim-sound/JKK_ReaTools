@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Item Manager_Arrange Items to Current Setting
 -- @author Junki Kim
--- @version 1.0.0
+-- @version 0.5.5
 --========================================================
 
 local EXTSTATE_KEY = "JKK_Item Manager"
