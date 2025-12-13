@@ -2,6 +2,7 @@
 -- @title JKK_ReaTools
 -- @author Junki Kim
 -- @version 1.0.3
+-- @provides 
 --     [nomain] JKK_ReaTools_Modules/JKK_Item Manager_Module.lua
 --     [nomain] JKK_ReaTools_Modules/JKK_Timeline Manager_Module.lua
 --     [nomain] JKK_ReaTools_Modules/JKK_Track Manager_Module.lua
