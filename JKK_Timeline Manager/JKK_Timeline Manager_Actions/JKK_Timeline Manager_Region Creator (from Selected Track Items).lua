@@ -2,7 +2,6 @@
 -- @title JJK_Timeline Manager_Region Creator (from Selected Track Items)
 -- @author Junki Kim
 -- @version 1.0.0
--- @description A tool for creating regions based on the selected items' range, with one region per selected track.
 --========================================================
 
 local function GetTrackCount() return reaper.CountTracks(0) end

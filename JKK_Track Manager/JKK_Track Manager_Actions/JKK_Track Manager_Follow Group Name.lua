@@ -2,7 +2,6 @@
 -- @title JJK_Track Manager_Follow Group Name
 -- @author Junki Kim
 -- @version 1.0.0
--- @description A tool for batch renaming selected tracks by appending a sequence number to the name of their parent folder (group) track.
 --========================================================
 
 local reaper = reaper

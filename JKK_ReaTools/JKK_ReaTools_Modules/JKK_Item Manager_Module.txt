@@ -2,7 +2,6 @@
 -- @title JKK_Item Manager_Module
 -- @author Junki Kim
 -- @version 0.9.5
--- @description A tool to batch/randomly adjust properties like volume, pitch, play rate, and position of selected media items, and perform group time stretching.
 --========================================================
 
 -- local ctx = reaper.ImGui_CreateContext('JKK_Item Manager')

@@ -2,7 +2,6 @@
 -- @title JKK_Item Manager_Render Selected Items to Stereo
 -- @author Junki Kim
 -- @version 0.9.5
--- @description A tool for rendering (gluing) selected media items into a single new stereo media item.
 --========================================================
 
 local reaper = reaper

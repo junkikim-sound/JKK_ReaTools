@@ -2,7 +2,6 @@
 -- @title JJK_Timeline Manager_Time Selection Creator (from Selected Track Items)
 -- @author Junki Kim
 -- @version 1.0.0
--- @description A tool for setting the time selection to span the total time range from the start of the first selected item to the end of the last.
 --========================================================
 
 local function GetTrackCount() return reaper.CountTracks(0) end

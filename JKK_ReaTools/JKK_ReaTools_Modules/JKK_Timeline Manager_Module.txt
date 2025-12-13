@@ -2,7 +2,6 @@
 -- @title JKK_Timeline Manager_Module
 -- @author Junki Kim
 -- @version 1.0.0
--- @description A tool for creating, deleting, renaming, and coloring project regions based on time selection or selected media items.
 --========================================================
 
 -- local ctx = reaper.ImGui_CreateContext("JKK_Timeline Manager")

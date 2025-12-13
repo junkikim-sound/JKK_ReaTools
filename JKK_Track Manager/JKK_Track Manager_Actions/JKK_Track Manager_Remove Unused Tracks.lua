@@ -2,7 +2,6 @@
 -- @title JJK_Track Manager_Remove Unused Tracks
 -- @author Junki Kim
 -- @version 1.0.0
--- @description A tool for cleaning up the project track list by deleting empty standard tracks and unused folder track structures that contain no media items.
 --========================================================
 
 local reaper = reaper

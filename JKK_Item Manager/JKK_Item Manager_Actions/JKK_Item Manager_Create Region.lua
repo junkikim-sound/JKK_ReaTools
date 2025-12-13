@@ -2,7 +2,6 @@
 -- @title JKK_Item Manager_Create Region
 -- @author Junki Kim
 -- @version 1.0.0
--- @changelog: A tool for creating a single region that spans the total time range covered by all selected media items.
 --========================================================
 
 local reaper = reaper

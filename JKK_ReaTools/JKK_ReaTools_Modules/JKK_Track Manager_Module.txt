@@ -2,7 +2,6 @@
 -- @title JKK_Track Manager_Module
 -- @author Junki Kim
 -- @version 1.0.0
--- @description A tool for managing tracks, including batch adjusting volume/pan, selecting tracks by folder level, and batch renaming.
 --========================================================
 
 -- local ctx = reaper.ImGui_CreateContext('JKK_Track Manager')
