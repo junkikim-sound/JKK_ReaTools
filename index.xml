@@ -1,14 +1,14 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="JKK_ReaTools" commit="60138124d08e656822a4b305aae544bcbc1f9390">
+<index version="1" name="JKK_ReaTools" commit="8a0afa5b3260c7203ea06f00848ffaa4402db965">
   <category name="JKK_Item Manager">
-    <reapack name="JKK_Item Manager.lua" type="script" desc="A tool to batch/randomly adjust properties like volume, pitch, play rate, and position of selected media items, and perform group time stretching.">
+    <reapack name="JKK_Item Manager.lua" type="script">
       <version name="0.9.5" author="Junki Kim" time="2025-12-13T09:37:37Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/b3b7669516b11bc6bc9bad8229124c6e38d1ea40/JKK_Item%20Manager/JKK_Item%20Manager.lua</source>
       </version>
     </reapack>
   </category>
   <category name="JKK_Item Manager/JKK_Item Manager_Actions">
-    <reapack name="JKK_Item Manager_Arrange Items to Current Setting.lua" type="script" desc="A tool for instantly applying the currently configured arrangement settings (position, volume, pitch, etc.) to selected items.">
+    <reapack name="JKK_Item Manager_Arrange Items to Current Setting.lua" type="script">
       <version name="1.0.0" author="Junki Kim" time="2025-12-13T09:37:37Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/b3b7669516b11bc6bc9bad8229124c6e38d1ea40/JKK_Item%20Manager/JKK_Item%20Manager_Actions/JKK_Item%20Manager_Arrange%20Items%20to%20Current%20Setting.lua</source>
       </version>
@@ -19,17 +19,17 @@
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/b3b7669516b11bc6bc9bad8229124c6e38d1ea40/JKK_Item%20Manager/JKK_Item%20Manager_Actions/JKK_Item%20Manager_Create%20Region.lua</source>
       </version>
     </reapack>
-    <reapack name="JKK_Item Manager_Move Items to Edit Cursor.lua" type="script" desc="A tool for moving all selected items to the current position of the project's edit cursor.">
+    <reapack name="JKK_Item Manager_Move Items to Edit Cursor.lua" type="script">
       <version name="1.0.0" author="Junki Kim" time="2025-12-13T09:37:37Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/b3b7669516b11bc6bc9bad8229124c6e38d1ea40/JKK_Item%20Manager/JKK_Item%20Manager_Actions/JKK_Item%20Manager_Move%20Items%20to%20Edit%20Cursor.lua</source>
       </version>
     </reapack>
-    <reapack name="JKK_Item Manager_Move Items to Mouse Location.lua" type="script" desc="A tool for moving all selected items to the track and position currently under the mouse cursor.">
+    <reapack name="JKK_Item Manager_Move Items to Mouse Location.lua" type="script">
       <version name="1.0.0" author="Junki Kim" time="2025-12-13T09:37:37Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/b3b7669516b11bc6bc9bad8229124c6e38d1ea40/JKK_Item%20Manager/JKK_Item%20Manager_Actions/JKK_Item%20Manager_Move%20Items%20to%20Mouse%20Location.lua</source>
       </version>
     </reapack>
-    <reapack name="JKK_Item Manager_Render Selected Items to Stereo --.lua" type="script" desc="A tool for rendering (gluing) selected media items into a single new stereo media item.">
+    <reapack name="JKK_Item Manager_Render Selected Items to Stereo --.lua" type="script">
       <version name="0.9.5" author="Junki Kim" time="2025-12-13T09:37:37Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/b3b7669516b11bc6bc9bad8229124c6e38d1ea40/JKK_Item%20Manager/JKK_Item%20Manager_Actions/JKK_Item%20Manager_Render%20Selected%20Items%20to%20Stereo%20--.lua</source>
       </version>
@@ -43,67 +43,67 @@
     </reapack>
   </category>
   <category name="JKK_ReaTools/JKK_ReaTools_Modules">
-    <reapack name="JKK_Item Manager_Module.txt" type="midinotenames" desc="A tool to batch/randomly adjust properties like volume, pitch, play rate, and position of selected media items, and perform group time stretching.">
+    <reapack name="JKK_Item Manager_Module.txt" type="midinotenames">
       <version name="0.9.5" author="Junki Kim" time="2025-12-13T09:43:45Z">
         <source>https://github.com/junkikim-sound/JKK_ReaTools/raw/60138124d08e656822a4b305aae544bcbc1f9390/JKK_ReaTools/JKK_ReaTools_Modules/JKK_Item%20Manager_Module.txt</source>
       </version>
     </reapack>
-    <reapack name="JKK_Timeline Manager_Module.txt" type="midinotenames" desc="A tool for creating, deleting, renaming, and coloring project regions based on time selection or selected media items.">
+    <reapack name="JKK_Timeline Manager_Module.txt" type="midinotenames">
       <version name="1.0.0" author="Junki Kim" time="2025-12-13T09:43:45Z">
         <source>https://github.com/junkikim-sound/JKK_ReaTools/raw/60138124d08e656822a4b305aae544bcbc1f9390/JKK_ReaTools/JKK_ReaTools_Modules/JKK_Timeline%20Manager_Module.txt</source>
       </version>
     </reapack>
-    <reapack name="JKK_Track Manager_Module.txt" type="midinotenames" desc="A tool for managing tracks, including batch adjusting volume/pan, selecting tracks by folder level, and batch renaming.">
+    <reapack name="JKK_Track Manager_Module.txt" type="midinotenames">
       <version name="1.0.0" author="Junki Kim" time="2025-12-13T09:43:45Z">
         <source>https://github.com/junkikim-sound/JKK_ReaTools/raw/60138124d08e656822a4b305aae544bcbc1f9390/JKK_ReaTools/JKK_ReaTools_Modules/JKK_Track%20Manager_Module.txt</source>
       </version>
     </reapack>
   </category>
   <category name="JKK_Theme">
-    <reapack name="JKK_Theme.txt" type="midinotenames" desc="Theme for JKK_ReaTools">
+    <reapack name="JKK_Theme.txt" type="midinotenames">
       <version name="0.5.2" author="Junki Kim" time="2025-12-13T09:37:37Z">
         <source>https://github.com/junkikim-sound/JKK_ReaTools/raw/b3b7669516b11bc6bc9bad8229124c6e38d1ea40/JKK_Theme/JKK_Theme.txt</source>
       </version>
     </reapack>
   </category>
   <category name="JKK_Timeline Manager">
-    <reapack name="JKK_Timeline Manager.lua" type="script" desc="A tool for creating, deleting, renaming, and coloring project regions based on time selection or selected media items.">
+    <reapack name="JKK_Timeline Manager.lua" type="script">
       <version name="1.0.0" author="Junki Kim" time="2025-12-13T09:37:37Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/b3b7669516b11bc6bc9bad8229124c6e38d1ea40/JKK_Timeline%20Manager/JKK_Timeline%20Manager.lua</source>
       </version>
     </reapack>
   </category>
   <category name="JKK_Timeline Manager/JKK_Timeline Manager_Actions">
-    <reapack name="JKK_Timeline Manager_Region Creator (from Selected Seperate Items).lua" type="script" desc="A tool for creating an independent region for the time range of each selected media item.">
+    <reapack name="JKK_Timeline Manager_Region Creator (from Selected Seperate Items).lua" type="script">
       <version name="1.0.0" author="Junki Kim" time="2025-12-13T09:37:37Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/b3b7669516b11bc6bc9bad8229124c6e38d1ea40/JKK_Timeline%20Manager/JKK_Timeline%20Manager_Actions/JKK_Timeline%20Manager_Region%20Creator%20(from%20Selected%20Seperate%20Items).lua</source>
       </version>
     </reapack>
-    <reapack name="JKK_Timeline Manager_Region Creator (from Selected Track Items).lua" type="script" desc="A tool for creating regions based on the selected items' range, with one region per selected track.">
+    <reapack name="JKK_Timeline Manager_Region Creator (from Selected Track Items).lua" type="script">
       <version name="1.0.0" author="Junki Kim" time="2025-12-13T09:37:37Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/b3b7669516b11bc6bc9bad8229124c6e38d1ea40/JKK_Timeline%20Manager/JKK_Timeline%20Manager_Actions/JKK_Timeline%20Manager_Region%20Creator%20(from%20Selected%20Track%20Items).lua</source>
       </version>
     </reapack>
-    <reapack name="JKK_Timeline Manager_Time Selection Creator (from Selected Track Items).lua" type="script" desc="A tool for setting the time selection to span the total time range from the start of the first selected item to the end of the last.">
+    <reapack name="JKK_Timeline Manager_Time Selection Creator (from Selected Track Items).lua" type="script">
       <version name="1.0.0" author="Junki Kim" time="2025-12-13T09:37:37Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/b3b7669516b11bc6bc9bad8229124c6e38d1ea40/JKK_Timeline%20Manager/JKK_Timeline%20Manager_Actions/JKK_Timeline%20Manager_Time%20Selection%20Creator%20(from%20Selected%20Track%20Items).lua</source>
       </version>
     </reapack>
   </category>
   <category name="JKK_Track Manager">
-    <reapack name="JKK_Track Manager.lua" type="script" desc="A tool for managing tracks, including batch adjusting volume/pan, selecting tracks by folder level, and batch renaming.">
+    <reapack name="JKK_Track Manager.lua" type="script">
       <version name="1.0.0" author="Junki Kim" time="2025-12-13T09:37:37Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/b3b7669516b11bc6bc9bad8229124c6e38d1ea40/JKK_Track%20Manager/JKK_Track%20Manager.lua</source>
       </version>
     </reapack>
   </category>
   <category name="JKK_Track Manager/JKK_Track Manager_Actions">
-    <reapack name="JKK_Track Manager_Follow Group Name.lua" type="script" desc="A tool for batch renaming selected tracks by appending a sequence number to the name of their parent folder (group) track.">
+    <reapack name="JKK_Track Manager_Follow Group Name.lua" type="script">
       <version name="1.0.0" author="Junki Kim" time="2025-12-13T09:37:37Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/b3b7669516b11bc6bc9bad8229124c6e38d1ea40/JKK_Track%20Manager/JKK_Track%20Manager_Actions/JKK_Track%20Manager_Follow%20Group%20Name.lua</source>
       </version>
     </reapack>
-    <reapack name="JKK_Track Manager_Remove Unused Tracks.lua" type="script" desc="A tool for cleaning up the project track list by deleting empty standard tracks and unused folder track structures that contain no media items.">
+    <reapack name="JKK_Track Manager_Remove Unused Tracks.lua" type="script">
       <version name="1.0.0" author="Junki Kim" time="2025-12-13T09:37:37Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/b3b7669516b11bc6bc9bad8229124c6e38d1ea40/JKK_Track%20Manager/JKK_Track%20Manager_Actions/JKK_Track%20Manager_Remove%20Unused%20Tracks.lua</source>
       </version>
