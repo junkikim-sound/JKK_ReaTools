@@ -2,7 +2,6 @@
 -- @title JKK_Track Manager_Module
 -- @author Junki Kim
 -- @version 1.0.0
--- @noindex
 --========================================================
 
 -- local ctx = reaper.ImGui_CreateContext('JKK_Track Manager')

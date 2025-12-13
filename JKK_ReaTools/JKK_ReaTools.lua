@@ -2,9 +2,6 @@
 -- @title JKK_ReaTools
 -- @author Junki Kim
 -- @version 1.0.0
--- @provides 
---     [nomain] JKK_ReaTools/JKK_ReaTools_Modules/*.lua
---     [nomain] JKK_Theme/JKK_Theme.lua
 --========================================================
 
 local RPR = reaper
