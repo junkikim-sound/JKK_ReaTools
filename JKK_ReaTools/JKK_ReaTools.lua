@@ -11,7 +11,7 @@ local selected_tool = 1
 local prev_project_state_count = reaper.GetProjectStateChangeCount(0) 
 local current_project_state_count = prev_project_state_count
 
-local theme_path = RPR.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_Theme/JKK_Theme.txt"
+local theme_path = RPR.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_Theme/JKK_Theme.lua"
 local ApplyTheme = (RPR.file_exists(theme_path) and dofile(theme_path).ApplyTheme) 
                    or function(ctx) return 0, 0 end
 
@@ -30,9 +30,9 @@ local function load_module(path)
 end
 
 local tools = {}
-tools[1] = { name = "Item",     module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Item Manager_Module.txt") }
-tools[2] = { name = "Track",    module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Track Manager_Module.txt") }
-tools[3] = { name = "Timeline", module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Timeline Manager_Module.txt") }
+tools[1] = { name = "Item",     module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Item Manager_Module.lua") }
+tools[2] = { name = "Track",    module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Track Manager_Module.lua") }
+tools[3] = { name = "Timeline", module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Timeline Manager_Module.lua") }
 
 ---------------------------------------------------------
 -- UI

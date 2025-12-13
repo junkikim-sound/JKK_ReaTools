@@ -2,12 +2,13 @@
 -- @title JKK_Timeline Manager_Module
 -- @author Junki Kim
 -- @version 1.0.0
+-- @noindex
 --========================================================
 
 -- local ctx = reaper.ImGui_CreateContext("JKK_Timeline Manager")
 local open = true
 
-local theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_Theme/JKK_Theme.txt"
+local theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_Theme/JKK_Theme.lua"
 local theme_module = nil
 if reaper.file_exists(theme_path) then
     theme_module = dofile(theme_path)
