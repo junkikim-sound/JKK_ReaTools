@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="JKK_ReaTools" commit="b3b7669516b11bc6bc9bad8229124c6e38d1ea40">
+<index version="1" name="JKK_ReaTools" commit="60138124d08e656822a4b305aae544bcbc1f9390">
   <category name="JKK_Item Manager">
     <reapack name="JKK_Item Manager.lua" type="script" desc="A tool to batch/randomly adjust properties like volume, pitch, play rate, and position of selected media items, and perform group time stretching.">
       <version name="0.9.5" author="Junki Kim" time="2025-12-13T09:37:37Z">
@@ -35,20 +35,27 @@
       </version>
     </reapack>
   </category>
-  <category name="JKK_Module">
+  <category name="JKK_ReaTools">
+    <reapack name="JKK_ReaTools.lua" type="script">
+      <version name="1.0.0" author="Junki Kim" time="2025-12-13T09:43:45Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/60138124d08e656822a4b305aae544bcbc1f9390/JKK_ReaTools/JKK_ReaTools.lua</source>
+      </version>
+    </reapack>
+  </category>
+  <category name="JKK_ReaTools/JKK_ReaTools_Modules">
     <reapack name="JKK_Item Manager_Module.txt" type="midinotenames" desc="A tool to batch/randomly adjust properties like volume, pitch, play rate, and position of selected media items, and perform group time stretching.">
-      <version name="0.9.5" author="Junki Kim" time="2025-12-13T09:37:37Z">
-        <source>https://github.com/junkikim-sound/JKK_ReaTools/raw/b3b7669516b11bc6bc9bad8229124c6e38d1ea40/JKK_Module/JKK_Item%20Manager_Module.txt</source>
+      <version name="0.9.5" author="Junki Kim" time="2025-12-13T09:43:45Z">
+        <source>https://github.com/junkikim-sound/JKK_ReaTools/raw/60138124d08e656822a4b305aae544bcbc1f9390/JKK_ReaTools/JKK_ReaTools_Modules/JKK_Item%20Manager_Module.txt</source>
       </version>
     </reapack>
     <reapack name="JKK_Timeline Manager_Module.txt" type="midinotenames" desc="A tool for creating, deleting, renaming, and coloring project regions based on time selection or selected media items.">
-      <version name="1.0.0" author="Junki Kim" time="2025-12-13T09:37:37Z">
-        <source>https://github.com/junkikim-sound/JKK_ReaTools/raw/b3b7669516b11bc6bc9bad8229124c6e38d1ea40/JKK_Module/JKK_Timeline%20Manager_Module.txt</source>
+      <version name="1.0.0" author="Junki Kim" time="2025-12-13T09:43:45Z">
+        <source>https://github.com/junkikim-sound/JKK_ReaTools/raw/60138124d08e656822a4b305aae544bcbc1f9390/JKK_ReaTools/JKK_ReaTools_Modules/JKK_Timeline%20Manager_Module.txt</source>
       </version>
     </reapack>
     <reapack name="JKK_Track Manager_Module.txt" type="midinotenames" desc="A tool for managing tracks, including batch adjusting volume/pan, selecting tracks by folder level, and batch renaming.">
-      <version name="1.0.0" author="Junki Kim" time="2025-12-13T09:37:37Z">
-        <source>https://github.com/junkikim-sound/JKK_ReaTools/raw/b3b7669516b11bc6bc9bad8229124c6e38d1ea40/JKK_Module/JKK_Track%20Manager_Module.txt</source>
+      <version name="1.0.0" author="Junki Kim" time="2025-12-13T09:43:45Z">
+        <source>https://github.com/junkikim-sound/JKK_ReaTools/raw/60138124d08e656822a4b305aae544bcbc1f9390/JKK_ReaTools/JKK_ReaTools_Modules/JKK_Track%20Manager_Module.txt</source>
       </version>
     </reapack>
   </category>
