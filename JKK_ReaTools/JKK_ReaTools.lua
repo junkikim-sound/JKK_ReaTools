@@ -30,9 +30,9 @@ local function load_module(path)
 end
 
 local tools = {}
-tools[1] = { name = "Item",     module = load_module("/Scripts/JKK_ReaTools/JKK_Module/JKK_Item Manager_Module.txt") }
-tools[2] = { name = "Track",    module = load_module("/Scripts/JKK_ReaTools/JKK_Module/JKK_Track Manager_Module.txt") }
-tools[3] = { name = "Timeline", module = load_module("/Scripts/JKK_ReaTools/JKK_Module/JKK_Timeline Manager_Module.txt") }
+tools[1] = { name = "Item",     module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Item Manager_Module.txt") }
+tools[2] = { name = "Track",    module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Track Manager_Module.txt") }
+tools[3] = { name = "Timeline", module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Timeline Manager_Module.txt") }
 
 ---------------------------------------------------------
 -- UI
