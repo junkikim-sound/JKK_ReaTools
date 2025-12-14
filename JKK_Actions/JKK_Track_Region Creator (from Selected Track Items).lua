@@ -1,5 +1,5 @@
 --========================================================
--- @title JJK_Timeline Manager_Region Creator (from Selected Track Items)
+-- @title JJK_TimelineTool_Region Creator (from Selected Track Items)
 -- @author Junki Kim
 -- @version 0.5.5
 --========================================================

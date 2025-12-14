@@ -1,5 +1,5 @@
 --========================================================
--- @title JKK_Item Manager_Move Items To Mouse Location
+-- @title JKK_ItemTool_Move Items To Mouse Location
 -- @author Junki Kim
 -- @version 0.5.5
 --========================================================

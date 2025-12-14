@@ -1,5 +1,5 @@
 --========================================================
--- @title JJK_Track Manager_Remove Unused Tracks
+-- @title JJK_TrackTool_Remove Unused Tracks
 -- @author Junki Kim
 -- @version 0.5.5
 --========================================================

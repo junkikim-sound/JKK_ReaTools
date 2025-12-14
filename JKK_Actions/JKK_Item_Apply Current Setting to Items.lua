@@ -1,10 +1,10 @@
 --========================================================
--- @title JKK_Item Manager_Arrange Items to Current Setting
+-- @title JKK_ItemTool_Apply Current Setting to Items
 -- @author Junki Kim
 -- @version 0.5.5
 --========================================================
 
-local EXTSTATE_KEY = "JKK_Item Manager"
+local EXTSTATE_KEY = "JKK_ItemTool"
 
 local function LoadSettings()
     local S = {}

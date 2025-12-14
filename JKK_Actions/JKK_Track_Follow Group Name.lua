@@ -1,5 +1,5 @@
 --========================================================
--- @title JJK_Track Manager_Follow Group Name
+-- @title JJK_TrackTool_Follow Group Name
 -- @author Junki Kim
 -- @version 0.5.5
 --========================================================

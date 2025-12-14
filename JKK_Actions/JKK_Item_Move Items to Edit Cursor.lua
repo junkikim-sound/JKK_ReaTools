@@ -1,5 +1,5 @@
 --========================================================
--- @title JKK_Item Manager_Move Items to Edit Cursor
+-- @title JKK_ItemTool_Move Items to Edit Cursor
 -- @author Junki Kim
 -- @version 0.5.5
 --========================================================

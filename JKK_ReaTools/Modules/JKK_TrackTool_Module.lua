@@ -417,7 +417,7 @@ end
 ------------------------------------------------------------
 -- UI_Mudule
 ------------------------------------------------------------
-function JKK_Track_Manager_Draw(ctx)
+function JKK_TrackTool_Draw(ctx)
     
     reaper.ImGui_Text(ctx, 'Select TRACKS before using this feature.')
     -- ========================================================
@@ -514,7 +514,7 @@ function JKK_Track_Manager_Draw(ctx)
     if changed_base_name then base_name = new_base_name end
 
     reaper.ImGui_SameLine(ctx)
-    if reaper.ImGui_Button(ctx, 'Rename Tracks', 116, 22) then
+    if reaper.ImGui_Button(ctx, 'Rename Tracks', 118, 22) then
         if base_name ~= "" then
             RenameTracks()
         end
@@ -530,13 +530,13 @@ function JKK_Track_Manager_Draw(ctx)
         Action_CreateRegions()
     end
 
-    if reaper.ImGui_Button(ctx, "Remove Unused Tracks", 208, 22) then
-        DeleteEmptyTracksAndFolders()
-    end
-    reaper.ImGui_SameLine(ctx)
-
     if reaper.ImGui_Button(ctx, "Follow Group Name", 208, 22) then
         FollowFolderName()
+    end
+    reaper.ImGui_SameLine(ctx)
+    
+    if reaper.ImGui_Button(ctx, "Remove Unused Tracks", 208, 22) then
+        DeleteEmptyTracksAndFolders()
     end
     reaper.ImGui_Spacing(ctx)
     -- ========================================================
@@ -571,5 +571,5 @@ function JKK_Track_Manager_Draw(ctx)
 
 end
 return {
-    JKK_Track_Manager_Draw = JKK_Track_Manager_Draw,
+    JKK_TrackTool_Draw = JKK_TrackTool_Draw,
 }

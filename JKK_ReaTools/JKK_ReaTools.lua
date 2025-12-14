@@ -3,20 +3,20 @@
 -- @author Junki Kim
 -- @version 0.5.5
 -- @provides 
---     [nomain] JKK_ReaTools_Modules/JKK_Item Manager_Module.lua
---     [nomain] JKK_ReaTools_Modules/JKK_Timeline Manager_Module.lua
---     [nomain] JKK_ReaTools_Modules/JKK_Track Manager_Module.lua
---     [nomain] ../JKK_Theme/JKK_Theme.lua
+--     [nomain] Modules/JKK_ItemTool_Module.lua
+--     [nomain] Modules/JKK_TrackTool_Module.lua
+--     [nomain] Modules/JKK_TimelineTool_Module.lua
+--     [nomain] Modules/JKK_Theme.lua
 --========================================================
 
 local RPR = reaper
-local ctx = RPR.ImGui_CreateContext("JKK_ReaTools_Main")
+local ctx = RPR.ImGui_CreateContext("JKK_ReaTools")
 local open = true
 local selected_tool = 1
 local prev_project_state_count = reaper.GetProjectStateChangeCount(0) 
 local current_project_state_count = prev_project_state_count
 
-local theme_path = RPR.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_Theme/JKK_Theme.lua"
+local theme_path = RPR.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme.lua"
 local ApplyTheme = (RPR.file_exists(theme_path) and dofile(theme_path).ApplyTheme) 
                    or function(ctx) return 0, 0 end
 
@@ -35,9 +35,9 @@ local function load_module(path)
 end
 
 local tools = {}
-tools[1] = { name = "Item",     module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/JKK_ReaTools_Modules/JKK_Item Manager_Module.lua") }
-tools[2] = { name = "Track",    module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/JKK_ReaTools_Modules/JKK_Track Manager_Module.lua") }
-tools[3] = { name = "Timeline", module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/JKK_ReaTools_Modules/JKK_Timeline Manager_Module.lua") }
+tools[1] = { name = "Item Tools",     module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_ItemTool_Module.lua") }
+tools[2] = { name = "Track Tools",    module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_TrackTool_Module.lua") }
+tools[3] = { name = "Timeline Tools", module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_TimelineTool_Module.lua") }
 
 ---------------------------------------------------------
 -- UI
@@ -45,7 +45,7 @@ tools[3] = { name = "Timeline", module = load_module("/Scripts/JKK_ReaTools/JKK_
 local function Main()
     current_project_state_count = reaper.GetProjectStateChangeCount(0) 
     
-    reaper.ImGui_SetNextWindowSize(ctx, 650, 700, reaper.ImGui_Cond_Once())
+    reaper.ImGui_SetNextWindowSize(ctx, 650, 580, reaper.ImGui_Cond_Once())
     style_pop_count, color_pop_count = ApplyTheme(ctx)
 
     local visible, open_flag = reaper.ImGui_Begin(ctx, 'JKK_ReaTools', open,
@@ -73,19 +73,19 @@ local function Main()
         
         -- ========================================================
         if current_tool and current_tool.module then
-            if current_tool.name == "Item" then
-                if current_tool.module.JKK_Item_Manager_Draw then
-                    current_tool.module.JKK_Item_Manager_Draw(ctx, prev_project_state_count, current_project_state_count)
+            if current_tool.name == "Item Tools" then
+                if current_tool.module.JKK_ItemTool_Draw then
+                    current_tool.module.JKK_ItemTool_Draw(ctx, prev_project_state_count, current_project_state_count)
                 end
 
-            elseif current_tool.name == "Track" then
-                if current_tool.module.JKK_Track_Manager_Draw then
-                    current_tool.module.JKK_Track_Manager_Draw(ctx)
+            elseif current_tool.name == "Track Tools" then
+                if current_tool.module.JKK_TrackTool_Draw then
+                    current_tool.module.JKK_TrackTool_Draw(ctx)
                 end
 
-            elseif current_tool.name == "Timeline" then
-                if current_tool.module.JKK_Timeline_Manager_Draw then
-                    current_tool.module.JKK_Timeline_Manager_Draw(ctx)
+            elseif current_tool.name == "Timeline Tools" then
+                if current_tool.module.JKK_TimelineTool_Draw then
+                    current_tool.module.JKK_TimelineTool_Draw(ctx)
                 end
             end 
             

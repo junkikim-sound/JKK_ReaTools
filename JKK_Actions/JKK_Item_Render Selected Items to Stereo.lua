@@ -1,5 +1,5 @@
 --========================================================
--- @title JKK_Item Manager_Render Selected Items to Stereo
+-- @title JKK_ItemTool_Render Selected Items to Stereo
 -- @author Junki Kim
 -- @version 0.5.5
 --========================================================

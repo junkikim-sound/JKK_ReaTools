@@ -1,10 +1,11 @@
 --========================================================
--- @title JKK_Track Manager
+-- @title JKK_TrackTool
 -- @author Junki Kim
--- @version 0.5.5
+-- @version 1.0.0
+-- @noindex
 --========================================================
 
-local ctx = reaper.ImGui_CreateContext('JKK_Track Manager')
+local ctx = reaper.ImGui_CreateContext('JKK_TrackTool')
 local open = true
 
 local theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_Theme/JKK_Theme.lua"
@@ -418,10 +419,10 @@ end
 ------------------------------------------------------------
 function main()
     -- Theme Push
-    reaper.ImGui_SetNextWindowSize(ctx, 650, 540, reaper.ImGui_Cond_FirstUseEver()) 
+    reaper.ImGui_SetNextWindowSize(ctx, 650, 550, reaper.ImGui_Cond_FirstUseEver()) 
     style_pop_count, color_pop_count = ApplyTheme(ctx)
 
-    local visible, open = reaper.ImGui_Begin(ctx, 'JKK_Track Manager', open,
+    local visible, open = reaper.ImGui_Begin(ctx, 'JKK_TrackTool', open,
         reaper.ImGui_WindowFlags_NoCollapse())
 
     if visible then

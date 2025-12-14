@@ -1,5 +1,5 @@
 --========================================================
--- @title JJK_Timeline Manager_Time Selection Creator (from Selected Track Items)
+-- @title JJK_TimelineTool_Time Selection Creator (from Selected Track Items)
 -- @author Junki Kim
 -- @version 0.5.5
 --========================================================

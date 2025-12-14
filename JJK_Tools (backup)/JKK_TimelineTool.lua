@@ -1,11 +1,11 @@
 --========================================================
--- @title JKK_Timeline Manager_Module
+-- @title JKK_TimelineTool
 -- @author Junki Kim
--- @version 0.5.5
+-- @version 1.0.0
 -- @noindex
 --========================================================
 
--- local ctx = reaper.ImGui_CreateContext("JKK_Timeline Manager")
+local ctx = reaper.ImGui_CreateContext("JKK_TimelineTool")
 local open = true
 
 local theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_Theme/JKK_Theme.lua"
@@ -384,74 +384,96 @@ local function SetRegionColors(colorTable)
 end
 
 ---------------------------------------------------------
--- UI_Module 
+-- UI
 ---------------------------------------------------------
-function JKK_Timeline_Manager_Draw(ctx)
-    -- ========================================================
-    reaper.ImGui_SeparatorText(ctx, 'Items/Tracks Actions')
-    reaper.ImGui_Text(ctx, 'Select ITEMS before using this feature.')
+local function Main()
+    reaper.ImGui_SetNextWindowSize(ctx, 650, 550, reaper.ImGui_Cond_Once())
+    style_pop_count, color_pop_count = ApplyTheme(ctx)
 
-    changed, create_base_name = reaper.ImGui_InputTextMultiline(ctx, '##CreateRegionBaseName', create_base_name, 292, 22)
-    reaper.ImGui_SameLine(ctx, 0, 16)
-    
-    if reaper.ImGui_Button(ctx, "Create Regions", 116, 22) then
-        CreateRegionsFromSelectedItems(create_base_name)
-    end
-    reaper.ImGui_Spacing(ctx)
+    local visible, is_open = reaper.ImGui_Begin(ctx, "JKK_TimelineTool", open,
+        reaper.ImGui_WindowFlags_NoCollapse())
 
-    reaper.ImGui_Text(ctx, 'Select TRACKS before using this feature.')
-    if reaper.ImGui_Button(ctx, 'Create Time Selection', 208, 22) then
-        Action_TimeSelection()
-    end
-    reaper.ImGui_SameLine(ctx)
+    open = is_open
 
-    if reaper.ImGui_Button(ctx, 'Create Regions from Tracks', 208, 22) then
-        Action_CreateRegions()
-    end
-    reaper.ImGui_Spacing(ctx)
+    if visible then
+        -- ========================================================
+        reaper.ImGui_SeparatorText(ctx, 'Items/Tracks Actions')
+        reaper.ImGui_Text(ctx, 'Select ITEMS before using this feature.')
 
-    -- ========================================================
-    reaper.ImGui_SeparatorText(ctx, 'Region Actions')
-    reaper.ImGui_Text(ctx, 'Create a TIME SELECTION to use this feature.')
+        changed, create_base_name = reaper.ImGui_InputTextMultiline(ctx, '##CreateRegionBaseName', create_base_name, 292, 22)
+        reaper.ImGui_SameLine(ctx, 0, 16)
+        
+        if reaper.ImGui_Button(ctx, "Create Regions", 116, 22) then
+            CreateRegionsFromSelectedItems(create_base_name)
+        end
+        reaper.ImGui_Spacing(ctx)
 
-    changed, rename_base_name = reaper.ImGui_InputTextMultiline(ctx, '##RenameRegionBaseName', rename_base_name, 292, 22)
-    reaper.ImGui_SameLine(ctx, 0, 16)
-    
-    if reaper.ImGui_Button(ctx, "Rename Regions", 116, 22) then
-        ApplyChanges()
-    end
-    reaper.ImGui_Spacing(ctx)
-    
-    if reaper.ImGui_Button(ctx, "Delete Regions in Time Selection", 208, 22) then
-        DeleteOverlappingRegions()
-    end
-    reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_Text(ctx, 'Select TRACKS before using this feature.')
+        if reaper.ImGui_Button(ctx, 'Create Time Selection', 208, 22) then
+            Action_TimeSelection()
+        end
+        reaper.ImGui_SameLine(ctx)
 
-    if reaper.ImGui_Button(ctx, "Delete All Regions", 208, 22) then
-        DeleteAllRegions()
-    end
-    reaper.ImGui_Spacing(ctx)
-    reaper.ImGui_Spacing(ctx)
+        if reaper.ImGui_Button(ctx, 'Create Regions from Tracks', 208, 22) then
+            Action_CreateRegions()
+        end
+        reaper.ImGui_Spacing(ctx)
 
-    local columns = 12
-    for i, col in ipairs(region_colors) do
-        local r, g, b = col[1], col[2], col[3]
-        local packed = reaper.ImGui_ColorConvertDouble4ToU32(r/255, g/255, b/255, 1)
+        -- ========================================================
+        reaper.ImGui_SeparatorText(ctx, 'Region Actions')
+        reaper.ImGui_Text(ctx, 'Create a TIME SELECTION to use this feature.')
 
-        reaper.ImGui_PushID(ctx, "col"..i)
+        changed, rename_base_name = reaper.ImGui_InputTextMultiline(ctx, '##RenameRegionBaseName', rename_base_name, 292, 22)
+        reaper.ImGui_SameLine(ctx, 0, 16)
+        
+        if reaper.ImGui_Button(ctx, "Rename Regions", 116, 22) then
+            ApplyChanges()
+        end
+        reaper.ImGui_Spacing(ctx)
+        
+        if reaper.ImGui_Button(ctx, "Delete Regions in Time Selection", 208, 22) then
+            DeleteOverlappingRegions()
+        end
+        reaper.ImGui_SameLine(ctx)
 
-        if reaper.ImGui_ColorButton(ctx, "##Color", packed, 0, 30, 30) then
-            selectedColor = col
-            SetRegionColors(selectedColor)
+        if reaper.ImGui_Button(ctx, "Delete All Regions", 208, 22) then
+            DeleteAllRegions()
+        end
+        reaper.ImGui_Spacing(ctx)
+        reaper.ImGui_Spacing(ctx)
+
+        local columns = 12
+        for i, col in ipairs(region_colors) do
+            local r, g, b = col[1], col[2], col[3]
+            local packed = reaper.ImGui_ColorConvertDouble4ToU32(r/255, g/255, b/255, 1)
+
+            reaper.ImGui_PushID(ctx, "col"..i)
+
+            if reaper.ImGui_ColorButton(ctx, "##Color", packed, 0, 30, 30) then
+                selectedColor = col
+                SetRegionColors(selectedColor)
+            end
+
+            reaper.ImGui_PopID(ctx)
+
+            if i % columns ~= 0 then
+                reaper.ImGui_SameLine(ctx)
+            end
         end
 
-        reaper.ImGui_PopID(ctx)
+        -- ========================================================
+        reaper.ImGui_PopStyleVar(ctx, style_pop_count)
+        reaper.ImGui_PopStyleColor(ctx, color_pop_count)
+        reaper.ImGui_End(ctx)
+    end
 
-        if i % columns ~= 0 then
-            reaper.ImGui_SameLine(ctx)
+    if open then
+        reaper.defer(Main)
+    else
+        if reaper.ImGui_DestroyContext then
+            reaper.ImGui_DestroyContext(ctx)
         end
     end
 end
-return {
-    JKK_Timeline_Manager_Draw = JKK_Timeline_Manager_Draw,
-}
+
+reaper.defer(Main)
