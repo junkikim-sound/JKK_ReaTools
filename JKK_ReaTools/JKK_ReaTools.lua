@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.5.6
+-- @version 0.5.7
 -- @provides 
 --     [nomain] Modules/JKK_ItemTool_Module.lua
 --     [nomain] Modules/JKK_TrackTool_Module.lua
