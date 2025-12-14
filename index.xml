@@ -1,36 +1,64 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="JKK_ReaTools" commit="59e126ad33111b47f82c7461f3af3f483e2f02c0">
-  <category name="JKK_Item Manager">
-    <reapack name="JKK_Item Manager.lua" type="script">
-      <version name="0.5.5" author="Junki Kim" time="2025-12-13T15:44:11Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/59e126ad33111b47f82c7461f3af3f483e2f02c0/JKK_Item%20Manager/JKK_Item%20Manager.lua</source>
+<index version="1" name="JKK_ReaTools" commit="20b0a6d794bb8f8ee5b3567d876b6bcdd2350387">
+  <category name="JKK_Actions">
+    <reapack name="JKK_Item_Apply Current Setting to Items.lua" type="script">
+      <version name="0.5.5" author="Junki Kim" time="2025-12-14T09:29:40Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/20b0a6d794bb8f8ee5b3567d876b6bcdd2350387/JKK_Actions/JKK_Item_Apply%20Current%20Setting%20to%20Items.lua</source>
       </version>
     </reapack>
-  </category>
-  <category name="JKK_Item Manager/JKK_Item Manager_Actions">
-    <reapack name="JKK_Item Manager_Arrange Items to Current Setting.lua" type="script">
-      <version name="0.5.5" author="Junki Kim" time="2025-12-13T15:44:11Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/59e126ad33111b47f82c7461f3af3f483e2f02c0/JKK_Item%20Manager/JKK_Item%20Manager_Actions/JKK_Item%20Manager_Arrange%20Items%20to%20Current%20Setting.lua</source>
+    <reapack name="JKK_Item_Move Items to Edit Cursor.lua" type="script">
+      <version name="0.5.5" author="Junki Kim" time="2025-12-14T09:29:40Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/20b0a6d794bb8f8ee5b3567d876b6bcdd2350387/JKK_Actions/JKK_Item_Move%20Items%20to%20Edit%20Cursor.lua</source>
       </version>
     </reapack>
-    <reapack name="JKK_Item Manager_Create Region.lua" type="script">
-      <version name="0.5.5" author="Junki Kim" time="2025-12-13T15:44:11Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/59e126ad33111b47f82c7461f3af3f483e2f02c0/JKK_Item%20Manager/JKK_Item%20Manager_Actions/JKK_Item%20Manager_Create%20Region.lua</source>
+    <reapack name="JKK_Item_Move Items to Mouse Location.lua" type="script">
+      <version name="0.5.5" author="Junki Kim" time="2025-12-14T09:29:40Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/20b0a6d794bb8f8ee5b3567d876b6bcdd2350387/JKK_Actions/JKK_Item_Move%20Items%20to%20Mouse%20Location.lua</source>
       </version>
     </reapack>
-    <reapack name="JKK_Item Manager_Move Items to Edit Cursor.lua" type="script">
-      <version name="0.5.5" author="Junki Kim" time="2025-12-13T15:44:11Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/59e126ad33111b47f82c7461f3af3f483e2f02c0/JKK_Item%20Manager/JKK_Item%20Manager_Actions/JKK_Item%20Manager_Move%20Items%20to%20Edit%20Cursor.lua</source>
+    <reapack name="JKK_Item_Region Creator (from Selected Seperate Items).lua" type="script">
+      <version name="0.5.5" author="Junki Kim" time="2025-12-14T09:29:40Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/20b0a6d794bb8f8ee5b3567d876b6bcdd2350387/JKK_Actions/JKK_Item_Region%20Creator%20(from%20Selected%20Seperate%20Items).lua</source>
       </version>
     </reapack>
-    <reapack name="JKK_Item Manager_Move Items to Mouse Location.lua" type="script">
-      <version name="0.5.5" author="Junki Kim" time="2025-12-13T15:44:11Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/59e126ad33111b47f82c7461f3af3f483e2f02c0/JKK_Item%20Manager/JKK_Item%20Manager_Actions/JKK_Item%20Manager_Move%20Items%20to%20Mouse%20Location.lua</source>
+    <reapack name="JKK_Item_Render Selected Items to Stereo.lua" type="script">
+      <version name="0.5.5" author="Junki Kim" time="2025-12-14T09:29:40Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/20b0a6d794bb8f8ee5b3567d876b6bcdd2350387/JKK_Actions/JKK_Item_Render%20Selected%20Items%20to%20Stereo.lua</source>
       </version>
     </reapack>
-    <reapack name="JKK_Item Manager_Render Selected Items to Stereo.lua" type="script">
-      <version name="0.5.5" author="Junki Kim" time="2025-12-13T15:44:11Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/59e126ad33111b47f82c7461f3af3f483e2f02c0/JKK_Item%20Manager/JKK_Item%20Manager_Actions/JKK_Item%20Manager_Render%20Selected%20Items%20to%20Stereo.lua</source>
+    <reapack name="JKK_Timeline_Delete All Regions.lua" type="script">
+      <version name="0.5.5" author="Junki Kim" time="2025-12-14T09:29:40Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/20b0a6d794bb8f8ee5b3567d876b6bcdd2350387/JKK_Actions/JKK_Timeline_Delete%20All%20Regions.lua</source>
+      </version>
+    </reapack>
+    <reapack name="JKK_Timeline_Delete Overlapping Regions.lua" type="script">
+      <version name="0.5.5" author="Junki Kim" time="2025-12-14T09:29:40Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/20b0a6d794bb8f8ee5b3567d876b6bcdd2350387/JKK_Actions/JKK_Timeline_Delete%20Overlapping%20Regions.lua</source>
+      </version>
+    </reapack>
+    <reapack name="JKK_Timeline_Rename Regions.lua" type="script">
+      <version name="0.5.5" author="Junki Kim" time="2025-12-14T09:29:40Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/20b0a6d794bb8f8ee5b3567d876b6bcdd2350387/JKK_Actions/JKK_Timeline_Rename%20Regions.lua</source>
+      </version>
+    </reapack>
+    <reapack name="JKK_Track_Follow Group Name.lua" type="script">
+      <version name="0.5.5" author="Junki Kim" time="2025-12-14T09:29:40Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/20b0a6d794bb8f8ee5b3567d876b6bcdd2350387/JKK_Actions/JKK_Track_Follow%20Group%20Name.lua</source>
+      </version>
+    </reapack>
+    <reapack name="JKK_Track_Region Creator (from Selected Track Items).lua" type="script">
+      <version name="0.5.5" author="Junki Kim" time="2025-12-14T09:29:40Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/20b0a6d794bb8f8ee5b3567d876b6bcdd2350387/JKK_Actions/JKK_Track_Region%20Creator%20(from%20Selected%20Track%20Items).lua</source>
+      </version>
+    </reapack>
+    <reapack name="JKK_Track_Remove Unused Tracks.lua" type="script">
+      <version name="0.5.5" author="Junki Kim" time="2025-12-14T09:29:40Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/20b0a6d794bb8f8ee5b3567d876b6bcdd2350387/JKK_Actions/JKK_Track_Remove%20Unused%20Tracks.lua</source>
+      </version>
+    </reapack>
+    <reapack name="JKK_Track_Time Selection Creator (from Selected Track Items).lua" type="script">
+      <version name="0.5.5" author="Junki Kim" time="2025-12-14T09:29:40Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/20b0a6d794bb8f8ee5b3567d876b6bcdd2350387/JKK_Actions/JKK_Track_Time%20Selection%20Creator%20(from%20Selected%20Track%20Items).lua</source>
       </version>
     </reapack>
   </category>
@@ -42,49 +70,6 @@
         <source file="JKK_ReaTools_Modules/JKK_Timeline Manager_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/59e126ad33111b47f82c7461f3af3f483e2f02c0/JKK_ReaTools/JKK_ReaTools_Modules/JKK_Timeline%20Manager_Module.lua</source>
         <source file="JKK_ReaTools_Modules/JKK_Track Manager_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/59e126ad33111b47f82c7461f3af3f483e2f02c0/JKK_ReaTools/JKK_ReaTools_Modules/JKK_Track%20Manager_Module.lua</source>
         <source file="../JKK_Theme/JKK_Theme.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/59e126ad33111b47f82c7461f3af3f483e2f02c0/JKK_Theme/JKK_Theme.lua</source>
-      </version>
-    </reapack>
-  </category>
-  <category name="JKK_Timeline Manager">
-    <reapack name="JKK_Timeline Manager.lua" type="script">
-      <version name="0.5.5" author="Junki Kim" time="2025-12-13T15:44:11Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/59e126ad33111b47f82c7461f3af3f483e2f02c0/JKK_Timeline%20Manager/JKK_Timeline%20Manager.lua</source>
-      </version>
-    </reapack>
-  </category>
-  <category name="JKK_Timeline Manager/JKK_Timeline Manager_Actions">
-    <reapack name="JKK_Timeline Manager_Region Creator (from Selected Seperate Items).lua" type="script">
-      <version name="0.5.5" author="Junki Kim" time="2025-12-13T15:44:11Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/59e126ad33111b47f82c7461f3af3f483e2f02c0/JKK_Timeline%20Manager/JKK_Timeline%20Manager_Actions/JKK_Timeline%20Manager_Region%20Creator%20(from%20Selected%20Seperate%20Items).lua</source>
-      </version>
-    </reapack>
-    <reapack name="JKK_Timeline Manager_Region Creator (from Selected Track Items).lua" type="script">
-      <version name="0.5.5" author="Junki Kim" time="2025-12-13T15:44:11Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/59e126ad33111b47f82c7461f3af3f483e2f02c0/JKK_Timeline%20Manager/JKK_Timeline%20Manager_Actions/JKK_Timeline%20Manager_Region%20Creator%20(from%20Selected%20Track%20Items).lua</source>
-      </version>
-    </reapack>
-    <reapack name="JKK_Timeline Manager_Time Selection Creator (from Selected Track Items).lua" type="script">
-      <version name="0.5.5" author="Junki Kim" time="2025-12-13T15:44:11Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/59e126ad33111b47f82c7461f3af3f483e2f02c0/JKK_Timeline%20Manager/JKK_Timeline%20Manager_Actions/JKK_Timeline%20Manager_Time%20Selection%20Creator%20(from%20Selected%20Track%20Items).lua</source>
-      </version>
-    </reapack>
-  </category>
-  <category name="JKK_Track Manager">
-    <reapack name="JKK_Track Manager.lua" type="script">
-      <version name="0.5.5" author="Junki Kim" time="2025-12-13T15:44:11Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/59e126ad33111b47f82c7461f3af3f483e2f02c0/JKK_Track%20Manager/JKK_Track%20Manager.lua</source>
-      </version>
-    </reapack>
-  </category>
-  <category name="JKK_Track Manager/JKK_Track Manager_Actions">
-    <reapack name="JKK_Track Manager_Follow Group Name.lua" type="script">
-      <version name="0.5.5" author="Junki Kim" time="2025-12-13T15:44:11Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/59e126ad33111b47f82c7461f3af3f483e2f02c0/JKK_Track%20Manager/JKK_Track%20Manager_Actions/JKK_Track%20Manager_Follow%20Group%20Name.lua</source>
-      </version>
-    </reapack>
-    <reapack name="JKK_Track Manager_Remove Unused Tracks.lua" type="script">
-      <version name="0.5.5" author="Junki Kim" time="2025-12-13T15:44:11Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/59e126ad33111b47f82c7461f3af3f483e2f02c0/JKK_Track%20Manager/JKK_Track%20Manager_Actions/JKK_Track%20Manager_Remove%20Unused%20Tracks.lua</source>
       </version>
     </reapack>
   </category>
