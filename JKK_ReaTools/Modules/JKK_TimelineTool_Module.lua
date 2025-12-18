@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_TimelineTool_Module
 -- @author Junki Kim
--- @version 0.6.0
+-- @version 0.6.1
 -- @noindex
 --========================================================
 
@@ -207,7 +207,7 @@ function JKK_TimelineTool_Draw(ctx, shared_info)
         shared_info.hovered_id = "REGION_RENAME"
     end
     reaper.ImGui_Spacing(ctx)
-    reaper.ImGui_Dummy(ctx, 0, 322)
+    reaper.ImGui_SetCursorPos(ctx, 0, 500)
 
     -- ========================================================
     reaper.ImGui_SeparatorText(ctx, 'Region Color Pallete')

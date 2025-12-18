@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ItemTool_Module
 -- @author Junki Kim
--- @version 0.6.0
+-- @version 0.6.1
 -- @noindex
 --========================================================
 
@@ -1080,6 +1080,7 @@ function JKK_ItemTool_Draw(ctx, prev_count, current_count, shared_info)
         shared_info.hovered_id = "ITEM_CRT_REGION"
     end
     reaper.ImGui_Spacing(ctx)
+    reaper.ImGui_SetCursorPos(ctx, 0, 500)
 
     -- ========================================================
     reaper.ImGui_SeparatorText(ctx, 'Item Color Palette')
