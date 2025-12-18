@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_TimelineTool_Module
 -- @author Junki Kim
--- @version 0.5.7
+-- @version 0.6.0
 -- @noindex
 --========================================================
 
@@ -16,16 +16,21 @@ end
 local ApplyTheme = theme_module and theme_module.ApplyTheme or function(ctx) return 0, 0 end
 local style_pop_count, color_pop_count
 
+local create_base_name = ""
+local rename_base_name = ""
+local selectedColor = nil
+local MAX_NAME_LEN = 256
+
 -- Color Palette Data (24 Colors)
 local region_colors = {
   {10,70,57}, {14,96,78},  {21,139,114}, {23,156,128},  {69,171,148},  {162,202,189}, {121,18,19}, {156,23,24},  {168,58,59},  {179,93,93},  {202,162,162}, {221,195,195},
   {10,43,70}, {15,64,104}, {23,96,156},  {102,143,182}, {171,186,207}, {225,230,237}, {88,114,47}, {125,162,67}, {159,206,85}, {184,239,99}, {205,244,152}, {226,248,200},
 }
 
-local create_base_name = ""
-local rename_base_name = ""
-local selectedColor = nil
-local MAX_NAME_LEN = 256
+-- Icon Set
+local icon_path = reaper.GetResourcePath():gsub("\\", "/") .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Icons/"
+local icon_delall = nil
+local icon_delsel = nil
 
 ---------------------------------------------------------
 -- Functions: Timeline Helpers
@@ -159,29 +164,50 @@ end
 ---------------------------------------------------------
 -- UI_Module 
 ---------------------------------------------------------
-function JKK_TimelineTool_Draw(ctx)
+function JKK_TimelineTool_Draw(ctx, shared_info)
+    if not icon_delsel or not reaper.ImGui_ValidatePtr(icon_delsel, 'ImGui_Image*') then 
+        icon_delsel = reaper.ImGui_CreateImage(icon_path .. "REGION_Delete in Time Selection @remixicon.png")
+    end
+    local draw_sel = reaper.ImGui_ValidatePtr(icon_delsel, 'ImGui_Image*')
+    if not icon_delall or not reaper.ImGui_ValidatePtr(icon_delall, 'ImGui_Image*') then
+        icon_delall = reaper.ImGui_CreateImage(icon_path .. "REGION_Delete All Regions @remixicon.png")
+    end
+    local draw_all = reaper.ImGui_ValidatePtr(icon_delall, 'ImGui_Image*')
+
     reaper.ImGui_Text(ctx, 'Create a TIME SELECTION to use this feature.')
     -- ========================================================
     reaper.ImGui_SeparatorText(ctx, 'Region Actions')
-
-    changed, rename_base_name = reaper.ImGui_InputTextMultiline(ctx, '##RenameRegionBaseName', rename_base_name, 292, 22)
-    reaper.ImGui_SameLine(ctx, 0, 16)
     
-    if reaper.ImGui_Button(ctx, "Rename Regions", 116, 22) then
-        ApplyChanges()
-    end
-    reaper.ImGui_Spacing(ctx)
-    
-    if reaper.ImGui_Button(ctx, "Delete Regions in Time Selection", 208, 22) then
+    if reaper.ImGui_ImageButton(ctx, "##btn_delsel", icon_delsel, 22, 22) then
         DeleteOverlappingRegions()
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+        shared_info.hovered_id = "REGION_DEL_SELECTED"
     end
     reaper.ImGui_SameLine(ctx)
 
-    if reaper.ImGui_Button(ctx, "Delete All Regions", 208, 22) then
+    if reaper.ImGui_ImageButton(ctx, "##btn_delall", icon_delall, 22, 22) then
         DeleteAllRegions()
     end
+    if reaper.ImGui_IsItemHovered(ctx) then
+        shared_info.hovered_id = "REGION_DEL_ALL"
+    end
+    reaper.ImGui_SameLine(ctx)
+
+    changed, rename_base_name = reaper.ImGui_InputTextMultiline(ctx, '##RenameRegionBaseName', rename_base_name, 268, 27)
+    if reaper.ImGui_IsItemHovered(ctx) then
+        shared_info.hovered_id = "REGION_RENAME"
+    end
+    reaper.ImGui_SameLine(ctx)
+    
+    if reaper.ImGui_Button(ctx, "Rename Regions", 116, 27) then
+        ApplyChanges()
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+        shared_info.hovered_id = "REGION_RENAME"
+    end
     reaper.ImGui_Spacing(ctx)
-    reaper.ImGui_Spacing(ctx)
+    reaper.ImGui_Dummy(ctx, 0, 322)
 
     -- ========================================================
     reaper.ImGui_SeparatorText(ctx, 'Region Color Pallete')
@@ -195,6 +221,9 @@ function JKK_TimelineTool_Draw(ctx)
         if reaper.ImGui_ColorButton(ctx, "##Color", packed, 0, 30, 30) then
             selectedColor = col
             SetRegionColors(selectedColor)
+        end
+        if reaper.ImGui_IsItemHovered(ctx) then
+            shared_info.hovered_id = "REGION_CHNG_COL"
         end
 
         reaper.ImGui_PopID(ctx)
