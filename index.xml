@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="JKK_ReaTools" commit="0d29532a7af7c3bc08916acfc2e07e19a7ed14c1">
+<index version="1" name="JKK_ReaTools" commit="3dd0bfce3d2d9e62be7104fa67be3cff77f230e8">
   <category name="JKK_Actions">
     <reapack name="JKK_Item_Apply Current Setting to Items.lua" type="script">
       <version name="0.5.5" author="Junki Kim" time="2025-12-14T09:29:40Z">
@@ -70,6 +70,13 @@
         <source file="Modules/JKK_TrackTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/0d29532a7af7c3bc08916acfc2e07e19a7ed14c1/JKK_ReaTools/Modules/JKK_TrackTool_Module.lua</source>
         <source file="Modules/JKK_TimelineTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/0d29532a7af7c3bc08916acfc2e07e19a7ed14c1/JKK_ReaTools/Modules/JKK_TimelineTool_Module.lua</source>
         <source file="Modules/JKK_Theme.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/0d29532a7af7c3bc08916acfc2e07e19a7ed14c1/JKK_ReaTools/Modules/JKK_Theme.lua</source>
+      </version>
+      <version name="0.5.8" author="Junki Kim" time="2025-12-17T00:34:59Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/3dd0bfce3d2d9e62be7104fa67be3cff77f230e8/JKK_ReaTools/JKK_ReaTools.lua</source>
+        <source file="Modules/JKK_ItemTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/3dd0bfce3d2d9e62be7104fa67be3cff77f230e8/JKK_ReaTools/Modules/JKK_ItemTool_Module.lua</source>
+        <source file="Modules/JKK_TrackTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/3dd0bfce3d2d9e62be7104fa67be3cff77f230e8/JKK_ReaTools/Modules/JKK_TrackTool_Module.lua</source>
+        <source file="Modules/JKK_TimelineTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/3dd0bfce3d2d9e62be7104fa67be3cff77f230e8/JKK_ReaTools/Modules/JKK_TimelineTool_Module.lua</source>
+        <source file="Modules/JKK_Theme.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/3dd0bfce3d2d9e62be7104fa67be3cff77f230e8/JKK_ReaTools/Modules/JKK_Theme.lua</source>
       </version>
     </reapack>
   </category>
