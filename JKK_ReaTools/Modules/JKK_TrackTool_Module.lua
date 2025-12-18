@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Track Manager_Module
 -- @author Junki Kim
--- @version 0.6.1
+-- @version 0.6.2
 -- @noindex
 --========================================================
 
@@ -49,6 +49,24 @@ local icon_crtts     = nil
 local icon_crtregion = nil
 local icon_flwgrp    = nil
 local icon_delunsd   = nil
+
+----------------------------------------------------------
+-- Icon
+----------------------------------------------------------
+local TRACK_ICONS = {}
+
+local function LoadTrackIcons()
+    if TRACK_ICONS.loaded then return end
+    
+    local path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Icons/"
+    
+    TRACK_ICONS.crtts     = reaper.ImGui_CreateImage(path .. "TRACK_Create Time Selection @streamline.png")
+    TRACK_ICONS.crtregion = reaper.ImGui_CreateImage(path .. "TRACK_Create Region @streamline.png")
+    TRACK_ICONS.flwgrp    = reaper.ImGui_CreateImage(path .. "TRACK_Follow Group Name @streamline.png")
+    TRACK_ICONS.delunsd   = reaper.ImGui_CreateImage(path .. "TRACK_Delete Unused Tracks @streamline.png")
+    
+    TRACK_ICONS.loaded = true
+end
 
 ------------------------------------------------------------
 -- Function: Set Selected Tracks Volume
@@ -422,22 +440,11 @@ end
 -- UI_Mudule
 ------------------------------------------------------------
 function JKK_TrackTool_Draw(ctx, shared_info)
-    if not icon_crtts or not reaper.ImGui_ValidatePtr(icon_crtts, 'ImGui_Image*') then 
-        icon_crtts = reaper.ImGui_CreateImage(icon_path .. "TRACK_Create Time Selection @streamline.png")
+    if shared_info.needs_reload then
+        TRACK_ICONS.loaded = false
+        shared_info.needs_reload = false
     end
-    local draw_crtts = reaper.ImGui_ValidatePtr(icon_crtts, 'ImGui_Image*')
-    if not icon_crtregion or not reaper.ImGui_ValidatePtr(icon_crtregion, 'ImGui_Image*') then 
-        icon_crtregion = reaper.ImGui_CreateImage(icon_path .. "TRACK_Create Region @streamline.png")
-    end
-    local draw_crtregion = reaper.ImGui_ValidatePtr(icon_crtregion, 'ImGui_Image*')
-    if not icon_flwgrp or not reaper.ImGui_ValidatePtr(icon_flwgrp, 'ImGui_Image*') then 
-        icon_flwgrp = reaper.ImGui_CreateImage(icon_path .. "TRACK_Follow Group Name @streamline.png")
-    end
-    local draw_flwgrp = reaper.ImGui_ValidatePtr(icon_flwgrp, 'ImGui_Image*')
-    if not icon_delunsd or not reaper.ImGui_ValidatePtr(icon_delunsd, 'ImGui_Image*') then 
-        icon_delunsd = reaper.ImGui_CreateImage(icon_path .. "TRACK_Delete Unused Tracks @streamline.png")
-    end
-    local draw_delunsd = reaper.ImGui_ValidatePtr(icon_delunsd, 'ImGui_Image*')
+    LoadTrackIcons()
     
     reaper.ImGui_Text(ctx, 'Select TRACKS before using this feature.')
     -- ========================================================
@@ -539,7 +546,7 @@ function JKK_TrackTool_Draw(ctx, shared_info)
     -- ========================================================
     reaper.ImGui_SeparatorText(ctx, 'Actions')
     
-    if reaper.ImGui_ImageButton(ctx, "##btn_crtts", icon_crtts, 22, 22) then
+    if reaper.ImGui_ImageButton(ctx, "##btn_crtts", TRACK_ICONS.crtts, 22, 22) then
         Action_TimeSelection()
     end
     if reaper.ImGui_IsItemHovered(ctx) then
@@ -547,7 +554,7 @@ function JKK_TrackTool_Draw(ctx, shared_info)
     end
     reaper.ImGui_SameLine(ctx)
 
-    if reaper.ImGui_ImageButton(ctx, "##btn_crtregion", icon_crtregion, 22, 22) then
+    if reaper.ImGui_ImageButton(ctx, "##btn_crtregion", TRACK_ICONS.crtregion, 22, 22) then
         Action_CreateRegions()
     end
     if reaper.ImGui_IsItemHovered(ctx) then
@@ -555,7 +562,7 @@ function JKK_TrackTool_Draw(ctx, shared_info)
     end
     reaper.ImGui_SameLine(ctx)
 
-    if reaper.ImGui_ImageButton(ctx, "##btn_flwgrp", icon_flwgrp, 22, 22) then
+    if reaper.ImGui_ImageButton(ctx, "##btn_flwgrp", TRACK_ICONS.flwgrp, 22, 22) then
         FollowFolderName()
     end
     if reaper.ImGui_IsItemHovered(ctx) then
@@ -563,7 +570,7 @@ function JKK_TrackTool_Draw(ctx, shared_info)
     end
     reaper.ImGui_SameLine(ctx)
     
-    if reaper.ImGui_ImageButton(ctx, "##btn_delunsd", icon_delunsd, 22, 22) then
+    if reaper.ImGui_ImageButton(ctx, "##btn_delunsd", TRACK_ICONS.delunsd, 22, 22) then
         DeleteEmptyTracksAndFolders()
     end
     if reaper.ImGui_IsItemHovered(ctx) then
@@ -619,6 +626,9 @@ function JKK_TrackTool_Draw(ctx, shared_info)
     local packed_default_col = reaper.ImGui_ColorConvertDouble4ToU32(0.3, 0.3, 0.3, 1.0)
     if reaper.ImGui_ColorButton(ctx, "##DefaultColor", packed_default_col, 0, 45, 30) then
         SetTrackColors(0, 0, 0)
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+        shared_info.hovered_id = "TRACK_CHNG_COL"
     end
     reaper.ImGui_PopID(ctx)
 end

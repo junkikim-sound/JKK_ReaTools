@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ItemTool_Module
 -- @author Junki Kim
--- @version 0.6.1
+-- @version 0.6.3
 -- @noindex
 --========================================================
 
@@ -24,12 +24,13 @@ local adjust_rate = 1.0
 local group_stretch_ratio = 1.0
 local prev_group_stretch_ratio = 1.0
 
-local start_offset = 1
+local start_offset = 0
 local width        = 5
 local pos_range    = 0
 local pitch_range      = 0
 local playback_range   = 0
 local vol_range        = 0
+local current_play_slot = 0
 
 -- Checkbox Default Value
 local random_pos     = true
@@ -56,6 +57,7 @@ local stored_vols       = {}
 
 -- Slot Persistent
 local persistentSlots = {}
+local anchor_min_pos = nil
 
 -- Regions Renamer
 local reaper = reaper
@@ -77,6 +79,27 @@ local icon_render = nil
 local icon_rendtk = nil
 
 math.randomseed(os.time())
+
+----------------------------------------------------------
+-- Icon
+----------------------------------------------------------
+local ITEM_ICONS = {}
+
+local function LoadItemIcons()
+    if ITEM_ICONS.loaded then return end
+    
+    local path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Icons/"
+    
+    ITEM_ICONS.fx      = reaper.ImGui_CreateImage(path .. "ITEM_Insert FX @streamline.png")
+    ITEM_ICONS.apply   = reaper.ImGui_CreateImage(path .. "ITEM_Random Arrangement @streamline.png")
+    ITEM_ICONS.play    = reaper.ImGui_CreateImage(path .. "ITEM_Play @streamline.png")
+    ITEM_ICONS.stop    = reaper.ImGui_CreateImage(path .. "ITEM_Stop @streamline.png")
+    ITEM_ICONS.move    = reaper.ImGui_CreateImage(path .. "ITEM_Move Items to Edit Cursor @streamline.png")
+    ITEM_ICONS.rendtk  = reaper.ImGui_CreateImage(path .. "ITEM_Render Takes @streamline.png")
+    ITEM_ICONS.render  = reaper.ImGui_CreateImage(path .. "ITEM_Render Items to Stereo @streamline.png")
+    
+    ITEM_ICONS.loaded = true
+end
 
 ----------------------------------------------------------
 -- Function: Batch Item Controller
@@ -210,7 +233,6 @@ function has_changed()
     )
 end
 
--- Range 슬라이더 값만 변경되었는지 확인하는 함수
 function has_range_value_changed()
     return (
         pos_range    ~= prev_pos_range or
@@ -303,8 +325,18 @@ function apply_spacing_only()
     local cnt = reaper.CountSelectedMediaItems(0)
     if cnt == 0 then return end
 
+    if anchor_min_pos == nil then
+        local min = math.huge
+        for i = 0, cnt - 1 do
+            local item = reaper.GetSelectedMediaItem(0, i)
+            local pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+            if pos < min then min = pos end
+        end
+        anchor_min_pos = min
+    end
+
     local _, grid_size = reaper.GetSetProjectGrid(0, false)
-    local start_pos = reaper.GetCursorPosition() + grid_size * start_offset * 2
+    local start_pos = anchor_min_pos + (grid_size * start_offset * 2)
     local spacing   = grid_size * width * 2
 
     local track_items = {}
@@ -345,15 +377,26 @@ function apply_spacing_only()
     reaper.PreventUIRefresh(-1)
     reaper.Undo_EndBlock("Spacing Updated", -1)
     reaper.UpdateArrange()
+    current_play_slot = 0
 end
 
 
 ----------------------------------------------------------
--- Arrange Items Logic (Full Randomization/Arrangement)
+-- Function: Arrange Items Logic (Full Randomization/Arrangement)
 ----------------------------------------------------------
 function arrange_items()
     local cnt = reaper.CountSelectedMediaItems(0)
     if cnt == 0 then return end
+
+    if anchor_min_pos == nil then
+        local min = math.huge
+        for i = 0, cnt - 1 do
+            local item = reaper.GetSelectedMediaItem(0, i)
+            local pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+            if pos < min then min = pos end
+        end
+        anchor_min_pos = min
+    end
 
     local current_random_pos   = random_pos
     local current_random_pitch = random_pitch
@@ -362,7 +405,7 @@ function arrange_items()
     local current_random_order = random_order
 
     local _, grid_size = reaper.GetSetProjectGrid(0, false)
-    local start_pos = reaper.GetCursorPosition() + grid_size * start_offset * 2
+    local start_pos = anchor_min_pos + (grid_size * start_offset * 2)
     local spacing   = grid_size * width * 2
 
     local track_items = {}
@@ -511,8 +554,31 @@ function arrange_items()
     reaper.PreventUIRefresh(-1)
     reaper.Undo_EndBlock("Variator Updated", -1)
     reaper.UpdateArrange()
+    current_play_slot = 0
 end
 
+----------------------------------------------------------
+-- Function: Play Cursor Logic
+----------------------------------------------------------
+local function should_reset_slots()
+  local sel_cnt = reaper.CountSelectedMediaItems(0)
+  if sel_cnt == 0 then
+    return true
+  end
+
+  local any_valid = false
+  for track, slots in pairs(persistentSlots) do
+    for i, item in ipairs(slots) do
+      if item and reaper.ValidatePtr(item, "MediaItem*") then
+        any_valid = true
+        break
+      end
+    end
+    if any_valid then break end
+  end
+
+  return not any_valid
+end
 ----------------------------------------------------------
 -- Function: RegionCreate
 ----------------------------------------------------------
@@ -837,31 +903,18 @@ end
 -- UI
 ----------------------------------------------------------
 function JKK_ItemTool_Draw(ctx, prev_count, current_count, shared_info)
+    if shared_info.needs_reload then
+        ITEM_ICONS.loaded = false
+        shared_info.needs_reload = false
+    end
     local current_project_state_count = current_count
-    if not icon_fx or not reaper.ImGui_ValidatePtr(icon_fx, 'ImGui_Image*') then 
-        icon_fx = reaper.ImGui_CreateImage(icon_path .. "ITEM_Insert FX @streamline.png")
+    if current_count ~= prev_count then
+      if not reaper.ImGui_IsAnyItemActive(ctx) and should_reset_slots() then
+        anchor_min_pos = nil
+        persistentSlots = {}
+      end
     end
-    local draw_fx = reaper.ImGui_ValidatePtr(icon_fx, 'ImGui_Image*')
-    if not icon_apply or not reaper.ImGui_ValidatePtr(icon_apply, 'ImGui_Image*') then 
-        icon_apply = reaper.ImGui_CreateImage(icon_path .. "ITEM_Random Arrangement @streamline.png")
-    end
-    local draw_apply = reaper.ImGui_ValidatePtr(icon_apply, 'ImGui_Image*')
-    if not icon_play or not reaper.ImGui_ValidatePtr(icon_play, 'ImGui_Image*') then 
-        icon_play = reaper.ImGui_CreateImage(icon_path .. "ITEM_Play @streamline.png")
-    end
-    local draw_play = reaper.ImGui_ValidatePtr(icon_play, 'ImGui_Image*')
-    if not icon_move or not reaper.ImGui_ValidatePtr(icon_move, 'ImGui_Image*') then 
-        icon_move = reaper.ImGui_CreateImage(icon_path .. "ITEM_Move Items to Edit Cursor @streamline.png")
-    end
-    local draw_move = reaper.ImGui_ValidatePtr(icon_move, 'ImGui_Image*')
-    if not icon_rendtk or not reaper.ImGui_ValidatePtr(icon_rendtk, 'ImGui_Image*') then 
-        icon_rendtk = reaper.ImGui_CreateImage(icon_path .. "ITEM_Render Takes @streamline.png")
-    end
-    local draw_rendtk = reaper.ImGui_ValidatePtr(icon_rendtk, 'ImGui_Image*')
-    if not icon_render or not reaper.ImGui_ValidatePtr(icon_render, 'ImGui_Image*') then 
-        icon_render = reaper.ImGui_CreateImage(icon_path .. "ITEM_Render Items to Stereo @streamline.png")
-    end
-    local draw_render = reaper.ImGui_ValidatePtr(icon_render, 'ImGui_Image*')
+    LoadItemIcons()
     
     reaper.ImGui_Text(ctx, 'Select ITEMS before using this feature.')
     -- ========================================================
@@ -934,17 +987,6 @@ function JKK_ItemTool_Draw(ctx, prev_count, current_count, shared_info)
     reaper.ImGui_SeparatorText(ctx, 'Items Arranger & Randomizer')
 
     local changed
-    -- Start Offset
-    changed, start_offset = reaper.ImGui_SliderDouble(ctx, 'Start Offset (Grid)', start_offset, 0, 3, '%.1f')
-    start_offset = math.floor(start_offset * 10 + 0.5) / 10
-    if reaper.ImGui_IsItemClicked(ctx, 1) then start_offset = 1; apply_spacing_only() end
-    if changed then
-        apply_spacing_only()
-    end
-    if reaper.ImGui_IsItemHovered(ctx) then
-        shared_info.hovered_id = "ITEM_ARR_STOFST"
-    end
-
     -- Width
     changed, width = reaper.ImGui_SliderDouble(ctx, 'Width (Grid)', width, 1, 15, '%.0f')
     width = math.floor(width)
@@ -994,7 +1036,7 @@ function JKK_ItemTool_Draw(ctx, prev_count, current_count, shared_info)
     changed, random_vol = reaper.ImGui_Checkbox(ctx, 'Rand##vol', random_vol)
     reaper.ImGui_Spacing(ctx)
     
-    if reaper.ImGui_ImageButton(ctx, "##btn_apply", icon_apply, 22, 22) then
+    if reaper.ImGui_ImageButton(ctx, "##btn_apply", ITEM_ICONS.apply, 22, 22) then
         arrange_items()
         update_prev()
         SaveSettings()
@@ -1004,13 +1046,55 @@ function JKK_ItemTool_Draw(ctx, prev_count, current_count, shared_info)
     end
     reaper.ImGui_SameLine(ctx)
     
-    if reaper.ImGui_ImageButton(ctx, "##btn_play", icon_play, 22, 22) then
-        local is_playing = reaper.GetPlayState() & 1 == 1
-        if is_playing then reaper.Main_OnCommand(1016, 0)
-        else reaper.Main_OnCommand(40044, 0) end
+    if reaper.ImGui_ImageButton(ctx, "##btn_play", ITEM_ICONS.play, 22, 22) then
+        local sel_cnt = reaper.CountSelectedMediaItems(0)
+        if sel_cnt == 0 then
+            persistentSlots = {}
+            current_play_slot = 0
+            reaper.Main_OnCommand(1007, 0)
+        else
+            local max_slot_in_persistent = 0
+            for track, slots in pairs(persistentSlots) do
+                if #slots > max_slot_in_persistent then 
+                    max_slot_in_persistent = #slots 
+                end
+            end
+
+            if max_slot_in_persistent > 0 then
+                current_play_slot = current_play_slot + 1
+                if current_play_slot > max_slot_in_persistent then
+                    current_play_slot = 1
+                end
+
+                local target_pos = nil
+                for track, slots in pairs(persistentSlots) do
+                    local item = slots[current_play_slot]
+                    if item and reaper.ValidatePtr(item, "MediaItem*") then
+                        local item_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+                        if not target_pos or item_pos < target_pos then
+                            target_pos = item_pos
+                        end
+                    end
+                end
+
+                if target_pos then
+                    reaper.SetEditCurPos(target_pos, true, false)
+                    reaper.Main_OnCommand(1007, 0)
+                end
+            else
+                reaper.Main_OnCommand(1007, 0)
+            end
+        end
     end
     if reaper.ImGui_IsItemHovered(ctx) then
         shared_info.hovered_id = "ITEM_ARR_PLAY"
+    end
+    reaper.ImGui_SameLine(ctx)
+    if reaper.ImGui_ImageButton(ctx, "##btn_stop", ITEM_ICONS.stop, 22, 22) then
+        reaper.Main_OnCommand(1016, 0)
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+        shared_info.hovered_id = "ITEM_ARR_STOP"
     end
     reaper.ImGui_SameLine(ctx)
     local cx, cy = reaper.ImGui_GetCursorPos(ctx)
@@ -1025,7 +1109,7 @@ function JKK_ItemTool_Draw(ctx, prev_count, current_count, shared_info)
     cx, cy = reaper.ImGui_GetCursorPos(ctx)
     reaper.ImGui_SetCursorPos(ctx, cx, cy + 5)
     
-    changed, random_order = reaper.ImGui_Checkbox(ctx, 'Random Arrangement', random_order)
+    changed, random_order = reaper.ImGui_Checkbox(ctx, 'Shuffle Order', random_order)
     if reaper.ImGui_IsItemHovered(ctx) then
         shared_info.hovered_id = "ITEM_ARR_ARR"
     end
@@ -1034,7 +1118,7 @@ function JKK_ItemTool_Draw(ctx, prev_count, current_count, shared_info)
     -- ========================================================
     reaper.ImGui_SeparatorText(ctx, 'Actions')
 
-    if reaper.ImGui_ImageButton(ctx, "##btn_move", icon_move, 22, 22) then
+    if reaper.ImGui_ImageButton(ctx, "##btn_move", ITEM_ICONS.move, 22, 22) then
         MoveItemsToEditCursor()
     end
     if reaper.ImGui_IsItemHovered(ctx) then
@@ -1042,7 +1126,7 @@ function JKK_ItemTool_Draw(ctx, prev_count, current_count, shared_info)
     end
     reaper.ImGui_SameLine(ctx)
 
-    if reaper.ImGui_ImageButton(ctx, "##btn_fx", icon_fx, 22, 22) then
+    if reaper.ImGui_ImageButton(ctx, "##btn_fx", ITEM_ICONS.fx, 22, 22) then
         reaper.Main_OnCommand(40638, 0)
     end
     if reaper.ImGui_IsItemHovered(ctx) then
@@ -1050,7 +1134,7 @@ function JKK_ItemTool_Draw(ctx, prev_count, current_count, shared_info)
     end
     reaper.ImGui_SameLine(ctx)
 
-    if reaper.ImGui_ImageButton(ctx, "##btn_rendtk", icon_rendtk, 22, 22) then
+    if reaper.ImGui_ImageButton(ctx, "##btn_rendtk", ITEM_ICONS.rendtk, 22, 22) then
         reaper.Main_OnCommand(41999, 0)
     end
     if reaper.ImGui_IsItemHovered(ctx) then
@@ -1058,7 +1142,7 @@ function JKK_ItemTool_Draw(ctx, prev_count, current_count, shared_info)
     end
     reaper.ImGui_SameLine(ctx)
 
-    if reaper.ImGui_ImageButton(ctx, "##btn_render", icon_render, 22, 22) then
+    if reaper.ImGui_ImageButton(ctx, "##btn_render", ITEM_ICONS.render, 22, 22) then
         RenderSelectedItemsToStereo()
     end
     if reaper.ImGui_IsItemHovered(ctx) then
@@ -1088,24 +1172,24 @@ function JKK_ItemTool_Draw(ctx, prev_count, current_count, shared_info)
     local palette_columns = 12
     
     for i, col in ipairs(item_colors) do
-      local r, g, b = col[1], col[2], col[3]
+        local r, g, b = col[1], col[2], col[3]
       
-      local packed_col = reaper.ImGui_ColorConvertDouble4ToU32(r/255, g/255, b/255, 1.0)
+        local packed_col = reaper.ImGui_ColorConvertDouble4ToU32(r/255, g/255, b/255, 1.0)
       
-      reaper.ImGui_PushID(ctx, "col"..i)
+        reaper.ImGui_PushID(ctx, "col"..i)
       
-      if reaper.ImGui_ColorButton(ctx, "##Color", packed_col, 0, 30, 30) then
-        SetItemColors(r, g, b)
-      end
+        if reaper.ImGui_ColorButton(ctx, "##Color", packed_col, 0, 30, 30) then
+          SetItemColors(r, g, b)
+        end
         if reaper.ImGui_IsItemHovered(ctx) then
             shared_info.hovered_id = "ITEM_CHNG_COL"
         end
       
-      reaper.ImGui_PopID(ctx)
+        reaper.ImGui_PopID(ctx)
       
-      if i % palette_columns ~= 0 then
-        reaper.ImGui_SameLine(ctx)
-      end
+        if i % palette_columns ~= 0 then
+          reaper.ImGui_SameLine(ctx)
+        end
     end
 
     reaper.ImGui_SameLine(ctx)
@@ -1113,6 +1197,9 @@ function JKK_ItemTool_Draw(ctx, prev_count, current_count, shared_info)
     local packed_default_col = reaper.ImGui_ColorConvertDouble4ToU32(0.3, 0.3, 0.3, 1.0)
     if reaper.ImGui_ColorButton(ctx, "##DefaultColor", packed_default_col, 0, 45, 30) then
         SetItemColors(0, 0, 0)
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+        shared_info.hovered_id = "ITEM_CHNG_COL"
     end
     reaper.ImGui_PopID(ctx)
 

@@ -32,6 +32,22 @@ local icon_path = reaper.GetResourcePath():gsub("\\", "/") .. "/Scripts/JKK_ReaT
 local icon_delall = nil
 local icon_delsel = nil
 
+----------------------------------------------------------
+-- Icon
+----------------------------------------------------------
+local REGION_ICONS = {}
+
+local function LoadRegionIcons()
+    if REGION_ICONS.loaded then return end
+    
+    local path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Icons/"
+    
+    REGION_ICONS.delsel = reaper.ImGui_CreateImage(path .. "REGION_Delete in Time Selection @remixicon.png")
+    REGION_ICONS.delall = reaper.ImGui_CreateImage(path .. "REGION_Delete All Regions @remixicon.png")
+    
+    REGION_ICONS.loaded = true
+end
+
 ---------------------------------------------------------
 -- Functions: Timeline Helpers
 ---------------------------------------------------------
@@ -165,20 +181,17 @@ end
 -- UI_Module 
 ---------------------------------------------------------
 function JKK_TimelineTool_Draw(ctx, shared_info)
-    if not icon_delsel or not reaper.ImGui_ValidatePtr(icon_delsel, 'ImGui_Image*') then 
-        icon_delsel = reaper.ImGui_CreateImage(icon_path .. "REGION_Delete in Time Selection @remixicon.png")
+    if shared_info.needs_reload then
+        REGION_ICONS.loaded = false
+        shared_info.needs_reload = false
     end
-    local draw_sel = reaper.ImGui_ValidatePtr(icon_delsel, 'ImGui_Image*')
-    if not icon_delall or not reaper.ImGui_ValidatePtr(icon_delall, 'ImGui_Image*') then
-        icon_delall = reaper.ImGui_CreateImage(icon_path .. "REGION_Delete All Regions @remixicon.png")
-    end
-    local draw_all = reaper.ImGui_ValidatePtr(icon_delall, 'ImGui_Image*')
+    LoadRegionIcons()
 
     reaper.ImGui_Text(ctx, 'Create a TIME SELECTION to use this feature.')
     -- ========================================================
     reaper.ImGui_SeparatorText(ctx, 'Region Actions')
     
-    if reaper.ImGui_ImageButton(ctx, "##btn_delsel", icon_delsel, 22, 22) then
+    if reaper.ImGui_ImageButton(ctx, "##btn_delsel", REGION_ICONS.delsel, 22, 22) then
         DeleteOverlappingRegions()
     end
     if reaper.ImGui_IsItemHovered(ctx) then
@@ -186,7 +199,7 @@ function JKK_TimelineTool_Draw(ctx, shared_info)
     end
     reaper.ImGui_SameLine(ctx)
 
-    if reaper.ImGui_ImageButton(ctx, "##btn_delall", icon_delall, 22, 22) then
+    if reaper.ImGui_ImageButton(ctx, "##btn_delall", REGION_ICONS.delall, 22, 22) then
         DeleteAllRegions()
     end
     if reaper.ImGui_IsItemHovered(ctx) then
