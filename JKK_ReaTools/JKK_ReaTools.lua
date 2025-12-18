@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.6.3
+-- @version 0.6.4
 -- @provides 
 --     [nomain] Modules/JKK_ItemTool_Module.lua
 --     [nomain] Modules/JKK_TrackTool_Module.lua
@@ -104,23 +104,25 @@ local shared_info = { hovered_id = nil }
 -- UI
 ---------------------------------------------------------
 local function Main()
-    current_project_state_count = reaper.GetProjectStateChangeCount(0) 
+    current_project_state_count = reaper.GetProjectStateChangeCount(0)
+    local white = RPR.ImGui_ColorConvertDouble4ToU32(0.286, 0.714, 0.800, 1.0)
+    local gray = RPR.ImGui_ColorConvertDouble4ToU32(0.6, 0.6, 0.6, 1.0)
     
     reaper.ImGui_SetNextWindowSize(ctx, 530, 630, reaper.ImGui_Cond_Once())
     style_pop_count, color_pop_count = ApplyTheme(ctx)
 
-    local visible, open_flag = reaper.ImGui_Begin(ctx, 'JKK_ReaTools', open,
+    local visible, open_flag = reaper.ImGui_Begin(ctx, ' ', open,
         reaper.ImGui_WindowFlags_NoCollapse())
 
     if visible then
         -- Title ========================================================
         RPR.ImGui_PushFont(ctx, font, 24)
+        RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Text(), white)
         local text = "JKK_ReaTools"
         RPR.ImGui_Text(ctx, text)
         RPR.ImGui_PopFont(ctx)
+        RPR.ImGui_PopStyleColor(ctx, 1)
         RPR.ImGui_SameLine(ctx)
-        local white = RPR.ImGui_ColorConvertDouble4ToU32(0.824, 0.824, 0.824, 1.0)
-        local gray = RPR.ImGui_ColorConvertDouble4ToU32(0.6, 0.6, 0.6, 1.0)
         
         -- Info ========================================================
         local INFO_LINE_SPACING = 12
@@ -139,7 +141,7 @@ local function Main()
             local spacing_adjust = -16
 
             -- Title
-            RPR.ImGui_PushFont(ctx, font, 12)
+            RPR.ImGui_PushFont(ctx, font, 13)
             RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Text(), white)
             
             local title_width, _ = RPR.ImGui_CalcTextSize(ctx, title)
@@ -149,11 +151,11 @@ local function Main()
             RPR.ImGui_PopStyleColor(ctx, 1)
             RPR.ImGui_PopFont(ctx)
 
-            RPR.ImGui_SetCursorPosY(ctx, RPR.ImGui_GetCursorPosY(ctx) + spacing_adjust)
+            RPR.ImGui_SetCursorPosY(ctx, RPR.ImGui_GetCursorPosY(ctx) + spacing_adjust + 3)
 
             -- Body
             if body then
-                RPR.ImGui_PushFont(ctx, font, 10)
+                RPR.ImGui_PushFont(ctx, font, 11)
                 RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Text(), gray)
                 
                 for line in body:gmatch("([^\n]+)") do
@@ -191,6 +193,7 @@ local function Main()
         local current_tool = tools[selected_tool]
         
         -- ========================================================
+        RPR.ImGui_PushFont(ctx, font, 13)
         if current_tool and current_tool.module then
             if current_tool.name == "Item Tools" then
                 if current_tool.module.JKK_ItemTool_Draw then
@@ -217,10 +220,11 @@ local function Main()
             RPR.ImGui_Text(ctx, "Error: Selected module (" .. current_tool.name .. ") failed to load.")
         end
         reaper.ImGui_Spacing(ctx)
+        RPR.ImGui_PopFont(ctx)
 
         -- ========================================================
         local credit_text = "Scripted by Junki Kim"
-        RPR.ImGui_PushFont(ctx, font, 10) 
+        RPR.ImGui_PushFont(ctx, font, 12) 
         local credit_width, _ = RPR.ImGui_CalcTextSize(ctx, credit_text)
         local cursor_x2 = RPR.ImGui_GetWindowWidth(ctx) - credit_width - 10
         RPR.ImGui_SetCursorPosX(ctx, math.max(cursor_x2, 150))
