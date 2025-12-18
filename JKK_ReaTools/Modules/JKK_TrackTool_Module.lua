@@ -42,13 +42,6 @@ local track_colors = {
   {10,43,70}, {15,64,104}, {23,96,156},  {102,143,182}, {171,186,207}, {225,230,237}, {88,114,47}, {125,162,67}, {159,206,85}, {184,239,99}, {205,244,152}, {226,248,200},
 }
 
--- Icon Set
-local icon_path      = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Icons/"
-local icon_crtts     = nil
-local icon_crtregion = nil
-local icon_flwgrp    = nil
-local icon_delunsd   = nil
-
 ----------------------------------------------------------
 -- Icon
 ----------------------------------------------------------
@@ -57,7 +50,7 @@ local TRACK_ICONS = {}
 local function LoadTrackIcons()
     if TRACK_ICONS.loaded then return end
     
-    local path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Icons/"
+    local path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Images/"
     
     TRACK_ICONS.crtts     = reaper.ImGui_CreateImage(path .. "TRACK_Create Time Selection @streamline.png")
     TRACK_ICONS.crtregion = reaper.ImGui_CreateImage(path .. "TRACK_Create Region @streamline.png")

@@ -76,9 +76,9 @@ function ApplyTheme(ctx)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ResizeGripHovered(),         0x49B6CCFF)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ResizeGripActive(),          0x2E5D93FF)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_InputTextCursor(),           0xFFFFFFFF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TabHovered(),                0x1492B6FF)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TabHovered(),                0x2E5D93FF) ---
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Tab(),                       0x353535FF) 
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TabSelected(),               0x2E5D93FF) ---
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TabSelected(),               0x1492B6FF) ---
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TabSelectedOverline(),       0x6C6C6CFF)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TabDimmed(),                 0x111A26F8)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TabDimmedSelected(),         0x23436CFF)

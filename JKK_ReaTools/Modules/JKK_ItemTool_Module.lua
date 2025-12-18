@@ -32,9 +32,6 @@ local vol_range        = 0
 local current_play_slot = 0
 
 -- Checkbox Default Value
-local checkbox_x     = 455
-local checkbox_y     = 280
-local checkbox_h     = 23
 local random_pos     = true
 local random_pitch   = true
 local random_play    = true
@@ -71,15 +68,6 @@ local item_colors = {
   {10,43,70}, {15,64,104}, {23,96,156},  {102,143,182}, {171,186,207}, {225,230,237}, {88,114,47}, {125,162,67}, {159,206,85}, {184,239,99}, {205,244,152}, {226,248,200},
 }
 
--- Icon Set
-local icon_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Icons/"
-local icon_fx  = nil
-local icon_apply  = nil
-local icon_play   = nil
-local icon_move   = nil
-local icon_render = nil
-local icon_rendtk = nil
-
 math.randomseed(os.time())
 
 ----------------------------------------------------------
@@ -90,7 +78,7 @@ local ITEM_ICONS = {}
 local function LoadItemIcons()
     if ITEM_ICONS.loaded then return end
     
-    local path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Icons/"
+    local path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Images/"
     
     ITEM_ICONS.fx      = reaper.ImGui_CreateImage(path .. "ITEM_Insert FX @streamline.png")
     ITEM_ICONS.apply   = reaper.ImGui_CreateImage(path .. "ITEM_Random Arrangement @streamline.png")
@@ -990,7 +978,7 @@ function JKK_ItemTool_Draw(ctx, prev_count, current_count, shared_info)
 
     local changed
     -- Width
-    changed, width = reaper.ImGui_SliderDouble(ctx, 'Slot Interval', width, 1, 15, '%.0f')
+    changed, width = reaper.ImGui_SliderDouble(ctx, 'Width (Grid)', width, 1, 15, '%.0f')
     width = math.floor(width)
     if reaper.ImGui_IsItemClicked(ctx, 1) then width = 5; apply_spacing_only() end
     if changed then
@@ -1007,9 +995,7 @@ function JKK_ItemTool_Draw(ctx, prev_count, current_count, shared_info)
     if reaper.ImGui_IsItemHovered(ctx) then
         shared_info.hovered_id = "ITEM_ARR_POS"
     end
-     reaper.ImGui_SameLine(ctx)
-    -- reaper.ImGui_SameLine(ctx, 0, 33)
-    reaper.ImGui_SetCursorPos(ctx, checkbox_x, checkbox_y + (checkbox_h * 0))
+    reaper.ImGui_SameLine(ctx); reaper.ImGui_SameLine(ctx, 0, 33)
     changed, random_pos = reaper.ImGui_Checkbox(ctx, 'Rand##pos', random_pos)
 
     -- Pitch Range
@@ -1018,9 +1004,7 @@ function JKK_ItemTool_Draw(ctx, prev_count, current_count, shared_info)
     if reaper.ImGui_IsItemHovered(ctx) then
         shared_info.hovered_id = "ITEM_ARR_PITCH"
     end
-    reaper.ImGui_SameLine(ctx)
-    -- reaper.ImGui_SameLine(ctx, 0, 25)
-    reaper.ImGui_SetCursorPos(ctx, checkbox_x, checkbox_y + (checkbox_h * 1))
+    reaper.ImGui_SameLine(ctx); reaper.ImGui_SameLine(ctx, 0, 25)
     changed, random_pitch = reaper.ImGui_Checkbox(ctx, 'Rand##pitch', random_pitch)
 
     -- Playback Rate Range
@@ -1030,7 +1014,6 @@ function JKK_ItemTool_Draw(ctx, prev_count, current_count, shared_info)
         shared_info.hovered_id = "ITEM_ARR_PLAYRATE"
     end
     reaper.ImGui_SameLine(ctx)
-    reaper.ImGui_SetCursorPos(ctx, checkbox_x, checkbox_y + (checkbox_h * 2))
     changed, random_play = reaper.ImGui_Checkbox(ctx, 'Rand##playback', random_play)
 
     -- Volume Range
@@ -1039,9 +1022,7 @@ function JKK_ItemTool_Draw(ctx, prev_count, current_count, shared_info)
     if reaper.ImGui_IsItemHovered(ctx) then
         shared_info.hovered_id = "ITEM_ARR_VOL"
     end
-    reaper.ImGui_SameLine(ctx)
-    --reaper.ImGui_SameLine(ctx, 0, 33)
-    reaper.ImGui_SetCursorPos(ctx, checkbox_x, checkbox_y + (checkbox_h * 3))
+    reaper.ImGui_SameLine(ctx); reaper.ImGui_SameLine(ctx, 0, 33)
     changed, random_vol = reaper.ImGui_Checkbox(ctx, 'Rand##vol', random_vol)
     reaper.ImGui_Spacing(ctx)
     

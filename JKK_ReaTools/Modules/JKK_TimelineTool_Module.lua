@@ -26,11 +26,6 @@ local region_colors = {
   {10,43,70}, {15,64,104}, {23,96,156},  {102,143,182}, {171,186,207}, {225,230,237}, {88,114,47}, {125,162,67}, {159,206,85}, {184,239,99}, {205,244,152}, {226,248,200},
 }
 
--- Icon Set
-local icon_path = reaper.GetResourcePath():gsub("\\", "/") .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Icons/"
-local icon_delall = nil
-local icon_delsel = nil
-
 ----------------------------------------------------------
 -- Icon
 ----------------------------------------------------------
@@ -39,7 +34,7 @@ local REGION_ICONS = {}
 local function LoadRegionIcons()
     if REGION_ICONS.loaded then return end
     
-    local path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Icons/"
+    local path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Images/"
     
     REGION_ICONS.delsel = reaper.ImGui_CreateImage(path .. "REGION_Delete in Time Selection @remixicon.png")
     REGION_ICONS.delall = reaper.ImGui_CreateImage(path .. "REGION_Delete All Regions @remixicon.png")

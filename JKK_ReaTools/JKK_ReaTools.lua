@@ -1,25 +1,25 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.6.4
+-- @version 0.7.0
 -- @provides 
 --     [nomain] Modules/JKK_ItemTool_Module.lua
 --     [nomain] Modules/JKK_TrackTool_Module.lua
 --     [nomain] Modules/JKK_TimelineTool_Module.lua
 --     [nomain] Modules/JKK_Theme.lua
---     [nomain]   Icons/ITEM_Insert FX @streamline.png
---     [nomain]   Icons/ITEM_Move Items to Edit Cursor @streamline.png
---     [nomain]   Icons/ITEM_Play @streamline.png
---     [nomain]   Icons/ITEM_Stop @streamline.png
---     [nomain]   Icons/ITEM_Random Arrangement @streamline.png
---     [nomain]   Icons/ITEM_Render Items to Stereo @streamline.png
---     [nomain]   Icons/ITEM_Render Takes @streamline.png
---     [nomain]   Icons/REGION_Delete All Regions @remixicon.png
---     [nomain]   Icons/REGION_Delete in Time Selection @remixicon.png
---     [nomain]   Icons/TRACK_Create Region @streamline.png
---     [nomain]   Icons/TRACK_Create Time Selection @streamline.png
---     [nomain]   Icons/TRACK_Delete Unused Tracks @streamline.png
---     [nomain]   Icons/TRACK_Follow Group Name @streamline.png
+--     [nomain] Images/ITEM_Insert FX @streamline.png
+--     [nomain] Images/ITEM_Move Items to Edit Cursor @streamline.png
+--     [nomain] Images/ITEM_Play @streamline.png
+--     [nomain] Images/ITEM_Stop @streamline.png
+--     [nomain] Images/ITEM_Random Arrangement @streamline.png
+--     [nomain] Images/ITEM_Render Items to Stereo @streamline.png
+--     [nomain] Images/ITEM_Render Takes @streamline.png
+--     [nomain] Images/REGION_Delete All Regions @remixicon.png
+--     [nomain] Images/REGION_Delete in Time Selection @remixicon.png
+--     [nomain] Images/TRACK_Create Region @streamline.png
+--     [nomain] Images/TRACK_Create Time Selection @streamline.png
+--     [nomain] Images/TRACK_Delete Unused Tracks @streamline.png
+--     [nomain] Images/TRACK_Follow Group Name @streamline.png
 --========================================================
 
 local RPR = reaper
