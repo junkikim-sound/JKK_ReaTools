@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.7.1
+-- @version 0.7.3
 -- @provides 
 --     [nomain] Modules/JKK_ItemTool_Module.lua
 --     [nomain] Modules/JKK_TrackTool_Module.lua
@@ -65,6 +65,7 @@ local widget_descriptions = {
     ["ITEM_GRP_STRTCH"]     = { "Group Stretcher ", "Stretch the entire group of selected items by a specified ratio" },
     ["ITEM_ARR_STOFST"]     = { "Start Offset ", "Set the starting offset of the randomization area" },
     ["ITEM_ARR_WIDTH"]      = { "Slot Interval ", "Set the width of the area where item slots will be randomized" },
+    ["ITEM_ARR_STRTCH"]      = { "Slot Stretch ", "Stretches items within each slot\nwhile keeping slot intervals fixed" },
     ["ITEM_ARR_POS"]        = { "Random Position Range ", "Set the maximum range for random position offsets" },
     ["ITEM_ARR_PITCH"]      = { "Random Pitch Range ", "Sets the maximum range for random pitch shifts" },
     ["ITEM_ARR_PLAYRATE"]   = { "Random Playrate Range ", "Sets the maximum range for random playback rate changes" },
@@ -105,10 +106,10 @@ local shared_info = { hovered_id = nil }
 ---------------------------------------------------------
 local function Main()
     current_project_state_count = reaper.GetProjectStateChangeCount(0)
-    local white = RPR.ImGui_ColorConvertDouble4ToU32(0.286, 0.714, 0.800, 1.0)
-    local gray = RPR.ImGui_ColorConvertDouble4ToU32(0.6, 0.6, 0.6, 1.0)
+    local textcol_title = 0x068FC3FF
+    local textcol_gray = 0x808080FF
     
-    reaper.ImGui_SetNextWindowSize(ctx, 530, 630, reaper.ImGui_Cond_Once())
+    reaper.ImGui_SetNextWindowSize(ctx, 530, 650, reaper.ImGui_Cond_Once())
     style_pop_count, color_pop_count = ApplyTheme(ctx)
 
     local visible, open_flag = reaper.ImGui_Begin(ctx, ' ', open,
@@ -117,7 +118,7 @@ local function Main()
     if visible then
         -- Title ========================================================
         RPR.ImGui_PushFont(ctx, font, 24)
-        RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Text(), white)
+        RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Text(), textcol_title)
         local text = "JKK_ReaTools"
         RPR.ImGui_Text(ctx, text)
         RPR.ImGui_PopFont(ctx)
@@ -142,7 +143,7 @@ local function Main()
 
             -- Title
             RPR.ImGui_PushFont(ctx, font, 13)
-            RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Text(), white)
+            RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Text(), textcol_title)
             
             local title_width, _ = RPR.ImGui_CalcTextSize(ctx, title)
             RPR.ImGui_SetCursorPosX(ctx, window_width - title_width - padding)
@@ -156,7 +157,7 @@ local function Main()
             -- Body
             if body then
                 RPR.ImGui_PushFont(ctx, font, 11)
-                RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Text(), gray)
+                RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Text(), textcol_gray)
                 
                 for line in body:gmatch("([^\n]+)") do
                     local line_width, _ = RPR.ImGui_CalcTextSize(ctx, line)
@@ -228,7 +229,7 @@ local function Main()
         local credit_width, _ = RPR.ImGui_CalcTextSize(ctx, credit_text)
         local cursor_x2 = RPR.ImGui_GetWindowWidth(ctx) - credit_width - 10
         RPR.ImGui_SetCursorPosX(ctx, math.max(cursor_x2, 150))
-        RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Text(), gray)
+        RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Text(), textcol_gray)
         RPR.ImGui_Text(ctx, credit_text)
         RPR.ImGui_PopStyleColor(ctx, 1)
         RPR.ImGui_PopFont(ctx)

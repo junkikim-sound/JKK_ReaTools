@@ -29,217 +29,217 @@ local region_colors = {
 ----------------------------------------------------------
 -- Icon
 ----------------------------------------------------------
-local REGION_ICONS = {}
+    local REGION_ICONS = {}
 
-local function LoadRegionIcons()
-    if REGION_ICONS.loaded then return end
-    
-    local path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Images/"
-    
-    REGION_ICONS.delsel = reaper.ImGui_CreateImage(path .. "REGION_Delete in Time Selection @remixicon.png")
-    REGION_ICONS.delall = reaper.ImGui_CreateImage(path .. "REGION_Delete All Regions @remixicon.png")
-    
-    REGION_ICONS.loaded = true
-end
+    local function LoadRegionIcons()
+        if REGION_ICONS.loaded then return end
+        
+        local path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Images/"
+        
+        REGION_ICONS.delsel = reaper.ImGui_CreateImage(path .. "REGION_Delete in Time Selection @remixicon.png")
+        REGION_ICONS.delall = reaper.ImGui_CreateImage(path .. "REGION_Delete All Regions @remixicon.png")
+        
+        REGION_ICONS.loaded = true
+    end
 
 ---------------------------------------------------------
 -- Functions: Timeline Helpers
 ---------------------------------------------------------
-local function GetTimeSelection()
-    local ts, te = reaper.GetSet_LoopTimeRange(false, false, 0, 0, false)
-    if ts == te then return nil end
-    return ts, te
-end
-
-local function GetOverlappingRegions()
-    local ts, te = GetTimeSelection()
-    if not ts then return nil end
-
-    local _, numMarkers, numRegions = reaper.CountProjectMarkers(0)
-    local total = numMarkers + numRegions
-
-    local list = {}
-
-    for i = 0, total - 1 do
-        local retval, isRegion, pos, rgnEnd, name, index, color =
-            reaper.EnumProjectMarkers3(0, i)
-
-        if isRegion and rgnEnd > ts and pos < te then
-            list[#list+1] = {
-                index = index,
-                pos = pos,
-                rgnEnd = rgnEnd,
-                name = name,
-                color = color
-            }
-        end
+    local function GetTimeSelection()
+        local ts, te = reaper.GetSet_LoopTimeRange(false, false, 0, 0, false)
+        if ts == te then return nil end
+        return ts, te
     end
 
-    return list
-end
+    local function GetOverlappingRegions()
+        local ts, te = GetTimeSelection()
+        if not ts then return nil end
+
+        local _, numMarkers, numRegions = reaper.CountProjectMarkers(0)
+        local total = numMarkers + numRegions
+
+        local list = {}
+
+        for i = 0, total - 1 do
+            local retval, isRegion, pos, rgnEnd, name, index, color =
+                reaper.EnumProjectMarkers3(0, i)
+
+            if isRegion and rgnEnd > ts and pos < te then
+                list[#list+1] = {
+                    index = index,
+                    pos = pos,
+                    rgnEnd = rgnEnd,
+                    name = name,
+                    color = color
+                }
+            end
+        end
+
+        return list
+    end
 
 ---------------------------------------------------------
 -- Functions: Rename Overlapping Regions
 ---------------------------------------------------------
-local function RenameRegions(regionList, baseName)
-    if not baseName or baseName == "" then return end
-    for i, rgn in ipairs(regionList) do
-        local newName = string.format("%s_%02d", baseName, i)
-        reaper.SetProjectMarker3(0, rgn.index, true, rgn.pos, rgn.rgnEnd, newName, rgn.color)
-    end
-end
-
-local function ApplyChanges()
-    local regions = GetOverlappingRegions()
-    if not regions or #regions == 0 then
-        return
+    local function RenameRegions(regionList, baseName)
+        if not baseName or baseName == "" then return end
+        for i, rgn in ipairs(regionList) do
+            local newName = string.format("%s_%02d", baseName, i)
+            reaper.SetProjectMarker3(0, rgn.index, true, rgn.pos, rgn.rgnEnd, newName, rgn.color)
+        end
     end
 
-    reaper.Undo_BeginBlock()
-    RenameRegions(regions, rename_base_name)
-    reaper.Undo_EndBlock("Batch Edit Regions", -1)
-end
+    local function ApplyChanges()
+        local regions = GetOverlappingRegions()
+        if not regions or #regions == 0 then
+            return
+        end
+
+        reaper.Undo_BeginBlock()
+        RenameRegions(regions, rename_base_name)
+        reaper.Undo_EndBlock("Batch Edit Regions", -1)
+    end
 
 ---------------------------------------------------------
 -- Functions: Delete Overlapping Regions
 ---------------------------------------------------------
-local function DeleteOverlappingRegions()
-    local regions = GetOverlappingRegions()
-    if not regions or #regions == 0 then return end
+    local function DeleteOverlappingRegions()
+        local regions = GetOverlappingRegions()
+        if not regions or #regions == 0 then return end
 
-    reaper.Undo_BeginBlock()
+        reaper.Undo_BeginBlock()
 
-    for i = #regions, 1, -1 do
-        local rgn = regions[i]
-        reaper.DeleteProjectMarker(0, rgn.index, true)
+        for i = #regions, 1, -1 do
+            local rgn = regions[i]
+            reaper.DeleteProjectMarker(0, rgn.index, true)
+        end
+
+        reaper.Undo_EndBlock("Delete Overlapping Regions", -1)
+        reaper.UpdateArrange()
     end
-
-    reaper.Undo_EndBlock("Delete Overlapping Regions", -1)
-    reaper.UpdateArrange()
-end
 
 ---------------------------------------------------------
 -- Functions: Delete All Regions
 ---------------------------------------------------------
-local function DeleteAllRegions()
-    local _, numMarkers, numRegions = reaper.CountProjectMarkers(0)
-    local total = numMarkers + numRegions
+    local function DeleteAllRegions()
+        local _, numMarkers, numRegions = reaper.CountProjectMarkers(0)
+        local total = numMarkers + numRegions
 
-    if numRegions == 0 then return end
+        if numRegions == 0 then return end
 
-    reaper.Undo_BeginBlock()
+        reaper.Undo_BeginBlock()
 
-    for i = total - 1, 0, -1 do
-        local _, isRegion, _, _, _, index = reaper.EnumProjectMarkers3(0, i)
-        if isRegion then
-            reaper.DeleteProjectMarker(0, index, true)
+        for i = total - 1, 0, -1 do
+            local _, isRegion, _, _, _, index = reaper.EnumProjectMarkers3(0, i)
+            if isRegion then
+                reaper.DeleteProjectMarker(0, index, true)
+            end
         end
-    end
 
-    reaper.Undo_EndBlock("Delete All Regions", -1)
-    reaper.UpdateArrange()
-end
+        reaper.Undo_EndBlock("Delete All Regions", -1)
+        reaper.UpdateArrange()
+    end
 
 ---------------------------------------------------------
 -- Function: Region Color
 ---------------------------------------------------------
-local function SetRegionColors(colorTable)
-    if colorTable == nil then return end
+    local function SetRegionColors(colorTable)
+        if colorTable == nil then return end
 
-    local regions = GetOverlappingRegions()
-    if not regions or #regions == 0 then
-        return
-    end
+        local regions = GetOverlappingRegions()
+        if not regions or #regions == 0 then
+            return
+        end
 
-    local newColor
-    
-    if colorTable == 0 then
-        newColor = 0
-    
-    elseif type(colorTable) == "table" and #colorTable >= 3 then
-        local r, g, b = colorTable[1], colorTable[2], colorTable[3]
-        newColor = reaper.ColorToNative(r, g, b) | 0x1000000
-    
-    else
-        return
-    end
+        local newColor
+        
+        if colorTable == 0 then
+            newColor = 0
+        
+        elseif type(colorTable) == "table" and #colorTable >= 3 then
+            local r, g, b = colorTable[1], colorTable[2], colorTable[3]
+            newColor = reaper.ColorToNative(r, g, b) | 0x1000000
+        
+        else
+            return
+        end
 
-    reaper.Undo_BeginBlock()
-    for _, rgn in ipairs(regions) do
-        reaper.SetProjectMarker3(0, rgn.index, true, rgn.pos, rgn.rgnEnd, rgn.name, newColor)
+        reaper.Undo_BeginBlock()
+        for _, rgn in ipairs(regions) do
+            reaper.SetProjectMarker3(0, rgn.index, true, rgn.pos, rgn.rgnEnd, rgn.name, newColor)
+        end
+        reaper.Undo_EndBlock("Recolor Regions", -1)
     end
-    reaper.Undo_EndBlock("Recolor Regions", -1)
-end
 
 ---------------------------------------------------------
 -- UI_Module 
 ---------------------------------------------------------
-function JKK_TimelineTool_Draw(ctx, shared_info)
-    if shared_info.needs_reload then
-        REGION_ICONS.loaded = false
-        shared_info.needs_reload = false
-    end
-    LoadRegionIcons()
-
-    reaper.ImGui_Text(ctx, 'Create a TIME SELECTION to use this feature.')
-    -- ========================================================
-    reaper.ImGui_SeparatorText(ctx, 'Region Actions')
-    
-    if reaper.ImGui_ImageButton(ctx, "##btn_delsel", REGION_ICONS.delsel, 22, 22) then
-        DeleteOverlappingRegions()
-    end
-    if reaper.ImGui_IsItemHovered(ctx) then
-        shared_info.hovered_id = "REGION_DEL_SELECTED"
-    end
-    reaper.ImGui_SameLine(ctx)
-
-    if reaper.ImGui_ImageButton(ctx, "##btn_delall", REGION_ICONS.delall, 22, 22) then
-        DeleteAllRegions()
-    end
-    if reaper.ImGui_IsItemHovered(ctx) then
-        shared_info.hovered_id = "REGION_DEL_ALL"
-    end
-    reaper.ImGui_SameLine(ctx)
-
-    changed, rename_base_name = reaper.ImGui_InputTextMultiline(ctx, '##RenameRegionBaseName', rename_base_name, 268, 27)
-    if reaper.ImGui_IsItemHovered(ctx) then
-        shared_info.hovered_id = "REGION_RENAME"
-    end
-    reaper.ImGui_SameLine(ctx)
-    
-    if reaper.ImGui_Button(ctx, "Rename Regions", 116, 27) then
-        ApplyChanges()
-    end
-    if reaper.ImGui_IsItemHovered(ctx) then
-        shared_info.hovered_id = "REGION_RENAME"
-    end
-    reaper.ImGui_Spacing(ctx)
-    reaper.ImGui_SetCursorPos(ctx, 0, 500)
-
-    -- ========================================================
-    reaper.ImGui_SeparatorText(ctx, 'Region Color Pallete')
-    local columns = 12
-    for i, col in ipairs(region_colors) do
-        local r, g, b = col[1], col[2], col[3]
-        local packed = reaper.ImGui_ColorConvertDouble4ToU32(r/255, g/255, b/255, 1)
-
-        reaper.ImGui_PushID(ctx, "col"..i)
-
-        if reaper.ImGui_ColorButton(ctx, "##Color", packed, 0, 30, 30) then
-            selectedColor = col
-            SetRegionColors(selectedColor)
+    function JKK_TimelineTool_Draw(ctx, shared_info)
+        if shared_info.needs_reload then
+            REGION_ICONS.loaded = false
+            shared_info.needs_reload = false
         end
-        if reaper.ImGui_IsItemHovered(ctx) then
-            shared_info.hovered_id = "REGION_CHNG_COL"
-        end
+        LoadRegionIcons()
 
-        reaper.ImGui_PopID(ctx)
-
-        if i % columns ~= 0 then
+        reaper.ImGui_Text(ctx, 'Create a TIME SELECTION to use this feature.')
+        -- ========================================================
+        reaper.ImGui_SeparatorText(ctx, 'Region Actions')
+        
+            if reaper.ImGui_ImageButton(ctx, "##btn_delsel", REGION_ICONS.delsel, 22, 22) then
+                DeleteOverlappingRegions()
+            end
+            if reaper.ImGui_IsItemHovered(ctx) then
+                shared_info.hovered_id = "REGION_DEL_SELECTED"
+            end
             reaper.ImGui_SameLine(ctx)
-        end
+
+            if reaper.ImGui_ImageButton(ctx, "##btn_delall", REGION_ICONS.delall, 22, 22) then
+                DeleteAllRegions()
+            end
+            if reaper.ImGui_IsItemHovered(ctx) then
+                shared_info.hovered_id = "REGION_DEL_ALL"
+            end
+            reaper.ImGui_SameLine(ctx)
+
+            changed, rename_base_name = reaper.ImGui_InputTextMultiline(ctx, '##RenameRegionBaseName', rename_base_name, 268, 27)
+            if reaper.ImGui_IsItemHovered(ctx) then
+                shared_info.hovered_id = "REGION_RENAME"
+            end
+            reaper.ImGui_SameLine(ctx)
+            
+            if reaper.ImGui_Button(ctx, "Rename Regions", 116, 27) then
+                ApplyChanges()
+            end
+            if reaper.ImGui_IsItemHovered(ctx) then
+                shared_info.hovered_id = "REGION_RENAME"
+            end
+            reaper.ImGui_Spacing(ctx)
+            reaper.ImGui_SetCursorPos(ctx, 0, 525)
+            
+        -- ========================================================
+        reaper.ImGui_SeparatorText(ctx, 'Region Color Pallete')
+            local columns = 12
+            for i, col in ipairs(region_colors) do
+                local r, g, b = col[1], col[2], col[3]
+                local packed = reaper.ImGui_ColorConvertDouble4ToU32(r/255, g/255, b/255, 1)
+
+                reaper.ImGui_PushID(ctx, "col"..i)
+
+                if reaper.ImGui_ColorButton(ctx, "##Color", packed, 0, 30, 30) then
+                    selectedColor = col
+                    SetRegionColors(selectedColor)
+                end
+                if reaper.ImGui_IsItemHovered(ctx) then
+                    shared_info.hovered_id = "REGION_CHNG_COL"
+                end
+
+                reaper.ImGui_PopID(ctx)
+
+                if i % columns ~= 0 then
+                    reaper.ImGui_SameLine(ctx)
+                end
+            end
     end
-end
 return {
     JKK_TimelineTool_Draw = JKK_TimelineTool_Draw,
 }
