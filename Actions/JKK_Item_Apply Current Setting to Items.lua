@@ -1,85 +1,61 @@
 --========================================================
 -- @title JKK_ItemTool_Apply Current Setting to Items
 -- @author Junki Kim
--- @version 0.5.5
+-- @version 0.6.3
 --========================================================
 
 local EXTSTATE_KEY = "JKK_ItemTool"
 
 local function LoadSettings()
+    local function LoadFlag(key, default)
+        local v = reaper.GetExtState(EXTSTATE_KEY, key)
+        if v == "1" then return true end
+        if v == "0" then return false end
+        return default
+    end
+
     local S = {}
-    S.start_offset = tonumber(reaper.GetExtState(EXTSTATE_KEY, "start_offset")) or 1.0
     S.width = tonumber(reaper.GetExtState(EXTSTATE_KEY, "width")) or 5.0
+    S.use_edit_cursor = LoadFlag("use_edit_cursor", false)
     S.pos_range = tonumber(reaper.GetExtState(EXTSTATE_KEY, "pos_range")) or 0.0
     S.pitch_range = tonumber(reaper.GetExtState(EXTSTATE_KEY, "pitch_range")) or 0.0
     S.playback_range = tonumber(reaper.GetExtState(EXTSTATE_KEY, "playback_range")) or 0.0
     S.vol_range = tonumber(reaper.GetExtState(EXTSTATE_KEY, "vol_range")) or 0.0
     
-    S.random_pos = (reaper.GetExtState(EXTSTATE_KEY, "random_pos") == "1") or true
-    S.random_pitch = (reaper.GetExtState(EXTSTATE_KEY, "random_pitch") == "1") or true
-    S.random_play = (reaper.GetExtState(EXTSTATE_KEY, "random_play") == "1") or true
-    S.random_vol = (reaper.GetExtState(EXTSTATE_KEY, "random_vol") == "1") or true
-    S.random_order = (reaper.GetExtState(EXTSTATE_KEY, "random_order") == "1") or false
+    S.random_pos = LoadFlag("random_pos", true)
+    S.random_pitch = LoadFlag("random_pitch", true)
+    S.random_play = LoadFlag("random_play", true)
+    S.random_vol = LoadFlag("random_vol", true)
+    S.random_order = LoadFlag("random_order", false)
     
     return S
 end
 
 local settings = LoadSettings()
 
-local start_offset = settings.start_offset
-local width = settings.width
-local pos_range = settings.pos_range
-local pitch_range = settings.pitch_range
-local playback_range = settings.playback_range
-local vol_range = settings.vol_range
-
-local random_pos = settings.random_pos
-local random_pitch = settings.random_pitch
-local random_play = settings.random_play
-local random_vol = settings.random_vol
-local random_order = settings.random_order
-
-local stored_offsets    = {}  
-local stored_pitch      = {}  
-local stored_playrates  = {}  
-local stored_vols       = {}  
-local persistentSlots   = {} 
-local prev_random_pitch = random_pitch
-local prev_random_play  = random_play  
-local prev_random_vol   = random_vol   
-
-math.randomseed(os.time())
-
-
-local function generate_random_slots(items, max_count)
-    local slots = {}
-    for i = 1, max_count do slots[i] = nil end
-
-    for _, item in ipairs(items) do
-        local idx
-        repeat
-            idx = math.random(1, max_count)
-        until slots[idx] == nil
-        slots[idx] = item
-    end
-
-    return slots
-end
-
-local function create_default_slots(items, max_count)
-    local slots = {}
-    for i = 1, max_count do slots[i] = items[i] or nil end
-    return slots
-end
-
-
 function arrange_items()
     local cnt = reaper.CountSelectedMediaItems(0)
     if cnt == 0 then return end
 
+    local anchor_pos_str = reaper.GetExtState(EXTSTATE_KEY, "anchor_pos")
+    local anchor_pos = tonumber(anchor_pos_str)
+
+    if settings.use_edit_cursor then
+        anchor_pos = reaper.GetCursorPosition()
+    elseif not anchor_pos then
+        local min = math.huge
+        for i = 0, cnt - 1 do
+            local item = reaper.GetSelectedMediaItem(0, i)
+            local pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+            if pos < min then min = pos end
+        end
+        anchor_pos = reaper.SnapToGrid(0, min)
+        reaper.SetExtState(EXTSTATE_KEY, "anchor_pos", tostring(anchor_pos), false)
+    end
+
     local _, grid_size = reaper.GetSetProjectGrid(0, false)
-    local start_pos = reaper.GetCursorPosition() + grid_size * start_offset * 2
-    local spacing   = grid_size * width * 2
+    local start_pos = anchor_pos
+    local spacing = grid_size * settings.width * 2
 
     local track_items = {}
     for i = 0, cnt - 1 do
@@ -91,147 +67,61 @@ function arrange_items()
 
     for track, items in pairs(track_items) do
         table.sort(items, function(a, b)
-            return reaper.GetMediaItemInfo_Value(a, "D_POSITION")
-                <  reaper.GetMediaItemInfo_Value(b, "D_POSITION")
+            return reaper.GetMediaItemInfo_Value(a, "D_POSITION") < reaper.GetMediaItemInfo_Value(b, "D_POSITION")
         end)
     end
 
-    local max_count = 0
-    for _, items in pairs(track_items) do
-        if #items > max_count then max_count = #items end
-    end
-    if max_count < 1 then max_count = 1 end
-
     reaper.Undo_BeginBlock()
     reaper.PreventUIRefresh(1)
+    math.randomseed(os.time())
 
     for track, items in pairs(track_items) do
-        local slots = nil
-
-        if random_order then
-            slots = generate_random_slots(items, max_count)
-            persistentSlots[track] = slots
-        else
-            if persistentSlots[track] then
-                slots = persistentSlots[track]
-            else
-                slots = create_default_slots(items, max_count)
-                persistentSlots[track] = slots
+        local active_items = items
+        if settings.random_order then
+            local shuffled = {}
+            local temp = {table.unpack(items)}
+            while #temp > 0 do
+                table.insert(shuffled, table.remove(temp, math.random(#temp)))
             end
+            active_items = shuffled
         end
 
-        if prev_random_pitch and not random_pitch then
-            for slot_index = 1, max_count do
-                local item = slots[slot_index]
-                if item then
-                    local take = reaper.GetActiveTake(item)
-                    if take then
-                        stored_pitch[take] = reaper.GetMediaItemTakeInfo_Value(take, "D_PITCH")
-                    end
-                end
+        for i, item in ipairs(active_items) do
+            local take = reaper.GetActiveTake(item)
+            
+            -- Pitch
+            if take and settings.random_pitch then
+                reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", (math.random()*settings.pitch_range*2)-settings.pitch_range)
             end
-        end
 
-        if prev_random_play and not random_play then
-            for slot_index = 1, max_count do
-                local item = slots[slot_index]
-                if item then
-                    local take = reaper.GetActiveTake(item)
-                    if take then
-                        stored_playrates[take] = reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE")
-                    end
-                end
+            -- Playrate & Length
+            if take and settings.random_play then
+                local rate = 2 ^ (((math.random()*settings.playback_range*2)-settings.playback_range) / 12)
+                local cur_len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+                local cur_rate = reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE")
+                reaper.SetMediaItemLength(item, (cur_len * cur_rate) / rate, true)
+                reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", rate)
             end
-        end
 
-        if prev_random_vol and not random_vol then
-            for slot_index = 1, max_count do
-                local item = slots[slot_index]
-                if item then
-                    stored_vols[item] = reaper.GetMediaItemInfo_Value(item, "D_VOL")
-                end
+            local base_pos = start_pos + (spacing * (i - 1))
+            local final_pos = base_pos
+
+            if settings.random_pos then
+                final_pos = base_pos + (math.random() * settings.pos_range * 2) - settings.pos_range
             end
-        end
-    end
+            
+            reaper.SetMediaItemInfo_Value(item, "D_POSITION", final_pos)
 
-    for track, items in pairs(track_items) do
-        local slots = persistentSlots[track]
-
-        for slot_index = 1, max_count do
-            local item = slots[slot_index]
-            if item then
-                local take = reaper.GetActiveTake(item)
-
-                if take then
-                    if random_pitch then
-                        local rnd = (math.random() * pitch_range * 2) - pitch_range
-                        reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", rnd)
-                        stored_pitch[take] = rnd
-                    else
-                        if stored_pitch[take] ~= nil then
-                            reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", stored_pitch[take])
-                        end
-                    end
-                end
-
-                if take then
-                    if random_play then
-                        local rnd = (math.random() * playback_range * 2) - playback_range
-                        local rate = 2 ^ (rnd / 12)
-                        
-                        local current_length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
-                        local current_rate = reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE")
-                        local origin_length = current_length * current_rate
-                        local adjust_length = origin_length / rate
-                        reaper.SetMediaItemLength(item, adjust_length, true)
-
-                        reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", rate)
-                        stored_playrates[take] = rate
-                    else
-                        if stored_playrates[take] ~= nil then
-                            reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", stored_playrates[take])
-                        end
-                    end
-                end
-
-                local base_pos  = start_pos + spacing * (slot_index - 1)
-                local final_pos = base_pos
-
-                if random_pos then
-                    local offset = (math.random() * pos_range * 2) - pos_range
-                    final_pos = base_pos + offset
-                    stored_offsets[item] = offset
-                else
-                    if stored_offsets[item] ~= nil then
-                        final_pos = base_pos + stored_offsets[item]
-                    else
-                        final_pos = base_pos
-                    end
-                end
-
-                reaper.SetMediaItemInfo_Value(item, "D_POSITION", final_pos)
-
-                -- Volume
-                if random_vol then
-                    local v = 1.0
-                    if vol_range > 0 then
-                        v = 1.0 + ((math.random() * 2 - 0.5) * (vol_range / 8) )
-                        if v < 0 then v = 0 end
-                    end
-
-                    stored_vols[item] = v
-                    reaper.SetMediaItemInfo_Value(item, "D_VOL", v)
-                else
-                    if stored_vols[item] ~= nil then
-                        reaper.SetMediaItemInfo_Value(item, "D_VOL", stored_vols[item])
-                    end
-                end
+            -- Volume
+            if settings.random_vol then
+                local v = 1.0 + ((math.random() * 2 - 0.5) * (settings.vol_range / 8))
+                reaper.SetMediaItemInfo_Value(item, "D_VOL", math.max(0, v))
             end
         end
     end
 
     reaper.PreventUIRefresh(-1)
-    reaper.Undo_EndBlock("Variator Quick Apply", -1)
+    reaper.Undo_EndBlock("Variator Apply Current", -1)
     reaper.UpdateArrange()
 end
 

@@ -601,7 +601,7 @@ local track_colors = {
                 shared_info.hovered_id = "TRACK_RENAME"
             end
             reaper.ImGui_Spacing(ctx)
-            reaper.ImGui_SetCursorPos(ctx, 0, 525)
+            reaper.ImGui_SetCursorPos(ctx, 0, 550)
 
         -- ========================================================
         reaper.ImGui_SeparatorText(ctx, 'Track Color Palette')
