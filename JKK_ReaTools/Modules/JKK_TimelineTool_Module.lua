@@ -183,7 +183,7 @@ local region_colors = {
 
         reaper.ImGui_Text(ctx, 'Create a TIME SELECTION to use this feature.')
         -- ========================================================
-        reaper.ImGui_SeparatorText(ctx, 'Region Actions')
+        reaper.ImGui_SeparatorText(ctx, 'Actions')
         
             if reaper.ImGui_ImageButton(ctx, "##btn_delsel", REGION_ICONS.delsel, 22, 22) then
                 DeleteOverlappingRegions()

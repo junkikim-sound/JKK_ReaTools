@@ -37,7 +37,7 @@ local current_play_slot = 0
 
 -- Checkbox Default Value
 local checkbox_x     = 455
-local checkbox_y     = 348
+local checkbox_y     = 338
 local checkbox_h     = 25
 local random_pos     = true
 local random_pitch   = true

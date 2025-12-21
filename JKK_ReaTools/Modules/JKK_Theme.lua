@@ -44,18 +44,18 @@ function ApplyTheme(ctx)
 
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(),                      0xedededFF) ---
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TextDisabled(),              0x808080FF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(),                  0x191919FF) ---
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(),                  0x252525FF) ---
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ChildBg(),                   0x00000000)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_PopupBg(),                   0x141414F0)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(),                    0x505050FF)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_BorderShadow(),              0x808080FF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(),                   0x252525FF) ---
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBgHovered(),            0x353535FF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBgActive(),             0x4C4C4CFF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TitleBg(),                   0x111111FF) ---
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TitleBgActive(),             0x181818FF)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBg(),                   0x353535FF) ---
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBgHovered(),            0x454545FF)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_FrameBgActive(),             0x555555FF)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TitleBg(),                   0x252525FF) ---
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TitleBgActive(),             0x191919FF)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TitleBgCollapsed(),          0x00000082)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_MenuBarBg(),                 0x242424FF)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_MenuBarBg(),                 0x353535FF)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarBg(),               0x00000000)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarGrab(),             0x068FC3FF) ---
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ScrollbarGrabHovered(),      0x49B6CCFF)
@@ -76,7 +76,7 @@ function ApplyTheme(ctx)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ResizeGripHovered(),         0x49B6CCFF)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ResizeGripActive(),          0x49B6CCFF)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_InputTextCursor(),           0xEFE7DAFF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TabHovered(),                0x6db2d4FF) 
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TabHovered(),                0x555555FF) 
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Tab(),                       0x353535FF) ---
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TabSelected(),               0x068FC3FF) 
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TabSelectedOverline(),       0x555555FF)
