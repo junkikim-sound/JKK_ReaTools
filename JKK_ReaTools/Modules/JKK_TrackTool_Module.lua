@@ -295,45 +295,67 @@ local track_colors = {
 -- Function: Remove Unused Tracks
 ------------------------------------------------------------
     local function DeleteEmptyTracksAndFolders()
-    local proj = 0
-    local track_count = reaper.CountTracks(proj)
-    if track_count == 0 then return end
+        local function IsTrackUnused(track)
+            if reaper.CountTrackMediaItems(track) > 0 then return false end
+            if reaper.GetTrackNumSends(track, -1) > 0 then return false end
+            if reaper.GetTrackNumSends(track, 0) > 0 then return false end
+            if reaper.GetTrackNumSends(track, 1) > 0 then return false end
+            if reaper.GetMediaTrackInfo_Value(track, 'I_RECARM') == 1 then return false end
+            if reaper.CountTrackEnvelopes(track) > 0 then return false end
+            return true
+        end
 
-    reaper.Undo_BeginBlock()
-    reaper.PreventUIRefresh(1) -- UI 깜빡임 방지 및 성능 향상
+        reaper.Undo_BeginBlock()
+        reaper.PreventUIRefresh(1)
 
-    -- 뒤에서부터 검사하여 삭제 시 인덱스 꼬임 방지
-    for i = track_count - 1, 0, -1 do
-        local tr = reaper.GetTrack(proj, i)
-        if tr then
-            local item_count = reaper.CountTrackMediaItems(tr)
-            local fx_count = reaper.TrackFX_GetCount(tr)
-            local folder_depth = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH")
+        local saved_tracks = {}
+        for i = 0, reaper.CountSelectedTracks(0) - 1 do
+            table.insert(saved_tracks, reaper.GetSelectedTrack(0, i))
+        end
 
-            -- [조건] 아이템 없고, FX 없고, 하위 트랙도 없는 경우 (depth가 1이면 자식이 있다는 뜻이므로 제외)
-            if item_count == 0 and fx_count == 0 and folder_depth <= 0 then
+        reaper.Main_OnCommand(40297, 0)
+
+        local trackCount = reaper.CountTracks(0)
+        for i = trackCount - 1, 0, -1 do
+            local track = reaper.GetTrack(0, i)
+            local folder_depth = reaper.GetMediaTrackInfo_Value(track, 'I_FOLDERDEPTH')
+            
+            if folder_depth == 1 then
+                local childUsed = false
+                local depth = reaper.GetTrackDepth(track)
+                local trackidx = i + 1
                 
-                -- 만약 이 트랙이 폴더를 닫는 역할(< 0)을 하고 있다면, 그 값을 위쪽 트랙으로 전달
-                if folder_depth < 0 then
-                    if i > 0 then
-                        local prev_tr = reaper.GetTrack(proj, i - 1)
-                        local prev_depth = reaper.GetMediaTrackInfo_Value(prev_tr, "I_FOLDERDEPTH")
-                        -- 이전 트랙의 depth에 현재 삭제될 트랙의 depth 값을 더함
-                        reaper.SetMediaTrackInfo_Value(prev_tr, "I_FOLDERDEPTH", prev_depth + folder_depth)
+                while trackidx < trackCount do
+                    local child = reaper.GetTrack(0, trackidx)
+                    local childDepth = reaper.GetTrackDepth(child)
+                    if childDepth <= depth then break end
+                    
+                    if not reaper.IsTrackSelected(child) then
+                        childUsed = true
+                        break
                     end
+                    trackidx = trackidx + 1
                 end
                 
-                -- 트랙 삭제
-                reaper.DeleteTrack(tr)
+                if not childUsed then
+                    reaper.SetTrackSelected(track, IsTrackUnused(track))
+                end
+            else
+                reaper.SetTrackSelected(track, IsTrackUnused(track))
             end
         end
-    end
 
-    reaper.PreventUIRefresh(-1)
-    reaper.TrackList_AdjustWindows(false)
-    reaper.UpdateArrange()
-    reaper.Undo_EndBlock("Delete unused tracks (Structure Preserved)", -1)
-end
+        reaper.Main_OnCommand(40005, 0) 
+        for _, tr in ipairs(saved_tracks) do
+            if reaper.ValidatePtr(tr, 'MediaTrack*') then
+                reaper.SetTrackSelected(tr, true)
+            end
+        end
+
+        reaper.PreventUIRefresh(-1)
+        reaper.UpdateArrange()
+        reaper.Undo_EndBlock("JKK: Delete Unused Tracks", -1)
+    end
 
 ------------------------------------------------------------
 -- Function: Floow Group Track's Name

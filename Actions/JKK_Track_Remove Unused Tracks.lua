@@ -1,81 +1,78 @@
 --========================================================
 -- @title JJK_TrackTool_Remove Unused Tracks
 -- @author Junki Kim
--- @version 0.5.5
+-- @version 0.6.0
 --========================================================
 
-local reaper = reaper
-
-local function Safe_GetTrack(proj, idx)
-    return reaper.GetTrack(proj, idx)
-end
-
-local function TrackHasItems(track)
-    if not track then return false end
-    return reaper.CountTrackMediaItems(track) > 0
-end
-
-local function IsFolderStart(track)
-    if not track then return false end
-    return reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") == 1
-end
-
-local function FolderIsEmpty(proj, start_index, track_count)
-    local depth = 1
-    
-    local has_items = TrackHasItems(Safe_GetTrack(proj, start_index))
-    if has_items then return false end
-
-    for i = start_index + 1, track_count - 1 do
-        local tr = Safe_GetTrack(proj, i)
-        if not tr then break end
-        
-        local d = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH")
-        depth = depth + d
-        
-        if depth <= 0 then
-            if i == start_index + 1 then
-                return true
-            else
-                return false 
-            end
-        end
-        
-        if TrackHasItems(tr) then return false end
-    end
+local function IsTrackUnused(track)
+    if reaper.CountTrackMediaItems(track) > 0 then return false end
+    if reaper.GetTrackNumSends(track, -1) > 0 then return false end
+    if reaper.GetTrackNumSends(track, 1) > 0 then return false end
+    if reaper.GetTrackNumSends(track, 0) > 0 then return false end
+    if reaper.GetMediaTrackInfo_Value(track, 'I_RECARM') == 1 then return false end
+    if reaper.CountTrackEnvelopes(track) > 0 then return false end
 
     return true
 end
 
-local function DeleteEmptyTracksAndFolders()
-    local proj = 0
-    local track_count = reaper.CountTracks(proj)
-    if track_count == 0 then return end
-
+local function Main()
     reaper.Undo_BeginBlock()
+    reaper.PreventUIRefresh(1)
 
-    local i = track_count - 1
-    while i >= 0 do
-        local tr = reaper.GetTrack(proj, i)
-        if tr then
-            local item_count = reaper.CountTrackMediaItems(tr)
-            local fx_count = reaper.TrackFX_GetCount(tr)
-            local _, name = reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)
-            
-            local folder_depth = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH")
-
-            if item_count == 0  then
-                if folder_depth ~= 1 then
-                    reaper.DeleteTrack(tr)
-                end
-            end
-        end
-        i = i - 1
+    local saved_tracks = {}
+    local sel_count = reaper.CountSelectedTracks(0)
+    for i = 0, sel_count - 1 do
+        table.insert(saved_tracks, reaper.GetSelectedTrack(0, i))
     end
 
-    reaper.TrackList_AdjustWindows(false)
+    reaper.Main_OnCommand(40297, 0)
+
+    local trackCount = reaper.CountTracks(0)
+    
+    for i = trackCount - 1, 0, -1 do
+        local track = reaper.GetTrack(0, i)
+        local folder_depth = reaper.GetMediaTrackInfo_Value(track, 'I_FOLDERDEPTH')
+        
+        if folder_depth == 1 then
+            local childUsed = false
+            local depth = reaper.GetTrackDepth(track)
+            local trackidx = i + 1
+            
+            while trackidx < trackCount do
+                local child = reaper.GetTrack(0, trackidx)
+                local childDepth = reaper.GetTrackDepth(child)
+                
+                if childDepth <= depth then break end
+                
+                if not reaper.IsTrackSelected(child) then
+                    childUsed = true
+                    break
+                end
+                trackidx = trackidx + 1
+            end
+            
+            if not childUsed then
+                if IsTrackUnused(track) then
+                    reaper.SetTrackSelected(track, true)
+                end
+            end
+        else
+            if IsTrackUnused(track) then
+                reaper.SetTrackSelected(track, true)
+            end
+        end
+    end
+
+    reaper.Main_OnCommand(40005, 0)
+    for _, tr in ipairs(saved_tracks) do
+        if reaper.ValidatePtr(tr, 'MediaTrack*') then
+            reaper.SetTrackSelected(tr, true)
+        end
+    end
+
+    reaper.PreventUIRefresh(-1)
     reaper.UpdateArrange()
-    reaper.Undo_EndBlock("Delete empty tracks (Preserving folders)", -1)
+    reaper.Undo_EndBlock("Delete Unused Tracks (Smart)", -1)
 end
 
-DeleteEmptyTracksAndFolders()
+Main()

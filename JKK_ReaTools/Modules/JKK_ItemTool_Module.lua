@@ -56,7 +56,7 @@ local prev_random_pos, prev_random_pitch, prev_random_play, prev_random_vol, pre
     random_pos, random_pitch, random_play, random_vol, random_order
 
 -- freeze (Cluster IDs based)
-local stored_offsets    = {} -- Key: Cluster ID or Index
+local stored_offsets    = {}
 local stored_pitch      = {}
 local stored_playrates  = {}
 local stored_vols       = {}
@@ -89,6 +89,7 @@ math.randomseed(os.time())
         
         ITEM_ICONS.fx      = reaper.ImGui_CreateImage(path .. "ITEM_Insert FX @streamline.png")
         ITEM_ICONS.apply   = reaper.ImGui_CreateImage(path .. "ITEM_Random Arrangement @streamline.png")
+        ITEM_ICONS.align   = reaper.ImGui_CreateImage(path .. "ITEM_Align Items to Left in Slot @streamline.png")
         ITEM_ICONS.play    = reaper.ImGui_CreateImage(path .. "ITEM_Play @streamline.png")
         ITEM_ICONS.stop    = reaper.ImGui_CreateImage(path .. "ITEM_Stop @streamline.png")
         ITEM_ICONS.move    = reaper.ImGui_CreateImage(path .. "ITEM_Move Items to Edit Cursor @streamline.png")
@@ -145,7 +146,7 @@ math.randomseed(os.time())
             local item = reaper.GetSelectedMediaItem(0, i)
             local take = reaper.GetActiveTake(item)
             if take then
-                reaper.SetMediaItemInfo_Value(item, "B_PPITCH", 0) -- Turn off preserve pitch
+                reaper.SetMediaItemInfo_Value(item, "B_PPITCH", 0)
                 
                 local current_length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
                 local current_rate = reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE")
@@ -175,7 +176,6 @@ math.randomseed(os.time())
 
         reaper.Undo_BeginBlock()
 
-        -- Use a simpler approach for group stretch: Min Pos
         local min_pos = math.huge
         local items_data = {}
 
@@ -296,8 +296,6 @@ math.randomseed(os.time())
 ----------------------------------------------------------
 -- Helper Functions: CLUSTERING
 ----------------------------------------------------------
-    
-    -- 선택된 모든 아이템을 수집하고 시간순으로 정렬
     local function CollectAndSortSelectedItems()
         local cnt = reaper.CountSelectedMediaItems(0)
         local items = {}
@@ -312,53 +310,44 @@ math.randomseed(os.time())
                 len = len
             })
         end
-        -- Start Position 기준으로 정렬
         table.sort(items, function(a, b) return a.pos < b.pos end)
         return items
     end
 
-    -- 정렬된 아이템 리스트를 받아 Cluster(겹치는 그룹) 생성
     local function BuildClusters(sorted_items)
         local clusters = {}
         if #sorted_items == 0 then return clusters end
 
-        -- Tolerance (1ms)
         local epsilon = 0.001 
 
         local current_cluster = nil
 
         for i, data in ipairs(sorted_items) do
             if current_cluster == nil then
-                -- 새로운 클러스터 시작
                 current_cluster = {
                     items = {}, 
                     start_pos = data.pos,
                     end_pos = data.end_pos,
-                    items_data = {} -- 내부 아이템 정보 (상대 오프셋 등)
+                    items_data = {}
                 }
                 table.insert(current_cluster.items, data.item)
                 table.insert(current_cluster.items_data, {
                     item = data.item,
-                    rel_pos = 0 -- 첫 아이템은 기준점이 됨 (하지만 나중에 start_pos 기준으로 다시 계산)
+                    rel_pos = 0
                 })
             else
-                -- 겹치는지 확인 (현재 클러스터의 끝지점 vs 새 아이템의 시작점)
                 if data.pos < current_cluster.end_pos - epsilon then
-                    -- 겹침: 클러스터에 추가
                     table.insert(current_cluster.items, data.item)
                     table.insert(current_cluster.items_data, {
                         item = data.item,
-                        rel_pos = 0 -- 임시
+                        rel_pos = 0
                     })
-                    -- 클러스터 끝지점 갱신
                     if data.end_pos > current_cluster.end_pos then
                         current_cluster.end_pos = data.end_pos
                     end
                 else
-                    -- 안 겹침: 기존 클러스터 종료 및 저장
                     table.insert(clusters, current_cluster)
                     
-                    -- 새 클러스터 시작
                     current_cluster = {
                         items = {data.item},
                         start_pos = data.pos,
@@ -372,7 +361,6 @@ math.randomseed(os.time())
             table.insert(clusters, current_cluster)
         end
 
-        -- 클러스터 내부 상대 위치(Offset) 확정 계산
         for _, cluster in ipairs(clusters) do
             for _, item_info in ipairs(cluster.items_data) do
                 local actual_pos = reaper.GetMediaItemInfo_Value(item_info.item, "D_POSITION")
@@ -383,10 +371,8 @@ math.randomseed(os.time())
         return clusters
     end
 
-    -- 저장된 클러스터 상태가 유효한지 확인
     local function IsPersistentClustersValid()
         if #persistentClusters == 0 then return false end
-        -- 첫번째 아이템이 유효한지 정도만 체크
         if persistentClusters[1] and persistentClusters[1].items[1] then
             if not reaper.ValidatePtr(persistentClusters[1].items[1], "MediaItem*") then
                 return false
@@ -397,7 +383,6 @@ math.randomseed(os.time())
         return true
     end
 
-    -- 클러스터 목록 섞기 (Fisher-Yates)
     local function ShuffleClusters(clusters)
         local shuffled = {}
         for i, v in ipairs(clusters) do shuffled[i] = v end
@@ -409,7 +394,7 @@ math.randomseed(os.time())
     end
 
 ----------------------------------------------------------
--- Function: Apply Spacing (Cluster Based)
+-- Function: Apply Spacing
 ----------------------------------------------------------
     function apply_spacing_only()
         local cnt = reaper.CountSelectedMediaItems(0)
@@ -430,7 +415,6 @@ math.randomseed(os.time())
         local start_pos = base_anchor
         local spacing   = grid_size * width * 2
 
-        -- Get Clusters
         if not IsPersistentClustersValid() then
              local sorted_items = CollectAndSortSelectedItems()
              persistentClusters = BuildClusters(sorted_items)
@@ -443,12 +427,10 @@ math.randomseed(os.time())
         for i, cluster in ipairs(clusters) do
             local cluster_base_pos = start_pos + spacing * (i - 1)
             
-            -- 클러스터 오프셋 적용 (Freeze된 값이 있으면 사용)
             if stored_offsets[i] ~= nil then
                 cluster_base_pos = cluster_base_pos + stored_offsets[i]
             end
             
-            -- 클러스터 내부 아이템 이동
             for _, item_data in ipairs(cluster.items_data) do
                 local item = item_data.item
                 if reaper.ValidatePtr(item, "MediaItem*") then
@@ -465,7 +447,7 @@ math.randomseed(os.time())
     end
 
 ----------------------------------------------------------
--- Function: Apply Slot Group Stretch (Cluster Based)
+-- Function: Apply Slot Group Stretch
 ----------------------------------------------------------
     local function GetSelectedItemsGUIDString()
         local guids = {}
@@ -483,37 +465,11 @@ math.randomseed(os.time())
 
         reaper.Undo_BeginBlock()
         reaper.PreventUIRefresh(1)
-
-        -- slot_group_base는 이제 item key가 아니라 {item=item, org_pos=..., org_len=...} 정보를 담고 있음
-        -- 클러스터의 Start Pos 기준으로 늘려야 함.
-        
-        -- 하지만 여기서는 개별 아이템의 본래 위치/길이를 기억했다가 Ratio만 곱해주는게 아니라,
-        -- "클러스터 시작점"을 기준으로 위치가 늘어나야 함.
-        
-        -- 구조: slot_group_base[item] = { cluster_start_pos, offset_from_cluster, org_len, org_rate }
         
         for item, base in pairs(slot_group_base) do
             if item and reaper.ValidatePtr(item, "MediaItem*") then
                 local take = reaper.GetActiveTake(item)
                 if take then
-                    -- 새 위치 = 클러스터 시작점 + (원래 오프셋 * 비율)
-                    -- 주의: 클러스터 시작점 자체는 변하지 않음 (Stretch는 제자리에서 늘어나는 것)
-                    -- 하지만 Spacing에 의해 클러스터가 이동했을 수 있음.
-                    -- 현재 로직상 Slot Stretch는 "Spacing 완료 후" 적용된다고 가정.
-                    -- 따라서 item의 현재 클러스터 시작점을 다시 구하거나, 저장된 값을 써야함.
-                    -- 여기서는 저장된 base.anchor_pos(클러스터 시작점)을 씁니다.
-                    
-                    -- *중요*: 이미 Spacing 등으로 아이템이 이동했을 수 있음. 
-                    -- Stretch는 "Cluster 내부"를 늘리는 것.
-                    -- 따라서 현재 Cluster의 StartPos는 유지되어야 함.
-                    -- 그러나 로직의 단순화를 위해, slot_group_base 생성 시점의 anchor_pos를 사용하면
-                    -- Spacing -> Stretch 순서일 때 Spacing 위치가 무시될 위험이 있음.
-                    
-                    -- 해결책: Slot Stretch는 보통 Spacing과는 독립적(내부 길이 조절).
-                    -- 현재 아이템의 위치를 기준으로 하지 않고, 저장된 anchor 기준 비율 계산.
-                    
-                    -- 로직 수정: 사용자가 슬라이더를 잡았을 때(activated) 현재 위치를 기준으로 base를 캡처함.
-                    -- 따라서 base.anchor_pos는 "현재 화면상의 클러스터 시작점"임.
                     
                     local new_pos = base.anchor_pos + (base.offset * ratio)
                     local new_len = base.org_len * ratio
@@ -560,132 +516,70 @@ math.randomseed(os.time())
         reaper.Undo_BeginBlock()
         reaper.PreventUIRefresh(1)
 
-        -- 1. 클러스터 생성 (혹은 재활용)
-        -- Random Order가 켜져있으면 매번 새로 생성해서 섞어야 함.
-        -- 하지만 Freeze 기능을 위해 persistentClusters를 유지해야 할 수도 있음.
-        -- 여기서는 로직을 단순화: 버튼 누르면 무조건 다시 계산 (하지만 옵션 체크)
-        
+        -- 1. Create Clusters
         local clusters
         if current_random_order then
-            -- 셔플 모드면 새로 만들고 섞음
             local raw_clusters = BuildClusters(sorted_items)
             clusters = ShuffleClusters(raw_clusters)
-            persistentClusters = clusters -- 순서 저장
-            
-            -- 순서가 바뀌었으므로 저장된 랜덤값(stored_*)들도 초기화 혹은 매핑 이슈 발생
-            -- 순서 셔플 시에는 새로운 랜덤성을 부여하는 것이 자연스러움 -> stored 초기화
+            persistentClusters = clusters
+
             stored_offsets = {}
             stored_pitch = {}
             stored_playrates = {}
             stored_vols = {}
         else
-            -- 순서 유지 모드
             if not IsPersistentClustersValid() then
                 persistentClusters = BuildClusters(sorted_items)
             end
             clusters = persistentClusters
         end
 
-        -- 2. Freeze Logic (체크박스 해제 시 값 보존)
-        -- 클러스터 단위로 저장해야 함. stored_pitch[cluster_index]
-        -- 하지만 코드 복잡도를 줄이기 위해, "랜덤이 꺼지면 -> 저장된 값 사용" 로직 유지.
-        
-        -- 저장 로직: 현재 상태를 저장할 필요가 있을까? 
-        -- 이미 아래 Loop에서 생성하면서 저장함. 
-        -- 여기서는 "꺼졌을 때" 복원할 값이 없으면 현재 값을 읽어오는 로직만 필요.
-        -- 기존 코드는 items iteration 돌면서 읽어왔음. 클러스터 모드에서도 비슷하게.
-
         -- 3. Apply Logic Loop
         for i, cluster in ipairs(clusters) do
-            
-            -- A. Random Values Generation (Cluster Scope)
-            local rnd_pitch_val = 0
-            local rnd_play_rate = 1.0
-            local rnd_pos_offset = 0
-            local rnd_vol_val = 1.0
-
-            -- Pitch
-            if current_random_pitch then
-                rnd_pitch_val = (math.random() * pitch_range * 2) - pitch_range
-                stored_pitch[i] = rnd_pitch_val
-            else
-                if stored_pitch[i] ~= nil then rnd_pitch_val = stored_pitch[i] end
-            end
-
-            -- Playrate
-            if current_random_play then
-                local rnd = (math.random() * playback_range * 2) - playback_range
-                rnd_play_rate = 2 ^ (rnd / 12)
-                stored_playrates[i] = rnd_play_rate
-            else
-                if stored_playrates[i] ~= nil then rnd_play_rate = stored_playrates[i] end
-            end
-
-            -- Position Offset
-            if current_random_pos then
-                rnd_pos_offset = (math.random() * pos_range * 2) - pos_range
-                stored_offsets[i] = rnd_pos_offset
-            else
-                if stored_offsets[i] ~= nil then rnd_pos_offset = stored_offsets[i] end
-            end
-
-            -- Volume
-            if current_random_vol then
-                if vol_range > 0 then
-                    rnd_vol_val = 1.0 + ((math.random() * 2 - 0.5) * (vol_range / 8) ) 
-                    if rnd_vol_val < 0 then rnd_vol_val = 0 end
-                end
-                stored_vols[i] = rnd_vol_val
-            else
-                if stored_vols[i] ~= nil then rnd_vol_val = stored_vols[i] end
-            end
-
-            -- B. Apply to Items in Cluster
             local cluster_base_pos = start_pos + spacing * (i - 1)
-            local final_cluster_pos = cluster_base_pos + rnd_pos_offset
 
-            for _, item_data in ipairs(cluster.items_data) do
+            for j, item_data in ipairs(cluster.items_data) do
                 local item = item_data.item
                 if reaper.ValidatePtr(item, "MediaItem*") then
                     local take = reaper.GetActiveTake(item)
-                    
-                    -- Pitch
-                    if take then
-                         reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", rnd_pitch_val)
+                    local item_key = i .. "_" .. j 
+
+                    local rnd_pitch_val = current_random_pitch and ((math.random() * pitch_range * 2) - pitch_range) or (stored_pitch[item_key] or 0)
+                    local rnd_play_rate = current_random_play and (2 ^ (((math.random() * playback_range * 2) - playback_range) / 12)) or (stored_playrates[item_key] or 1.0)
+                    local rnd_pos_offset = current_random_pos and ((math.random() * pos_range * 2) - pos_range) or (stored_offsets[item_key] or 0)
+                    local rnd_vol_val = stored_vols[item_key] or 1.0
+                    if current_random_vol then
+                        if vol_range > 0 then
+                            local rnd_db = (math.random() * 2.0 - 1.0) * vol_range
+                            rnd_vol_val = 10 ^ (rnd_db / 20)
+                        else
+                            rnd_vol_val = 1.0
+                        end
+                        stored_vols[item_key] = rnd_vol_val
                     end
 
-                    -- Playrate & Length
-                    -- Playrate가 변하면 길이도 변하므로, 겹쳐진 아이템들의 '간격(Offset)'도 
-                    -- 같은 비율로 변해야 찢어지지 않고 한 덩어리처럼 보입니다.
-                    if take then
-                         local current_length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
-                         local current_rate = reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE")
-                         
-                         -- 1. 원본 소스 길이 계산 (Rate 1.0 기준)
-                         local source_len = current_length * current_rate
-                         
-                         -- 2. 새로운 길이 계산
-                         local new_len = source_len / rnd_play_rate
-                         
-                         reaper.SetMediaItemLength(item, new_len, true)
-                         reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", rnd_play_rate)
-                    end
+                    stored_vols[item_key] = rnd_vol_val
+                    stored_pitch[item_key] = rnd_pitch_val
+                    stored_playrates[item_key] = rnd_play_rate
+                    stored_offsets[item_key] = rnd_pos_offset
+                    stored_vols[item_key] = rnd_vol_val
 
-                    -- Position (Anchor Logic Fix)
-                    -- [수정됨] Slot Stretch 로직과 동일한 원리 적용
-                    -- Playrate가 빨라지면(값 증가), 길이는 짧아지고 간격도 좁아져야 함 (반비례)
-                    -- 따라서 원래의 상대 위치(rel_pos)를 rnd_play_rate로 나누어 줍니다.
-                    
-                    local scaled_rel_pos = item_data.rel_pos / rnd_play_rate
-                    local new_pos = final_cluster_pos + scaled_rel_pos
-                    
-                    reaper.SetMediaItemInfo_Value(item, "D_POSITION", new_pos)
-
-                    -- Volume
                     if take then
+                        reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", rnd_pitch_val)
                         reaper.SetMediaItemTakeInfo_Value(take, "D_VOL", rnd_vol_val)
-                        -- reaper.SetMediaItemInfo_Value(item, "D_VOL", 1.0)
+                        
+                        local current_length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+                        local current_rate = reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE")
+                        local source_len = current_length * current_rate
+                        local new_len = source_len / rnd_play_rate
+                        
+                        reaper.SetMediaItemLength(item, new_len, true)
+                        reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", rnd_play_rate)
                     end
+
+                    local final_cluster_pos = cluster_base_pos + rnd_pos_offset
+                    local scaled_rel_pos = item_data.rel_pos / rnd_play_rate
+                    reaper.SetMediaItemInfo_Value(item, "D_POSITION", final_cluster_pos + scaled_rel_pos)
                 end
             end
         end
@@ -694,6 +588,33 @@ math.randomseed(os.time())
         reaper.Undo_EndBlock("Variator (Cluster) Updated", -1)
         reaper.UpdateArrange()
         current_play_slot = 0
+    end
+
+----------------------------------------------------------
+-- Function: Align Items to Left in Each Slot
+----------------------------------------------------------
+    function AlignItemsToLeftInSlot()
+        if not persistentClusters or #persistentClusters == 0 then
+            local sorted_items = CollectAndSortSelectedItems()
+            persistentClusters = BuildClusters(sorted_items)
+        end
+
+        reaper.Undo_BeginBlock()
+        reaper.PreventUIRefresh(1)
+
+        for _, cluster in ipairs(persistentClusters) do
+            for _, item_data in ipairs(cluster.items_data) do
+                item_data.rel_pos = 0
+                if reaper.ValidatePtr(item_data.item, "MediaItem*") then
+                    local cluster_pos = reaper.GetMediaItemInfo_Value(item_data.item, "D_POSITION")
+                end
+            end
+        end
+        arrange_items()
+
+        reaper.PreventUIRefresh(-1)
+        reaper.UpdateArrange()
+        reaper.Undo_EndBlock("Align Items to Left in Slot", -1)
     end
 
 ----------------------------------------------------------
@@ -767,9 +688,8 @@ math.randomseed(os.time())
     end
 
 ----------------------------------------------------------
--- Function: Move Items to Edit Cursor (Cluster Logic Needed?)
+-- Function: Move Items to Edit Cursor 
 ----------------------------------------------------------
-    -- 이 기능은 "Keep Spacing"이므로 단순 이동. 클러스터 로직 없어도 됨.
     function MoveItemsToEditCursor()
         local cnt = reaper.CountSelectedMediaItems(0)
         if cnt == 0 then return end
@@ -824,20 +744,14 @@ math.randomseed(os.time())
         local selItemCount = reaper.CountSelectedMediaItems(0)
         if selItemCount == 0 then return end
 
-        ----------------------------------------------------------
-        -- [추가됨] 0. Find the lowest track index involved (Target Position)
-        ----------------------------------------------------------
         local max_track_idx = 0
         for i = 0, selItemCount - 1 do
             local item = reaper.GetSelectedMediaItem(0, i)
             local tr = reaper.GetMediaItem_Track(item)
-            local tr_num = reaper.GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER") -- 1-based
+            local tr_num = reaper.GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER")
             if tr_num > max_track_idx then max_track_idx = tr_num end
         end
 
-        ----------------------------------------------------------
-        -- 1. Calculate the total time range
-        ----------------------------------------------------------
         local sel_start = math.huge
         local sel_end = -math.huge
 
@@ -851,9 +765,6 @@ math.randomseed(os.time())
 
         reaper.Undo_BeginBlock()
 
-        ----------------------------------------------------------
-        -- 2. Collect tracks and their parent folders
-        ----------------------------------------------------------
         local originalTracksList = {}
         local originalTracksMap = {}
         for i = 0, selItemCount - 1 do
@@ -893,9 +804,6 @@ math.randomseed(os.time())
             return reaper.GetMediaTrackInfo_Value(a, "IP_TRACKNUMBER") < reaper.GetMediaTrackInfo_Value(b, "IP_TRACKNUMBER")
         end)
 
-        ----------------------------------------------------------
-        -- 3. Create temporary structure
-        ----------------------------------------------------------
         local total = reaper.CountTracks(0)
         reaper.InsertTrackAtIndex(total, true)
         local header = reaper.GetTrack(0, total)
@@ -933,9 +841,6 @@ math.randomseed(os.time())
         reaper.GetSetMediaTrackInfo_String(footer, "P_NAME", "JKK_TEMP_FOOTER", true)
         reaper.SetMediaTrackInfo_Value(footer, "I_FOLDERDEPTH", -1)
 
-        ----------------------------------------------------------
-        -- 4. Perform Render and Post-processing
-        ----------------------------------------------------------
         reaper.SetOnlyTrackSelected(header)
         reaper.Main_OnCommand(40788, 0) -- Render tracks to stereo stem tracks
 
@@ -957,10 +862,6 @@ math.randomseed(os.time())
                 if final_it then reaper.SetMediaItemInfo_Value(final_it, "D_POSITION", sel_start) end
             end
         end
-
-        ----------------------------------------------------------
-        -- 5. Final Cleanup & Move Result Track
-        ----------------------------------------------------------
         for i = reaper.CountTracks(0) - 1, 0, -1 do
             local track = reaper.GetTrack(0, i)
             local _, name = reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "", false)
@@ -969,13 +870,8 @@ math.randomseed(os.time())
             end
         end
 
-        -- [추가됨] 결과 트랙을 원본 선택 영역의 바로 아래로 이동
         if result_track and reaper.ValidatePtr(result_track, "MediaTrack*") then
             reaper.SetOnlyTrackSelected(result_track)
-            -- max_track_idx는 1-based index (Track Number)입니다.
-            -- ReorderSelectedTracks의 첫 번째 인자는 "Target Index (Insert Before)"입니다.
-            -- Track 5번 뒤에 넣고 싶으면, Index 5 (Track 6번 자리)에 넣어야 합니다.
-            -- 따라서 max_track_idx 값을 그대로 사용하면 됩니다.
             reaper.ReorderSelectedTracks(max_track_idx, 0)
         end
 
@@ -1020,10 +916,8 @@ math.randomseed(os.time())
         if current_count ~= prev_count then
             local current_guids = GetSelectedItemsGUIDString()
 
-            -- 사용자가 슬라이더를 드래그 중이 아닐 때만 업데이트 (드래그 중 값 튀는 현상 방지)
             if not reaper.ImGui_IsAnyItemActive(ctx) and current_guids ~= last_selected_guids then
                 
-                -- 1. 기존 초기화 로직
                 anchor_min_pos = nil
                 persistentClusters = {} 
                 slot_group_base = {} 
@@ -1031,30 +925,22 @@ math.randomseed(os.time())
                 prev_slot_stretch_ratio = 1.0
                 last_selected_guids = current_guids
 
-                -- 2. [추가됨] 첫 번째 아이템의 값 가져와서 슬라이더 동기화
                 local first_item = reaper.GetSelectedMediaItem(0, 0)
                 if first_item then
                     local take = reaper.GetActiveTake(first_item)
                     if take then
-                        -- Volume: Linear(1.0) -> dB(0.0) 변환 필요
                         local val_vol = reaper.GetMediaItemTakeInfo_Value(take, "D_VOL")
-                        if val_vol > 0.00000001 then -- log(0) 방지
+                        if val_vol > 0.00000001 then
                             adjust_vol = 20 * (math.log(val_vol) / math.log(10))
                         else
-                            adjust_vol = -150.0 -- -inf
+                            adjust_vol = -150.0
                         end
-                        -- 슬라이더 범위(-30 ~ 30)에 맞춰 클램핑
                         if adjust_vol < -30 then adjust_vol = -30 end
                         if adjust_vol > 30 then adjust_vol = 30 end
-
-                        -- Pitch
                         adjust_pitch = reaper.GetMediaItemTakeInfo_Value(take, "D_PITCH")
-
-                        -- Playrate
                         adjust_rate = reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE")
                     end
                 else
-                    -- 선택된 게 없으면 기본값으로 리셋 (선택 사항)
                     adjust_vol = 0.0
                     adjust_pitch = 0.0
                     adjust_rate = 1.0
@@ -1149,7 +1035,7 @@ math.randomseed(os.time())
             reaper.ImGui_SetCursorPos(ctx, checkbox_x, checkbox_y - 5 + (checkbox_h * -2))
             _, use_edit_cursor = reaper.ImGui_Checkbox(ctx, 'Cursor', use_edit_cursor)
 
-            -- Slot Stretch Slider Logic (Cluster Modified)
+            -- Slot Stretch Slider Logic
             local changed_slot_stretch, new_slot_ratio =
                 reaper.ImGui_SliderDouble(ctx, "Slot Stretch", slot_stretch_ratio, 0.25, 4.0, "%.2f")
             
@@ -1164,7 +1050,6 @@ math.randomseed(os.time())
                 
                 -- Capture state for Slot Stretch
                 for _, cluster in ipairs(persistentClusters) do
-                    -- 현재 화면상의 클러스터 시작점 찾기 (Spacing 등이 적용된 상태일 수 있으므로)
                     local current_cluster_start = math.huge
                     for _, item in ipairs(cluster.items) do
                         if reaper.ValidatePtr(item, "MediaItem*") then
@@ -1184,7 +1069,7 @@ math.randomseed(os.time())
                                   local cur_rate = reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE")
                                   
                                   slot_group_base[item] = {
-                                      anchor_pos = current_cluster_start, -- 이 아이템이 속한 클러스터의 현재 시작점
+                                      anchor_pos = current_cluster_start,
                                       offset     = cur_pos - current_cluster_start,
                                       org_len    = cur_len,
                                       org_rate   = cur_rate
@@ -1263,6 +1148,14 @@ math.randomseed(os.time())
                 shared_info.hovered_id = "ITEM_ARR_APPLY"
             end
             reaper.ImGui_SameLine(ctx)
+
+            if reaper.ImGui_ImageButton(ctx, "##btn_align", ITEM_ICONS.align, 22, 22) then
+                AlignItemsToLeftInSlot()
+            end
+            if reaper.ImGui_IsItemHovered(ctx) then
+                shared_info.hovered_id = "ITEM_ARR_ALIGN"
+            end
+            reaper.ImGui_SameLine(ctx)
             
             if reaper.ImGui_ImageButton(ctx, "##btn_play", ITEM_ICONS.play, 22, 22) then
                 local sel_cnt = reaper.CountSelectedMediaItems(0)
@@ -1271,7 +1164,6 @@ math.randomseed(os.time())
                     current_play_slot = 0
                     reaper.Main_OnCommand(1007, 0)
                 else
-                    -- Cluster Loop Play
                     local max_idx = #persistentClusters
                     if max_idx > 0 then
                         current_play_slot = current_play_slot + 1

@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.7.8
+-- @version 0.7.9
 -- @provides 
 --     [nomain] Modules/JKK_ItemTool_Module.lua
 --     [nomain] Modules/JKK_TrackTool_Module.lua
@@ -9,6 +9,7 @@
 --     [nomain] Modules/JKK_Theme.lua
 --     [nomain] Images/ITEM_Insert FX @streamline.png
 --     [nomain] Images/ITEM_Move Items to Edit Cursor @streamline.png
+--     [nomain] Images/ITEM_Align Items to Left in Slot @streamline.png
 --     [nomain] Images/ITEM_Play @streamline.png
 --     [nomain] Images/ITEM_Stop @streamline.png
 --     [nomain] Images/ITEM_Random Arrangement @streamline.png
@@ -16,7 +17,6 @@
 --     [nomain] Images/ITEM_Render Takes @streamline.png
 --     [nomain] Images/REGION_Delete All Regions @remixicon.png
 --     [nomain] Images/REGION_Delete in Time Selection @remixicon.png
---     [nomain] Images/TRACK_Create Parallel FX Group @streamline.png
 --     [nomain] Images/TRACK_Create Region @streamline.png
 --     [nomain] Images/TRACK_Create Time Selection @streamline.png
 --     [nomain] Images/TRACK_Delete Unused Tracks @streamline.png
@@ -79,6 +79,7 @@ local widget_descriptions = {
     ["ITEM_ARR_VOL"]        = { "Random Volume Range", "Sets the maximum range for random volume changes\n볼륨을 랜덤으로 변경할 최대 범위를 설정합니다" },
     ["ITEM_ARR_APPLY"]      = { "Random Arrangement", "Randomize item properties within the defined ranges\n설정된 범위 내에서 아이템 속성을 랜덤으로 적용합니다" },
     ["ITEM_ARR_PLAY"]       = { "Play Next Slot", "Jump to and play the next item start position\n다음 아이템 시작 위치로 이동하여 재생합니다" },
+    ["ITEM_ARR_ALIGN"]      = { "Align Items to Left in Slot", "Snaps all items to the starting position of each slot.\n각 슬롯의 시작 지점으로 모든 아이템을 밀착시킵니다" },
     ["ITEM_ARR_STOP"]       = { "Stop", "Stops playback\n재생을 중지합니다" },
     ["ITEM_ARR_LIVE"]       = { "Live Update", "Apply changes in real time while adjusting sliders\n슬라이더 조작 시 변경 사항을 실시간으로 적용합니다" },
     ["ITEM_ARR_ARR"]        = { "Shuffle Order", "Randomly shuffle the order of selected items\n선택된 아이템의 순서를 랜덤으로 섞습니다" },
