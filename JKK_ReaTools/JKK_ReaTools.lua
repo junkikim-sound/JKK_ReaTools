@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.7.9
+-- @version 0.8.0
 -- @provides 
 --     [nomain] Modules/JKK_ItemTool_Module.lua
 --     [nomain] Modules/JKK_TrackTool_Module.lua
@@ -17,6 +17,7 @@
 --     [nomain] Images/ITEM_Render Takes @streamline.png
 --     [nomain] Images/REGION_Delete All Regions @remixicon.png
 --     [nomain] Images/REGION_Delete in Time Selection @remixicon.png
+--     [nomain] Images/TRACK_Create Parallel FX Group @streamline.png
 --     [nomain] Images/TRACK_Create Region @streamline.png
 --     [nomain] Images/TRACK_Create Time Selection @streamline.png
 --     [nomain] Images/TRACK_Delete Unused Tracks @streamline.png
