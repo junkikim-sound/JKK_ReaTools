@@ -292,74 +292,48 @@ local track_colors = {
     end
 
 ------------------------------------------------------------
--- Function: Remove Unused Tracks (Robust Structure Keep)
+-- Function: Remove Unused Tracks
 ------------------------------------------------------------
     local function DeleteEmptyTracksAndFolders()
-        local proj = 0
-        local track_count = reaper.CountTracks(proj)
-        if track_count == 0 then return end
+    local proj = 0
+    local track_count = reaper.CountTracks(proj)
+    if track_count == 0 then return end
 
-        reaper.Undo_BeginBlock()
+    reaper.Undo_BeginBlock()
+    reaper.PreventUIRefresh(1) -- UI 깜빡임 방지 및 성능 향상
 
-        -- 인덱스 밀림 방지를 위해 뒤에서부터 검사
-        local i = track_count - 1
-        while i >= 0 do
-            local tr = reaper.GetTrack(proj, i)
-            if tr then
-                local item_count = reaper.CountTrackMediaItems(tr)
-                local fx_count = reaper.TrackFX_GetCount(tr) -- FX가 있으면 삭제하지 않음
-                local folder_depth = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH")
+    -- 뒤에서부터 검사하여 삭제 시 인덱스 꼬임 방지
+    for i = track_count - 1, 0, -1 do
+        local tr = reaper.GetTrack(proj, i)
+        if tr then
+            local item_count = reaper.CountTrackMediaItems(tr)
+            local fx_count = reaper.TrackFX_GetCount(tr)
+            local folder_depth = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH")
 
-                -- 1. 아이템도 없고 FX도 없는 '진짜 빈 트랙'만 대상
-                if item_count == 0 and fx_count == 0 then
-                    
-                    local should_delete = false
-
-                    -- Case A: 폴더를 닫는 트랙 (< 0) -> 윗 트랙에게 역할 넘기고 삭제
-                    if folder_depth < 0 then
-                        if i > 0 then
-                            local prev_tr = reaper.GetTrack(proj, i - 1)
-                            if prev_tr then
-                                local prev_depth = reaper.GetMediaTrackInfo_Value(prev_tr, "I_FOLDERDEPTH")
-                                reaper.SetMediaTrackInfo_Value(prev_tr, "I_FOLDERDEPTH", prev_depth + folder_depth)
-                            end
-                        end
-                        should_delete = true
-
-                    -- Case B: 평범한 트랙 (0) -> 그냥 삭제
-                    elseif folder_depth == 0 then
-                        should_delete = true
-
-                    -- Case C: 폴더 시작 트랙 (1) -> 자식이 다 지워져서 '빈 껍데기'가 되었는지 확인
-                    elseif folder_depth == 1 then
-                        -- 바로 다음 트랙이 '폴더 닫기'인지 확인 (자식이 없다는 뜻)
-                        -- (삭제 루프가 뒤에서부터 오므로, i+1은 이미 처리된 뒷 트랙들임)
-                        local next_tr = reaper.GetTrack(proj, i + 1)
-                        if next_tr then
-                            local next_depth = reaper.GetMediaTrackInfo_Value(next_tr, "I_FOLDERDEPTH")
-                            -- 다음 트랙이 폴더를 닫거나(-1 이하), 프로젝트 끝이라서 더 이상 자식이 없다면
-                            if next_depth < 0 then
-                                -- 이 폴더는 내용물이 없으므로 삭제해도 구조상 안전함 (1 + -1 = 0)
-                                should_delete = true
-                            end
-                        else
-                            -- 다음 트랙이 아예 없음 (프로젝트의 마지막 트랙이 폴더 시작일 수 없음)
-                            should_delete = true
-                        end
-                    end
-
-                    if should_delete then
-                        reaper.DeleteTrack(tr)
+            -- [조건] 아이템 없고, FX 없고, 하위 트랙도 없는 경우 (depth가 1이면 자식이 있다는 뜻이므로 제외)
+            if item_count == 0 and fx_count == 0 and folder_depth <= 0 then
+                
+                -- 만약 이 트랙이 폴더를 닫는 역할(< 0)을 하고 있다면, 그 값을 위쪽 트랙으로 전달
+                if folder_depth < 0 then
+                    if i > 0 then
+                        local prev_tr = reaper.GetTrack(proj, i - 1)
+                        local prev_depth = reaper.GetMediaTrackInfo_Value(prev_tr, "I_FOLDERDEPTH")
+                        -- 이전 트랙의 depth에 현재 삭제될 트랙의 depth 값을 더함
+                        reaper.SetMediaTrackInfo_Value(prev_tr, "I_FOLDERDEPTH", prev_depth + folder_depth)
                     end
                 end
+                
+                -- 트랙 삭제
+                reaper.DeleteTrack(tr)
             end
-            i = i - 1
         end
-
-        reaper.TrackList_AdjustWindows(false)
-        reaper.UpdateArrange()
-        reaper.Undo_EndBlock("Delete unused tracks (Structure Preserved)", -1)
     end
+
+    reaper.PreventUIRefresh(-1)
+    reaper.TrackList_AdjustWindows(false)
+    reaper.UpdateArrange()
+    reaper.Undo_EndBlock("Delete unused tracks (Structure Preserved)", -1)
+end
 
 ------------------------------------------------------------
 -- Function: Floow Group Track's Name
