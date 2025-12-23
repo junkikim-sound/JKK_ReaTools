@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.7.6
+-- @version 0.7.7
 -- @provides 
 --     [nomain] Modules/JKK_ItemTool_Module.lua
 --     [nomain] Modules/JKK_TrackTool_Module.lua
@@ -95,6 +95,7 @@ local widget_descriptions = {
     ["TRACK_RENAME"]        = { "Track Rename", "Batch rename selected tracks using the entered text and add numbering\n입력한 텍스트로 선택된 트랙을 일괄 변경하고 번호를 추가합니다" },
     ["TRACK_CRT_TS"]        = { "Time Selection Creator", "Create a time selection based on track item bounds\n트랙 아이템의 범위를 기준으로 타임 셀렉션을 생성합니다" },
     ["TRACK_CRT_REGION"]    = { "Regions Creator", "Create regions based on track item bounds (using name of tracks)\n트랙 아이템의 범위를 기준으로 리전을 생성합니다 (트랙 이름 사용)" },
+    ["TRACK_CRT_PRLGRP"]    = { "Create Parallel FX Group", "Automatically creates a parallel FX setup (Dry + 3 Wet tracks) with Pre-FX sends\n병렬 FX 라우팅(Dry + 3 Wet)을 자동 생성하고 아이템 이동 및 Pre-FX 센드를 연결합니다" },
     ["TRACK_FLWNAME"]       = { "Follow Folder Name", "Sync track names with their parent folder and add numbering\n부모 폴더 트랙 이름을 기준으로 트랙 이름을 동기화하고 번호를 추가합니다" },
     ["TRACK_DEL_UNSD"]      = { "Remove Unused Tracks", "Delete empty or unused tracks in the project\n프로젝트 내 비어 있거나 사용되지 않는 트랙을 삭제합니다" },
     ["TRACK_CHNG_COL"]      = { "Change Tracks Color", "Changes the color of selected tracks\n선택된 트랙의 색상을 변경합니다" },

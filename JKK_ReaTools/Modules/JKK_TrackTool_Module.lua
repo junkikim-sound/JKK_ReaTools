@@ -35,6 +35,7 @@ end
 -- Track Renamer
 local reaper = reaper
 local base_name = ""
+local last_sel_tr_guid = nil
 
 -- Color Palette Data (24 Colors)
 local track_colors = {
@@ -54,8 +55,10 @@ local track_colors = {
         
         TRACK_ICONS.crtts     = reaper.ImGui_CreateImage(path .. "TRACK_Create Time Selection @streamline.png")
         TRACK_ICONS.crtregion = reaper.ImGui_CreateImage(path .. "TRACK_Create Region @streamline.png")
+        TRACK_ICONS.crtprlgrp = reaper.ImGui_CreateImage(path .. "TRACK_Create Parallel FX Group @streamline.png")
         TRACK_ICONS.flwgrp    = reaper.ImGui_CreateImage(path .. "TRACK_Follow Group Name @streamline.png")
         TRACK_ICONS.delunsd   = reaper.ImGui_CreateImage(path .. "TRACK_Delete Unused Tracks @streamline.png")
+
         
         TRACK_ICONS.loaded = true
     end
@@ -87,119 +90,150 @@ local track_colors = {
     end
 
 ------------------------------------------------------------
--- Function: Select Track by Level
+-- Function: Smart Track Level Selector (Contextual)
 ------------------------------------------------------------
-    local function GetTrackCount() return reaper.CountTracks(0) end
-
-    local function CalcTrackLevelByIndex(idx)
-        local level = 0
-        for i = 0, idx do
+    local function BuildTrackLevelMap()
+        local level_map = {}
+        local cnt = reaper.CountTracks(0)
+        
+        for i = 0, cnt - 1 do
             local tr = reaper.GetTrack(0, i)
-            if not tr then break end
-            local d = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH")
-            level = level + d
+            level_map[tr] = reaper.GetTrackDepth(tr)
         end
-        return math.max(0, level)
+        return level_map
     end
 
-    local function Action_SelectTracksByLevel(target_level)
+    -- 특정 트랙의 부모 트랙 찾기
+    local function GetParentTrack(track)
+        local tr_idx = reaper.GetMediaTrackInfo_Value(track, "IP_TRACKNUMBER") - 1
+        local current_depth = reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH")
+        
+        -- 역방향 탐색으로 부모 찾기
+        -- 부모를 찾으려면 내 위쪽 트랙들을 훑으면서 레벨이 나보다 1 낮은 트랙을 찾아야 함
+        -- 하지만 리퍼 구조상 위에서부터 레벨을 계산해오는게 정확함.
+        
+        -- 간단한 방법: 내 인덱스 위로 올라가면서, 나보다 레벨이 작은 첫번째 트랙 찾기? (X 폴더 구조상 아닐수 있음)
+        -- 정석: 위에서부터 내려오며 레벨 추적.
+        
+        -- 여기서는 Action 실행 시 전체 맵을 만들기 때문에 그것을 활용하는 게 빠름.
+        return nil -- 이 함수는 Action 내부 로직으로 대체합니다.
+    end
+
+    local function Action_SelectTracksByLevel(target_level_ui)
+        -- [추가됨] 0이면 아무것도 선택하지 않음 (All Unselect)
+        if target_level_ui == 0 then
+            reaper.Main_OnCommand(40297, 0) -- Unselect all tracks
+            return
+        end
+
+        -- UI 값(1~)을 실제 Depth(0~)로 변환
+        local target_level = target_level_ui - 1
+
+        local sel_cnt = reaper.CountSelectedTracks(0)
+        
+        -- A. 아무것도 선택되지 않았을 때 -> Global Selection (0-based depth 기준)
+        if sel_cnt == 0 then
+            reaper.Undo_BeginBlock()
+            local level_map = BuildTrackLevelMap()
+            for i = 0, reaper.CountTracks(0) - 1 do
+                local tr = reaper.GetTrack(0, i)
+                if level_map[tr] == target_level then
+                    reaper.SetTrackSelected(tr, true)
+                end
+            end
+            reaper.Undo_EndBlock("JKK: Select Level (Global)", -1)
+            return
+        end
+
         reaper.Undo_BeginBlock()
-
-        local trackCount = GetTrackCount()
         
-        local effective_level = target_level
-        if effective_level > 0 then
-            effective_level = effective_level - 1 
+        -- B. Contextual Selection (이하 로직은 Depth 기준으로 동일하게 작동)
+        local level_map = BuildTrackLevelMap()
+        local source_tracks = {}
+        for i = 0, sel_cnt - 1 do
+            table.insert(source_tracks, reaper.GetSelectedTrack(0, i))
         end
 
-        for idx = 0, trackCount - 1 do
-            local tr = reaper.GetTrack(0, idx)
-            if tr then
-                local current_level = CalcTrackLevelByIndex(idx)
-                
-                local select_it = false
-                
-                if target_level == 0 then
-                    select_it = true
-                elseif current_level == effective_level then
-                    select_it = true
-                end
-                
-                reaper.SetTrackSelected(tr, select_it)
-            end
-        end
+        -- 기준 레벨 확인
+        local current_level = level_map[source_tracks[1]]
         
-        reaper.Undo_EndBlock("JKK: Select Tracks by Level", -1)
-    end
+        -- ... (이하 로직은 기존과 동일하지만 target_level 변수를 그대로 사용) ...
 
-    local function GetSortedSelectedTracksWithLevel()
-        local out = {}
-        local selcnt = reaper.CountSelectedTracks(0)
-        for i = 0, selcnt - 1 do
-            local tr = reaper.GetSelectedTrack(0, i)
-            local idx = reaper.GetMediaTrackInfo_Value(tr, "IP_TRACKNUMBER") - 1
-            local level = CalcTrackLevelByIndex(idx) 
-            table.insert(out, {track = tr, idx = idx, level = level})
-        end
-        table.sort(out, function(a,b) return a.idx < b.idx end)
-        return out
-    end
-
-    local function GetFullFolderRangeIndicesByIndex(start_idx)
-        local tr = reaper.GetTrack(0, start_idx)
-        if not tr then return {start_idx} end
-
-        local folderDepth = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH")
-        
-        if folderDepth <= 0 then
-            return {start_idx}
-        end
-        
-        local depth_count = 1
-        local out = {start_idx}
-
-        local trackCount = GetTrackCount()
-        for i = start_idx + 1, trackCount - 1 do
-            local t = reaper.GetTrack(0, i)
-            if not t then break end
-            local d = reaper.GetMediaTrackInfo_Value(t, "I_FOLDERDEPTH")
-            
-            depth_count = depth_count + d
-            table.insert(out, i)
-            
-            if depth_count <= 0 then
-                break
-            end
-        end
-
-        return out
-    end
-
-    local function GetItemRangeFromTrackIndices(indices)
-        local min_pos = math.huge
-        local max_end = -math.huge
-        for _, idx in ipairs(indices) do
-            local tr = reaper.GetTrack(0, idx)
-            if tr then
-                local cnt = reaper.CountTrackMediaItems(tr)
-                for j = 0, cnt - 1 do
-                    local item = reaper.GetTrackMediaItem(tr, j)
-                    local pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
-                    local len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
-                    if pos < min_pos then min_pos = pos end
-                    if pos + len > max_end then max_end = pos + len end
+        if target_level == current_level then
+            -- 1. SIBLINGS (형제)
+            local parent_ranges = {} 
+            for _, src_tr in ipairs(source_tracks) do
+                local parent = reaper.GetParentTrack(src_tr)
+                if parent then
+                    table.insert(parent_ranges, parent) 
+                else
+                    table.insert(parent_ranges, "ROOT")
                 end
             end
-        end
-        if min_pos == math.huge then return nil, nil end
-        return min_pos, max_end
-    end
+            
+            reaper.Main_OnCommand(40297, 0) -- Unselect all
 
-    local function GetTopLevelSelectedTracks()
-        local sel = GetSortedSelectedTracksWithLevel()
-        if #sel == 0 then return {} end
-        
-        return sel 
+            for i = 0, reaper.CountTracks(0) - 1 do
+                local tr = reaper.GetTrack(0, i)
+                local tr_parent = reaper.GetParentTrack(tr)
+                local tr_level = level_map[tr]
+
+                if tr_level == target_level then
+                    for _, p_ref in ipairs(parent_ranges) do
+                        if p_ref == "ROOT" then
+                            if tr_parent == nil then
+                                reaper.SetTrackSelected(tr, true)
+                                break
+                            end
+                        else
+                            if tr_parent == p_ref then
+                                reaper.SetTrackSelected(tr, true)
+                                break
+                            end
+                        end
+                    end
+                end
+            end
+
+        elseif target_level < current_level then
+            -- 2. ANCESTORS (부모)
+            reaper.Main_OnCommand(40297, 0) 
+            
+            for _, src_tr in ipairs(source_tracks) do
+                local parent = reaper.GetParentTrack(src_tr)
+                while parent do
+                    if level_map[parent] == target_level then
+                        reaper.SetTrackSelected(parent, true)
+                        break 
+                    end
+                    if level_map[parent] < target_level then break end 
+                    parent = reaper.GetParentTrack(parent)
+                end
+            end
+
+        else -- target_level > current_level
+            -- 3. DESCENDANTS (자식)
+            reaper.Main_OnCommand(40297, 0)
+
+            for _, src_tr in ipairs(source_tracks) do
+                local src_idx = reaper.GetMediaTrackInfo_Value(src_tr, "IP_TRACKNUMBER") - 1
+                local src_lvl = level_map[src_tr]
+                local tr_cnt = reaper.CountTracks(0)
+                
+                for i = src_idx + 1, tr_cnt - 1 do
+                    local child = reaper.GetTrack(0, i)
+                    local child_lvl = level_map[child]
+                    
+                    if child_lvl <= src_lvl then break end -- 폴더 범위 끝
+                    
+                    if child_lvl == target_level then
+                        reaper.SetTrackSelected(child, true)
+                    end
+                end
+            end
+        end
+
+        reaper.Undo_EndBlock("JKK: Select Level (Contextual)", -1)
     end
 
 ------------------------------------------------------------
@@ -258,44 +292,8 @@ local track_colors = {
     end
 
 ------------------------------------------------------------
--- Function: Remove Unused Tracks
+-- Function: Remove Unused Tracks (Robust Structure Keep)
 ------------------------------------------------------------
-    local function Safe_GetTrack(proj, idx)
-        return reaper.GetTrack(proj, idx)
-    end
-
-    local function TrackHasItems(track)
-        if not track then return false end
-        return reaper.CountTrackMediaItems(track) > 0
-    end
-
-    local function IsFolderStart(track)
-        if not track then return false end
-        return reaper.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") == 1
-    end
-
-    local function FolderIsEmpty(proj, start_index, track_count)
-        local depth = 1
-        local has_items = TrackHasItems(Safe_GetTrack(proj, start_index))
-        if has_items then return false end
-
-        for i = start_index + 1, track_count - 1 do
-            local tr = Safe_GetTrack(proj, i)
-            if not tr then break end
-            local d = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH")
-            depth = depth + d
-            if depth <= 0 then
-                if i == start_index + 1 then
-                    return true
-                else
-                    return false
-                end
-            end
-        end
-
-        return true
-    end
-
     local function DeleteEmptyTracksAndFolders()
         local proj = 0
         local track_count = reaper.CountTracks(proj)
@@ -303,18 +301,54 @@ local track_colors = {
 
         reaper.Undo_BeginBlock()
 
+        -- 인덱스 밀림 방지를 위해 뒤에서부터 검사
         local i = track_count - 1
         while i >= 0 do
             local tr = reaper.GetTrack(proj, i)
             if tr then
                 local item_count = reaper.CountTrackMediaItems(tr)
-                local fx_count = reaper.TrackFX_GetCount(tr)
-                local _, name = reaper.GetSetMediaTrackInfo_String(tr, "P_NAME", "", false)
-                
+                local fx_count = reaper.TrackFX_GetCount(tr) -- FX가 있으면 삭제하지 않음
                 local folder_depth = reaper.GetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH")
 
-                if item_count == 0 and fx_count == 0 and (not name or name == "") then
-                    if folder_depth ~= 1 then
+                -- 1. 아이템도 없고 FX도 없는 '진짜 빈 트랙'만 대상
+                if item_count == 0 and fx_count == 0 then
+                    
+                    local should_delete = false
+
+                    -- Case A: 폴더를 닫는 트랙 (< 0) -> 윗 트랙에게 역할 넘기고 삭제
+                    if folder_depth < 0 then
+                        if i > 0 then
+                            local prev_tr = reaper.GetTrack(proj, i - 1)
+                            if prev_tr then
+                                local prev_depth = reaper.GetMediaTrackInfo_Value(prev_tr, "I_FOLDERDEPTH")
+                                reaper.SetMediaTrackInfo_Value(prev_tr, "I_FOLDERDEPTH", prev_depth + folder_depth)
+                            end
+                        end
+                        should_delete = true
+
+                    -- Case B: 평범한 트랙 (0) -> 그냥 삭제
+                    elseif folder_depth == 0 then
+                        should_delete = true
+
+                    -- Case C: 폴더 시작 트랙 (1) -> 자식이 다 지워져서 '빈 껍데기'가 되었는지 확인
+                    elseif folder_depth == 1 then
+                        -- 바로 다음 트랙이 '폴더 닫기'인지 확인 (자식이 없다는 뜻)
+                        -- (삭제 루프가 뒤에서부터 오므로, i+1은 이미 처리된 뒷 트랙들임)
+                        local next_tr = reaper.GetTrack(proj, i + 1)
+                        if next_tr then
+                            local next_depth = reaper.GetMediaTrackInfo_Value(next_tr, "I_FOLDERDEPTH")
+                            -- 다음 트랙이 폴더를 닫거나(-1 이하), 프로젝트 끝이라서 더 이상 자식이 없다면
+                            if next_depth < 0 then
+                                -- 이 폴더는 내용물이 없으므로 삭제해도 구조상 안전함 (1 + -1 = 0)
+                                should_delete = true
+                            end
+                        else
+                            -- 다음 트랙이 아예 없음 (프로젝트의 마지막 트랙이 폴더 시작일 수 없음)
+                            should_delete = true
+                        end
+                    end
+
+                    if should_delete then
                         reaper.DeleteTrack(tr)
                     end
                 end
@@ -324,7 +358,7 @@ local track_colors = {
 
         reaper.TrackList_AdjustWindows(false)
         reaper.UpdateArrange()
-        reaper.Undo_EndBlock("Delete empty tracks (Preserving folders)", -1)
+        reaper.Undo_EndBlock("Delete unused tracks (Structure Preserved)", -1)
     end
 
 ------------------------------------------------------------
@@ -402,6 +436,62 @@ local track_colors = {
         reaper.Undo_EndBlock("Rename Selected Tracks by Parent (Smart Numbering)", -1)
     end
 
+----------------------------------------------------------
+-- Function: Auto Parallel FX Routing
+----------------------------------------------------------
+    local function CreateParallelRouting()
+        local parent_track = reaper.GetSelectedTrack(0, 0)
+        if not parent_track then 
+            return 
+        end
+        local folder_depth = reaper.GetMediaTrackInfo_Value(parent_track, "I_FOLDERDEPTH")
+        
+        if folder_depth == 1 then
+            return
+        end
+
+        reaper.Undo_BeginBlock()
+        reaper.PreventUIRefresh(1)
+
+        local parent_idx = reaper.GetMediaTrackInfo_Value(parent_track, "IP_TRACKNUMBER")
+        local _, parent_name = reaper.GetSetMediaTrackInfo_String(parent_track, "P_NAME", "", false)
+        if parent_name == "" then parent_name = "Track" end
+
+        local suffixes = {"_Dry", "_Wet_01", "_Wet_02", "_Wet_03"}
+        local new_tracks = {}
+
+        for i, suffix in ipairs(suffixes) do
+            local insert_idx = parent_idx + (i - 1)
+            reaper.InsertTrackAtIndex(insert_idx, true)
+            
+            local new_tr = reaper.GetTrack(0, insert_idx)
+            reaper.GetSetMediaTrackInfo_String(new_tr, "P_NAME", parent_name .. suffix, true)
+            table.insert(new_tracks, new_tr)
+        end
+
+        local dry_track = new_tracks[1]
+        local last_wet_track = new_tracks[4]
+
+        reaper.SetMediaTrackInfo_Value(parent_track, "I_FOLDERDEPTH", 1)
+        reaper.SetMediaTrackInfo_Value(last_wet_track, "I_FOLDERDEPTH", -1)
+
+        local item_count = reaper.CountTrackMediaItems(parent_track)
+        for i = item_count - 1, 0, -1 do
+            local item = reaper.GetTrackMediaItem(parent_track, i)
+            reaper.MoveMediaItemToTrack(item, dry_track)
+        end
+
+        for i = 2, 4 do 
+            local wet_tr = new_tracks[i]
+            local send_idx = reaper.CreateTrackSend(dry_track, wet_tr)
+            reaper.SetTrackSendInfo_Value(dry_track, 0, send_idx, "I_SENDMODE", 1)
+        end
+
+        reaper.PreventUIRefresh(-1)
+        reaper.UpdateArrange()
+        reaper.Undo_EndBlock("Create Parallel FX Routing", -1)
+    end
+
 ------------------------------------------------------------
 -- Function: Batch Track Rename
 ------------------------------------------------------------
@@ -454,6 +544,19 @@ local track_colors = {
         LoadTrackIcons()
         
         reaper.ImGui_Text(ctx, 'Select TRACKS before using this feature.')
+        local sel_tr = reaper.GetSelectedTrack(0, 0)
+        local current_guid = sel_tr and reaper.GetTrackGUID(sel_tr) or nil
+        if current_guid ~= last_sel_tr_guid then
+            if sel_tr then
+                local retval, name = reaper.GetSetMediaTrackInfo_String(sel_tr, "P_NAME", "", false)
+                if retval then 
+                    base_name = name 
+                end
+            else
+                base_name = "" 
+            end
+            last_sel_tr_guid = current_guid
+        end
         -- ========================================================
         reaper.ImGui_SeparatorText(ctx, 'Tracks Batch Controller')
             
@@ -539,6 +642,10 @@ local track_colors = {
         
         -- ========================================================
         reaper.ImGui_SeparatorText(ctx, 'Tracks Selector by Folder Level')
+            local sel_tr_level = reaper.GetSelectedTrack(0, 0)
+            if sel_tr_level and not reaper.ImGui_IsAnyItemActive(ctx) then
+                select_level = reaper.GetTrackDepth(sel_tr_level) + 1
+            end
 
             local changed, new_level = reaper.ImGui_SliderInt(ctx, '##SelectLevel', select_level, 0, 8, '%d')
             if changed then
@@ -569,6 +676,14 @@ local track_colors = {
             end
             reaper.ImGui_SameLine(ctx)
 
+            if reaper.ImGui_ImageButton(ctx, "##btn_crtprlgrp", TRACK_ICONS.crtprlgrp, 22, 22) then
+                CreateParallelRouting()
+            end
+            if reaper.ImGui_IsItemHovered(ctx) then
+                shared_info.hovered_id = "TRACK_CRT_PRLGRP"
+            end
+            reaper.ImGui_SameLine(ctx)
+
             if reaper.ImGui_ImageButton(ctx, "##btn_flwgrp", TRACK_ICONS.flwgrp, 22, 22) then
                 FollowFolderName()
             end
@@ -583,9 +698,9 @@ local track_colors = {
             if reaper.ImGui_IsItemHovered(ctx) then
                 shared_info.hovered_id = "TRACK_DEL_UNSD"
             end
-            reaper.ImGui_SameLine(ctx)
+            reaper.ImGui_Spacing(ctx)
 
-            local changed_base_name, new_base_name = reaper.ImGui_InputTextMultiline(ctx, '##RenameNewBaseName', base_name, 191, 27)
+            local changed_base_name, new_base_name = reaper.ImGui_InputTextMultiline(ctx, '##RenameNewBaseName', base_name, 345, 27)
             if changed_base_name then base_name = new_base_name end
             if reaper.ImGui_IsItemHovered(ctx) then
                 shared_info.hovered_id = "TRACK_RENAME"
@@ -638,6 +753,10 @@ local track_colors = {
                 shared_info.hovered_id = "TRACK_CHNG_COL"
             end
             reaper.ImGui_PopID(ctx)
+        -- ========================================================
+        if reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Space()) then
+            reaper.Main_OnCommand(40044, 0)
+        end
     end
 return {
     JKK_TrackTool_Draw = JKK_TrackTool_Draw,

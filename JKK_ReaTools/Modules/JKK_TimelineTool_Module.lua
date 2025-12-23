@@ -19,6 +19,7 @@ local create_base_name = ""
 local rename_base_name = ""
 local selectedColor = nil
 local MAX_NAME_LEN = 256
+local last_ts, last_te = nil, nil
 
 -- Color Palette Data (24 Colors)
 local region_colors = {
@@ -181,6 +182,20 @@ local region_colors = {
         end
         LoadRegionIcons()
 
+        local current_ts, current_te = GetTimeSelection()
+        if current_ts ~= last_ts or current_te ~= last_te then
+            last_ts = current_ts
+            last_te = current_te
+            if current_ts then
+                local regions = GetOverlappingRegions()
+                if regions and #regions > 0 then
+                    rename_base_name = regions[1].name
+                else
+                    rename_base_name = "" 
+                end
+            end
+        end
+
         reaper.ImGui_Text(ctx, 'Create a TIME SELECTION to use this feature.')
         -- ========================================================
         reaper.ImGui_SeparatorText(ctx, 'Actions')
@@ -239,6 +254,10 @@ local region_colors = {
                     reaper.ImGui_SameLine(ctx)
                 end
             end
+        -- ========================================================
+        if reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Space()) then
+            reaper.Main_OnCommand(40044, 0)
+        end
     end
 return {
     JKK_TimelineTool_Draw = JKK_TimelineTool_Draw,
