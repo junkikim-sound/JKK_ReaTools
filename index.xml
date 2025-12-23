@@ -53,9 +53,6 @@
       </version>
     </reapack>
     <reapack name="JKK_Track_Follow Group Name.lua" type="script">
-      <version name="0.5.5" author="Junki Kim" time="2025-12-18T22:51:49Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/bea0b3468ee069fb4c6433c724324bfdaa361fab/Actions/JKK_Track_Follow%20Group%20Name.lua</source>
-      </version>
       <version name="0.5.6" author="Junki Kim" time="2025-12-20T13:46:19Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/9dc87d49b6feda7b008494c814734dae65c9f99c/Actions/JKK_Track_Follow%20Group%20Name.lua</source>
       </version>
@@ -66,9 +63,6 @@
       </version>
     </reapack>
     <reapack name="JKK_Track_Remove Unused Tracks.lua" type="script">
-      <version name="0.5.5" author="Junki Kim" time="2025-12-18T22:51:49Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/bea0b3468ee069fb4c6433c724324bfdaa361fab/Actions/JKK_Track_Remove%20Unused%20Tracks.lua</source>
-      </version>
       <version name="0.6.0" author="Junki Kim" time="2025-12-23T14:19:46Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/a2c6001e38754e2b3af809104736a9f65a0a7ffe/Actions/JKK_Track_Remove%20Unused%20Tracks.lua</source>
       </version>
@@ -81,113 +75,6 @@
   </category>
   <category name="JKK_ReaTools">
     <reapack name="JKK_ReaTools.lua" type="script">
-      <version name="0.7.4" author="Junki Kim" time="2025-12-21T11:11:19Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/a556041c1582ff4121c7fa0f811a01e05fb24ebf/JKK_ReaTools/JKK_ReaTools.lua</source>
-        <source file="Modules/JKK_ItemTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/a556041c1582ff4121c7fa0f811a01e05fb24ebf/JKK_ReaTools/Modules/JKK_ItemTool_Module.lua</source>
-        <source file="Modules/JKK_TrackTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/a556041c1582ff4121c7fa0f811a01e05fb24ebf/JKK_ReaTools/Modules/JKK_TrackTool_Module.lua</source>
-        <source file="Modules/JKK_TimelineTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/a556041c1582ff4121c7fa0f811a01e05fb24ebf/JKK_ReaTools/Modules/JKK_TimelineTool_Module.lua</source>
-        <source file="Modules/JKK_Theme.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/a556041c1582ff4121c7fa0f811a01e05fb24ebf/JKK_ReaTools/Modules/JKK_Theme.lua</source>
-        <source file="Images/ITEM_Insert FX @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a556041c1582ff4121c7fa0f811a01e05fb24ebf/JKK_ReaTools/Images/ITEM_Insert%20FX%20@streamline.png</source>
-        <source file="Images/ITEM_Move Items to Edit Cursor @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a556041c1582ff4121c7fa0f811a01e05fb24ebf/JKK_ReaTools/Images/ITEM_Move%20Items%20to%20Edit%20Cursor%20@streamline.png</source>
-        <source file="Images/ITEM_Play @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a556041c1582ff4121c7fa0f811a01e05fb24ebf/JKK_ReaTools/Images/ITEM_Play%20@streamline.png</source>
-        <source file="Images/ITEM_Stop @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a556041c1582ff4121c7fa0f811a01e05fb24ebf/JKK_ReaTools/Images/ITEM_Stop%20@streamline.png</source>
-        <source file="Images/ITEM_Random Arrangement @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a556041c1582ff4121c7fa0f811a01e05fb24ebf/JKK_ReaTools/Images/ITEM_Random%20Arrangement%20@streamline.png</source>
-        <source file="Images/ITEM_Render Items to Stereo @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a556041c1582ff4121c7fa0f811a01e05fb24ebf/JKK_ReaTools/Images/ITEM_Render%20Items%20to%20Stereo%20@streamline.png</source>
-        <source file="Images/ITEM_Render Takes @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a556041c1582ff4121c7fa0f811a01e05fb24ebf/JKK_ReaTools/Images/ITEM_Render%20Takes%20@streamline.png</source>
-        <source file="Images/REGION_Delete All Regions @remixicon.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a556041c1582ff4121c7fa0f811a01e05fb24ebf/JKK_ReaTools/Images/REGION_Delete%20All%20Regions%20@remixicon.png</source>
-        <source file="Images/REGION_Delete in Time Selection @remixicon.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a556041c1582ff4121c7fa0f811a01e05fb24ebf/JKK_ReaTools/Images/REGION_Delete%20in%20Time%20Selection%20@remixicon.png</source>
-        <source file="Images/TRACK_Create Region @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a556041c1582ff4121c7fa0f811a01e05fb24ebf/JKK_ReaTools/Images/TRACK_Create%20Region%20@streamline.png</source>
-        <source file="Images/TRACK_Create Time Selection @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a556041c1582ff4121c7fa0f811a01e05fb24ebf/JKK_ReaTools/Images/TRACK_Create%20Time%20Selection%20@streamline.png</source>
-        <source file="Images/TRACK_Delete Unused Tracks @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a556041c1582ff4121c7fa0f811a01e05fb24ebf/JKK_ReaTools/Images/TRACK_Delete%20Unused%20Tracks%20@streamline.png</source>
-        <source file="Images/TRACK_Follow Group Name @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a556041c1582ff4121c7fa0f811a01e05fb24ebf/JKK_ReaTools/Images/TRACK_Follow%20Group%20Name%20@streamline.png</source>
-        <source file="Images/LOGO.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a556041c1582ff4121c7fa0f811a01e05fb24ebf/JKK_ReaTools/Images/LOGO.png</source>
-      </version>
-      <version name="0.7.6" author="Junki Kim" time="2025-12-21T11:43:38Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/7c47fe0740bcb6aab4bf1357eb9a727d7d0d80b8/JKK_ReaTools/JKK_ReaTools.lua</source>
-        <source file="Modules/JKK_ItemTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/7c47fe0740bcb6aab4bf1357eb9a727d7d0d80b8/JKK_ReaTools/Modules/JKK_ItemTool_Module.lua</source>
-        <source file="Modules/JKK_TrackTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/7c47fe0740bcb6aab4bf1357eb9a727d7d0d80b8/JKK_ReaTools/Modules/JKK_TrackTool_Module.lua</source>
-        <source file="Modules/JKK_TimelineTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/7c47fe0740bcb6aab4bf1357eb9a727d7d0d80b8/JKK_ReaTools/Modules/JKK_TimelineTool_Module.lua</source>
-        <source file="Modules/JKK_Theme.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/7c47fe0740bcb6aab4bf1357eb9a727d7d0d80b8/JKK_ReaTools/Modules/JKK_Theme.lua</source>
-        <source file="Images/ITEM_Insert FX @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/7c47fe0740bcb6aab4bf1357eb9a727d7d0d80b8/JKK_ReaTools/Images/ITEM_Insert%20FX%20@streamline.png</source>
-        <source file="Images/ITEM_Move Items to Edit Cursor @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/7c47fe0740bcb6aab4bf1357eb9a727d7d0d80b8/JKK_ReaTools/Images/ITEM_Move%20Items%20to%20Edit%20Cursor%20@streamline.png</source>
-        <source file="Images/ITEM_Play @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/7c47fe0740bcb6aab4bf1357eb9a727d7d0d80b8/JKK_ReaTools/Images/ITEM_Play%20@streamline.png</source>
-        <source file="Images/ITEM_Stop @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/7c47fe0740bcb6aab4bf1357eb9a727d7d0d80b8/JKK_ReaTools/Images/ITEM_Stop%20@streamline.png</source>
-        <source file="Images/ITEM_Random Arrangement @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/7c47fe0740bcb6aab4bf1357eb9a727d7d0d80b8/JKK_ReaTools/Images/ITEM_Random%20Arrangement%20@streamline.png</source>
-        <source file="Images/ITEM_Render Items to Stereo @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/7c47fe0740bcb6aab4bf1357eb9a727d7d0d80b8/JKK_ReaTools/Images/ITEM_Render%20Items%20to%20Stereo%20@streamline.png</source>
-        <source file="Images/ITEM_Render Takes @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/7c47fe0740bcb6aab4bf1357eb9a727d7d0d80b8/JKK_ReaTools/Images/ITEM_Render%20Takes%20@streamline.png</source>
-        <source file="Images/REGION_Delete All Regions @remixicon.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/7c47fe0740bcb6aab4bf1357eb9a727d7d0d80b8/JKK_ReaTools/Images/REGION_Delete%20All%20Regions%20@remixicon.png</source>
-        <source file="Images/REGION_Delete in Time Selection @remixicon.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/7c47fe0740bcb6aab4bf1357eb9a727d7d0d80b8/JKK_ReaTools/Images/REGION_Delete%20in%20Time%20Selection%20@remixicon.png</source>
-        <source file="Images/TRACK_Create Region @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/7c47fe0740bcb6aab4bf1357eb9a727d7d0d80b8/JKK_ReaTools/Images/TRACK_Create%20Region%20@streamline.png</source>
-        <source file="Images/TRACK_Create Time Selection @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/7c47fe0740bcb6aab4bf1357eb9a727d7d0d80b8/JKK_ReaTools/Images/TRACK_Create%20Time%20Selection%20@streamline.png</source>
-        <source file="Images/TRACK_Delete Unused Tracks @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/7c47fe0740bcb6aab4bf1357eb9a727d7d0d80b8/JKK_ReaTools/Images/TRACK_Delete%20Unused%20Tracks%20@streamline.png</source>
-        <source file="Images/TRACK_Follow Group Name @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/7c47fe0740bcb6aab4bf1357eb9a727d7d0d80b8/JKK_ReaTools/Images/TRACK_Follow%20Group%20Name%20@streamline.png</source>
-        <source file="Images/LOGO.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/7c47fe0740bcb6aab4bf1357eb9a727d7d0d80b8/JKK_ReaTools/Images/LOGO.png</source>
-      </version>
-      <version name="0.7.7" author="Junki Kim" time="2025-12-23T12:48:56Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/e73c0c1e808871df364bef301ae4b89f3eeb90c2/JKK_ReaTools/JKK_ReaTools.lua</source>
-        <source file="Modules/JKK_ItemTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/e73c0c1e808871df364bef301ae4b89f3eeb90c2/JKK_ReaTools/Modules/JKK_ItemTool_Module.lua</source>
-        <source file="Modules/JKK_TrackTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/e73c0c1e808871df364bef301ae4b89f3eeb90c2/JKK_ReaTools/Modules/JKK_TrackTool_Module.lua</source>
-        <source file="Modules/JKK_TimelineTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/e73c0c1e808871df364bef301ae4b89f3eeb90c2/JKK_ReaTools/Modules/JKK_TimelineTool_Module.lua</source>
-        <source file="Modules/JKK_Theme.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/e73c0c1e808871df364bef301ae4b89f3eeb90c2/JKK_ReaTools/Modules/JKK_Theme.lua</source>
-        <source file="Images/ITEM_Insert FX @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/e73c0c1e808871df364bef301ae4b89f3eeb90c2/JKK_ReaTools/Images/ITEM_Insert%20FX%20@streamline.png</source>
-        <source file="Images/ITEM_Move Items to Edit Cursor @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/e73c0c1e808871df364bef301ae4b89f3eeb90c2/JKK_ReaTools/Images/ITEM_Move%20Items%20to%20Edit%20Cursor%20@streamline.png</source>
-        <source file="Images/ITEM_Play @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/e73c0c1e808871df364bef301ae4b89f3eeb90c2/JKK_ReaTools/Images/ITEM_Play%20@streamline.png</source>
-        <source file="Images/ITEM_Stop @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/e73c0c1e808871df364bef301ae4b89f3eeb90c2/JKK_ReaTools/Images/ITEM_Stop%20@streamline.png</source>
-        <source file="Images/ITEM_Random Arrangement @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/e73c0c1e808871df364bef301ae4b89f3eeb90c2/JKK_ReaTools/Images/ITEM_Random%20Arrangement%20@streamline.png</source>
-        <source file="Images/ITEM_Render Items to Stereo @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/e73c0c1e808871df364bef301ae4b89f3eeb90c2/JKK_ReaTools/Images/ITEM_Render%20Items%20to%20Stereo%20@streamline.png</source>
-        <source file="Images/ITEM_Render Takes @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/e73c0c1e808871df364bef301ae4b89f3eeb90c2/JKK_ReaTools/Images/ITEM_Render%20Takes%20@streamline.png</source>
-        <source file="Images/REGION_Delete All Regions @remixicon.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/e73c0c1e808871df364bef301ae4b89f3eeb90c2/JKK_ReaTools/Images/REGION_Delete%20All%20Regions%20@remixicon.png</source>
-        <source file="Images/REGION_Delete in Time Selection @remixicon.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/e73c0c1e808871df364bef301ae4b89f3eeb90c2/JKK_ReaTools/Images/REGION_Delete%20in%20Time%20Selection%20@remixicon.png</source>
-        <source file="Images/TRACK_Create Region @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/e73c0c1e808871df364bef301ae4b89f3eeb90c2/JKK_ReaTools/Images/TRACK_Create%20Region%20@streamline.png</source>
-        <source file="Images/TRACK_Create Time Selection @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/e73c0c1e808871df364bef301ae4b89f3eeb90c2/JKK_ReaTools/Images/TRACK_Create%20Time%20Selection%20@streamline.png</source>
-        <source file="Images/TRACK_Delete Unused Tracks @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/e73c0c1e808871df364bef301ae4b89f3eeb90c2/JKK_ReaTools/Images/TRACK_Delete%20Unused%20Tracks%20@streamline.png</source>
-        <source file="Images/TRACK_Follow Group Name @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/e73c0c1e808871df364bef301ae4b89f3eeb90c2/JKK_ReaTools/Images/TRACK_Follow%20Group%20Name%20@streamline.png</source>
-        <source file="Images/LOGO.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/e73c0c1e808871df364bef301ae4b89f3eeb90c2/JKK_ReaTools/Images/LOGO.png</source>
-      </version>
-      <version name="0.7.8" author="Junki Kim" time="2025-12-23T14:15:13Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/0f241b9acc8171054754c03f9d28114a0959e119/JKK_ReaTools/JKK_ReaTools.lua</source>
-        <source file="Modules/JKK_ItemTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/0f241b9acc8171054754c03f9d28114a0959e119/JKK_ReaTools/Modules/JKK_ItemTool_Module.lua</source>
-        <source file="Modules/JKK_TrackTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/0f241b9acc8171054754c03f9d28114a0959e119/JKK_ReaTools/Modules/JKK_TrackTool_Module.lua</source>
-        <source file="Modules/JKK_TimelineTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/0f241b9acc8171054754c03f9d28114a0959e119/JKK_ReaTools/Modules/JKK_TimelineTool_Module.lua</source>
-        <source file="Modules/JKK_Theme.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/0f241b9acc8171054754c03f9d28114a0959e119/JKK_ReaTools/Modules/JKK_Theme.lua</source>
-        <source file="Images/ITEM_Insert FX @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/0f241b9acc8171054754c03f9d28114a0959e119/JKK_ReaTools/Images/ITEM_Insert%20FX%20@streamline.png</source>
-        <source file="Images/ITEM_Move Items to Edit Cursor @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/0f241b9acc8171054754c03f9d28114a0959e119/JKK_ReaTools/Images/ITEM_Move%20Items%20to%20Edit%20Cursor%20@streamline.png</source>
-        <source file="Images/ITEM_Play @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/0f241b9acc8171054754c03f9d28114a0959e119/JKK_ReaTools/Images/ITEM_Play%20@streamline.png</source>
-        <source file="Images/ITEM_Stop @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/0f241b9acc8171054754c03f9d28114a0959e119/JKK_ReaTools/Images/ITEM_Stop%20@streamline.png</source>
-        <source file="Images/ITEM_Random Arrangement @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/0f241b9acc8171054754c03f9d28114a0959e119/JKK_ReaTools/Images/ITEM_Random%20Arrangement%20@streamline.png</source>
-        <source file="Images/ITEM_Render Items to Stereo @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/0f241b9acc8171054754c03f9d28114a0959e119/JKK_ReaTools/Images/ITEM_Render%20Items%20to%20Stereo%20@streamline.png</source>
-        <source file="Images/ITEM_Render Takes @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/0f241b9acc8171054754c03f9d28114a0959e119/JKK_ReaTools/Images/ITEM_Render%20Takes%20@streamline.png</source>
-        <source file="Images/REGION_Delete All Regions @remixicon.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/0f241b9acc8171054754c03f9d28114a0959e119/JKK_ReaTools/Images/REGION_Delete%20All%20Regions%20@remixicon.png</source>
-        <source file="Images/REGION_Delete in Time Selection @remixicon.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/0f241b9acc8171054754c03f9d28114a0959e119/JKK_ReaTools/Images/REGION_Delete%20in%20Time%20Selection%20@remixicon.png</source>
-        <source file="Images/TRACK_Create Parallel FX Group @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/0f241b9acc8171054754c03f9d28114a0959e119/JKK_ReaTools/Images/TRACK_Create%20Parallel%20FX%20Group%20@streamline.png</source>
-        <source file="Images/TRACK_Create Region @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/0f241b9acc8171054754c03f9d28114a0959e119/JKK_ReaTools/Images/TRACK_Create%20Region%20@streamline.png</source>
-        <source file="Images/TRACK_Create Time Selection @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/0f241b9acc8171054754c03f9d28114a0959e119/JKK_ReaTools/Images/TRACK_Create%20Time%20Selection%20@streamline.png</source>
-        <source file="Images/TRACK_Delete Unused Tracks @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/0f241b9acc8171054754c03f9d28114a0959e119/JKK_ReaTools/Images/TRACK_Delete%20Unused%20Tracks%20@streamline.png</source>
-        <source file="Images/TRACK_Follow Group Name @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/0f241b9acc8171054754c03f9d28114a0959e119/JKK_ReaTools/Images/TRACK_Follow%20Group%20Name%20@streamline.png</source>
-        <source file="Images/LOGO.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/0f241b9acc8171054754c03f9d28114a0959e119/JKK_ReaTools/Images/LOGO.png</source>
-      </version>
-      <version name="0.7.9" author="Junki Kim" time="2025-12-23T14:19:46Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/a2c6001e38754e2b3af809104736a9f65a0a7ffe/JKK_ReaTools/JKK_ReaTools.lua</source>
-        <source file="Modules/JKK_ItemTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/a2c6001e38754e2b3af809104736a9f65a0a7ffe/JKK_ReaTools/Modules/JKK_ItemTool_Module.lua</source>
-        <source file="Modules/JKK_TrackTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/a2c6001e38754e2b3af809104736a9f65a0a7ffe/JKK_ReaTools/Modules/JKK_TrackTool_Module.lua</source>
-        <source file="Modules/JKK_TimelineTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/a2c6001e38754e2b3af809104736a9f65a0a7ffe/JKK_ReaTools/Modules/JKK_TimelineTool_Module.lua</source>
-        <source file="Modules/JKK_Theme.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/a2c6001e38754e2b3af809104736a9f65a0a7ffe/JKK_ReaTools/Modules/JKK_Theme.lua</source>
-        <source file="Images/ITEM_Insert FX @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a2c6001e38754e2b3af809104736a9f65a0a7ffe/JKK_ReaTools/Images/ITEM_Insert%20FX%20@streamline.png</source>
-        <source file="Images/ITEM_Move Items to Edit Cursor @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a2c6001e38754e2b3af809104736a9f65a0a7ffe/JKK_ReaTools/Images/ITEM_Move%20Items%20to%20Edit%20Cursor%20@streamline.png</source>
-        <source file="Images/ITEM_Align Items to Left in Slot @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a2c6001e38754e2b3af809104736a9f65a0a7ffe/JKK_ReaTools/Images/ITEM_Align%20Items%20to%20Left%20in%20Slot%20@streamline.png</source>
-        <source file="Images/ITEM_Play @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a2c6001e38754e2b3af809104736a9f65a0a7ffe/JKK_ReaTools/Images/ITEM_Play%20@streamline.png</source>
-        <source file="Images/ITEM_Stop @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a2c6001e38754e2b3af809104736a9f65a0a7ffe/JKK_ReaTools/Images/ITEM_Stop%20@streamline.png</source>
-        <source file="Images/ITEM_Random Arrangement @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a2c6001e38754e2b3af809104736a9f65a0a7ffe/JKK_ReaTools/Images/ITEM_Random%20Arrangement%20@streamline.png</source>
-        <source file="Images/ITEM_Render Items to Stereo @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a2c6001e38754e2b3af809104736a9f65a0a7ffe/JKK_ReaTools/Images/ITEM_Render%20Items%20to%20Stereo%20@streamline.png</source>
-        <source file="Images/ITEM_Render Takes @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a2c6001e38754e2b3af809104736a9f65a0a7ffe/JKK_ReaTools/Images/ITEM_Render%20Takes%20@streamline.png</source>
-        <source file="Images/REGION_Delete All Regions @remixicon.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a2c6001e38754e2b3af809104736a9f65a0a7ffe/JKK_ReaTools/Images/REGION_Delete%20All%20Regions%20@remixicon.png</source>
-        <source file="Images/REGION_Delete in Time Selection @remixicon.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a2c6001e38754e2b3af809104736a9f65a0a7ffe/JKK_ReaTools/Images/REGION_Delete%20in%20Time%20Selection%20@remixicon.png</source>
-        <source file="Images/TRACK_Create Region @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a2c6001e38754e2b3af809104736a9f65a0a7ffe/JKK_ReaTools/Images/TRACK_Create%20Region%20@streamline.png</source>
-        <source file="Images/TRACK_Create Time Selection @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a2c6001e38754e2b3af809104736a9f65a0a7ffe/JKK_ReaTools/Images/TRACK_Create%20Time%20Selection%20@streamline.png</source>
-        <source file="Images/TRACK_Delete Unused Tracks @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a2c6001e38754e2b3af809104736a9f65a0a7ffe/JKK_ReaTools/Images/TRACK_Delete%20Unused%20Tracks%20@streamline.png</source>
-        <source file="Images/TRACK_Follow Group Name @streamline.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a2c6001e38754e2b3af809104736a9f65a0a7ffe/JKK_ReaTools/Images/TRACK_Follow%20Group%20Name%20@streamline.png</source>
-        <source file="Images/LOGO.png">https://github.com/junkikim-sound/JKK_ReaTools/raw/a2c6001e38754e2b3af809104736a9f65a0a7ffe/JKK_ReaTools/Images/LOGO.png</source>
-      </version>
       <version name="0.8.0" author="Junki Kim" time="2025-12-23T14:23:53Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/d64cd1b4251b60e56efed4e834e94aaaef4b656b/JKK_ReaTools/JKK_ReaTools.lua</source>
         <source file="Modules/JKK_ItemTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/d64cd1b4251b60e56efed4e834e94aaaef4b656b/JKK_ReaTools/Modules/JKK_ItemTool_Module.lua</source>
