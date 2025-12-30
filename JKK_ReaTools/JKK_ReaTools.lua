@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.8.0
+-- @version 0.8.1
 -- @provides 
 --     [nomain] Modules/JKK_ItemTool_Module.lua
 --     [nomain] Modules/JKK_TrackTool_Module.lua
@@ -15,6 +15,7 @@
 --     [nomain] Images/ITEM_Random Arrangement @streamline.png
 --     [nomain] Images/ITEM_Render Items to Stereo @streamline.png
 --     [nomain] Images/ITEM_Render Takes @streamline.png
+--     [nomain] Images/REGION_Set Master Mix Matrix by Time Selection @streamline.png
 --     [nomain] Images/REGION_Delete All Regions @remixicon.png
 --     [nomain] Images/REGION_Delete in Time Selection @remixicon.png
 --     [nomain] Images/TRACK_Create Parallel FX Group @streamline.png
@@ -104,6 +105,7 @@ local widget_descriptions = {
     ["TRACK_CHNG_COL"]      = { "Change Tracks Color", "Changes the color of selected tracks\n선택된 트랙의 색상을 변경합니다" },
     
     -- Timeline Tools
+    ["REGION_SET_MATRIX"]   = { "Set Master Mix Matrix by Time Selection", "Enable Master Mix in Render Matrix for regions overlapping with time selection\n타임 셀렉션과 겹치는 리전의 Master Mix 렌더 체크를 켜고 나머지는 끕니다" },
     ["REGION_RENAME"]       = { "Regions Rename", "Batch rename regions within the time selection and adds numbering\n타임 셀렉션 내 리전의 이름을 일괄 변경하고 번호를 추가합니다 (Name_01, Name_02, …)" },
     ["REGION_DEL_SELECTED"] = { "Delete Regions in Time Selection", "Delete regions within the time selection area\n타임 셀렉션 영역에 포함된 리전을 삭제합니다" },
     ["REGION_DEL_ALL"]      = { "Delete All Regions", "Deletes all regions in the project\n프로젝트 내 모든 리전을 삭제합니다" },

@@ -37,8 +37,9 @@ local region_colors = {
         
         local path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Images/"
         
-        REGION_ICONS.delsel = reaper.ImGui_CreateImage(path .. "REGION_Delete in Time Selection @remixicon.png")
-        REGION_ICONS.delall = reaper.ImGui_CreateImage(path .. "REGION_Delete All Regions @remixicon.png")
+        REGION_ICONS.setmatrix = reaper.ImGui_CreateImage(path .. "REGION_Set Master Mix Matrix by Time Selection @streamline.png")
+        REGION_ICONS.delsel    = reaper.ImGui_CreateImage(path .. "REGION_Delete in Time Selection @remixicon.png")
+        REGION_ICONS.delall    = reaper.ImGui_CreateImage(path .. "REGION_Delete All Regions @remixicon.png")
         
         REGION_ICONS.loaded = true
     end
@@ -99,6 +100,64 @@ local region_colors = {
         reaper.Undo_BeginBlock()
         RenameRegions(regions, rename_base_name)
         reaper.Undo_EndBlock("Batch Edit Regions", -1)
+    end
+
+---------------------------------------------------------
+-- Functions: Toggle Master Render for Overlapping Regions
+---------------------------------------------------------
+    local function ToggleMasterRenderforOverlappingRegions()
+        local proj = 0
+        
+        local t_start, t_end = reaper.GetSet_LoopTimeRange(false, false, 0, 0, false)
+        
+        if t_start == t_end then 
+            return 
+        end
+
+        local master_track = reaper.GetMasterTrack(proj)
+        local num_markers, num_regions = reaper.CountProjectMarkers(proj)
+        local total_count = num_markers + num_regions
+        
+        local has_overlap = false
+        local i = 0
+        while i < total_count do
+            local retval, isrgn, pos, rgnend, name, markrgnindexnumber = reaper.EnumProjectMarkers(i)
+            if retval == 0 then break end
+            
+            if isrgn then
+                if pos < t_end and rgnend > t_start then
+                    has_overlap = true
+                    break
+                end
+            end
+            i = i + 1
+        end
+
+        if not has_overlap then 
+            return 
+        end
+
+        reaper.PreventUIRefresh(1)
+        reaper.Undo_BeginBlock()
+        
+        i = 0
+        while i < total_count do
+            local retval, isrgn, pos, rgnend, name, markrgnindexnumber = reaper.EnumProjectMarkers(i)
+            if retval == 0 then break end
+
+            if isrgn then
+                if pos < t_end and rgnend > t_start then
+                    reaper.SetRegionRenderMatrix(proj, markrgnindexnumber, master_track, 1)
+                else
+                    reaper.SetRegionRenderMatrix(proj, markrgnindexnumber, master_track, -1)
+                end
+            end
+            i = i + 1
+        end
+
+        reaper.Undo_EndBlock("Set Region Matrix by Time Selection", -1)
+        reaper.PreventUIRefresh(-1)
+        reaper.TrackList_AdjustWindows(false)
     end
 
 ---------------------------------------------------------
@@ -199,6 +258,14 @@ local region_colors = {
         reaper.ImGui_Text(ctx, 'Create a TIME SELECTION to use this feature.')
         -- ========================================================
         reaper.ImGui_SeparatorText(ctx, 'Actions')
+        
+            if reaper.ImGui_ImageButton(ctx, "##btn_setmatrix", REGION_ICONS.setmatrix, 22, 22) then
+                ToggleMasterRenderforOverlappingRegions()
+            end
+            if reaper.ImGui_IsItemHovered(ctx) then
+                shared_info.hovered_id = "REGION_SET_MATRIX"
+            end
+            reaper.ImGui_SameLine(ctx)
         
             if reaper.ImGui_ImageButton(ctx, "##btn_delsel", REGION_ICONS.delsel, 22, 22) then
                 DeleteOverlappingRegions()
