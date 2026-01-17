@@ -168,7 +168,8 @@ the ReaPack websit
 {\pard \ql \f0 \sa0 \li360 \fi-360 4.\tx360\tab Import JKK_Visualizer Repository\par}
 {\pard \ql \f0 \sa180 \li720 \fi-360 1.\tx360\tab Go to Extensions \u8594 ? ReaPack \u8594 ? Manage repositories.\par}
 {\pard \ql \f0 \sa180 \li720 \fi-360 2.\tx360\tab Select Import/export... \u8594 ? Import repositories.\par}
-{\pard \ql \f0 \sa180 \li720 \fi-360 3.\tx360\tab Enter the following URL and click OK: {\f1 **https://github.com/junkikim-sound/JKK_ReaTools/raw/master/index.xml**} \par}
+{\pard \ql \f0 \sa180 \li720 \fi-360 3.\tx360\tab Enter the following URL and click OK:\par}
+{\pard \ql \f0 \sa180 \li1440 \fi0 {\f1 https://github.com/junkikim-sound/JKK_ReaTools/raw/master/index.xml}\par}
 {\pard \ql \f0 \sa180 \li720 \fi-360 4.\tx360\tab Find {\b JKK_ReaTools} in the package list, right-click to {\b install}, and click {\b Apply}. \par}
 {\pard \ql \f0 \sa180 \li720 \fi-360 5.\tx360\tab You can now find and run JKK_ReaTools in your Actions. \sa180\sa180\par}
 {\pard \qc \f0 \sa180 \li0 \fi0 \emdash\emdash\emdash\emdash\emdash\par}
