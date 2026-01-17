@@ -24,6 +24,7 @@ ReaImGui must be installed to use JKK_ReaTools.
     2. Search for `ImGui`. If you see a script named **ReaImGui: Demo.lua**, the installation was successful.
 4. Import JKK_Visualizer Repository
     1. Go to Extensions → ReaPack → Manage repositories.
+    
         <img width="383" height="140" alt="Screenshot 2025-12-30 at 23 00 01" src="https://github.com/user-attachments/assets/3a56e62d-a18f-4477-aaa5-163f6f32048d" />
     2. Select Import/export... → Import repositories.
     3. Enter the following URL and click OK: `**https://github.com/junkikim-sound/JKK_ReaTools/raw/master/index.xml**`
@@ -39,44 +40,45 @@ ReaImGui must be installed to use JKK_ReaTools.
 <img width="532" height="665" alt="Screenshot 2025-12-30 at 22 19 23" src="https://github.com/user-attachments/assets/6831407d-d907-4fcd-a0fc-b6a7cc23ec7a" />
 
 ### A. Item Tools
-- **Items Batch Controller**: Adjust the volume, pitch and playrate of selected items
-    ![01 item batch adjust](https://github.com/user-attachments/assets/3f7a902c-06e4-46b7-8208-ef4ee56d7006)
-- **Group Stretcher**: Stretch the entire group of selected items by a specified ratio
-    ![03 stretch](https://github.com/user-attachments/assets/d6b121a7-e00c-4964-b8ed-16d0bc378b5b)
-- **Random Arranger**: 
-    ![04 random arranger](https://github.com/user-attachments/assets/c58f0d28-1391-48a4-a36d-ebc838150ac4)
-- **Move Items to Edit Cursor**: Moves the selected items to edit cursor
-- **Show FX Chain for Item Take**: Open the FX chain for the selected item take
-- **Render Items to New Takes**: Render items to new takes
-- **Render Items to Stereo Stem**: Renders selected items to a stereo file on a new track
-- **Region Creator**: Creates individual regions based on the bounds of each item (Name_01, Name_02, …)
-    ![05](https://github.com/user-attachments/assets/8666253c-ca91-4ee8-aa6a-e53d74a4bc9d)
-- **Change Items Color**: Changes the color of selected items
-    ![02 color selector](https://github.com/user-attachments/assets/229aef56-e939-4d87-b220-0c599c3ec867)
+   1. **Items Batch Controller**: Adjust the volume, pitch and playrate of selected items
+       ![01 item batch adjust](https://github.com/user-attachments/assets/3f7a902c-06e4-46b7-8208-ef4ee56d7006)
+   2. **Group Stretcher**: Stretch the entire group of selected items by a specified ratio
+       ![03 stretch](https://github.com/user-attachments/assets/d6b121a7-e00c-4964-b8ed-16d0bc378b5b)
+   3. **Random Arranger**: 
+   
+       ![04 random arranger](https://github.com/user-attachments/assets/c58f0d28-1391-48a4-a36d-ebc838150ac4)
+   4. **Move Items to Edit Cursor**: Moves the selected items to edit cursor
+   5. **Show FX Chain for Item Take**: Open the FX chain for the selected item take
+   6. **Render Items to New Takes**: Render items to new takes
+   7. **Render Items to Stereo Stem**: Renders selected items to a stereo file on a new track
+   8. **Region Creator**: Creates individual regions based on the bounds of each item (Name_01, Name_02, …)
+       ![05](https://github.com/user-attachments/assets/8666253c-ca91-4ee8-aa6a-e53d74a4bc9d)
+   9. **Change Items Color**: Changes the color of selected items
+       ![02 color selector](https://github.com/user-attachments/assets/229aef56-e939-4d87-b220-0c599c3ec867)
 
 ### B. Track Tools
-- **Tracks Batch Controller**: Adjusts the volume, Pan of selected tracks collectively
-- **Track Selector by Level**: Select tracks by folder depth
-- **Track Rename**: Batch rename selected tracks using the entered text and add numbering
-- **Time Selection Creator**: Create a time selection based on track item bounds
-- **Regions Creator**: Create regions based on track item bounds (using name of tracks)
-- **Create Parallel FX Group**: Automatically creates a parallel FX setup (Dry + 3 Wet tracks) with Pre-FX sends
-- **Follow Folder Name**: Sync track names with their parent folder and add numbering
-- **Remove Unused Tracks**: Delete empty or unused tracks in the project
-- **Change Tracks Color**: Changes the color of selected tracks
+   1. **Tracks Batch Controller**: Adjusts the volume, Pan of selected tracks collectively
+   2. **Track Selector by Level**: Select tracks by folder depth
+   3. **Track Rename**: Batch rename selected tracks using the entered text and add numbering
+   4. **Time Selection Creator**: Create a time selection based on track item bounds
+   5. **Regions Creator**: Create regions based on track item bounds (using name of tracks)
+   6. **Create Parallel FX Group**: Automatically creates a parallel FX setup (Dry + 3 Wet tracks) with Pre-FX sends
+   7. **Follow Folder Name**: Sync track names with their parent folder and add numbering
+   8. **Remove Unused Tracks**: Delete empty or unused tracks in the project
+   9. **Change Tracks Color**: Changes the color of selected tracks
 
 ### C. Timeline Tools
-- **Regions Rename**: Batch rename regions within the time selection and adds numbering (Name_01, Name_02, …)
-    ![06](https://github.com/user-attachments/assets/8dded0aa-8f90-4c6b-8e03-935a7235cb91)
-- **Set Master Mix Matrix by Time Selection**: Enable Master Mix in Render Matrix for regions overlapping with time selection
-- **Delete Regions in Time Selection**: Delete regions within the time selection area
-    ![08](https://github.com/user-attachments/assets/47b9896b-5d28-47d0-8972-ab52377bc123)
-- **Delete All Regions**: Deletes all regions in the project
-- **Change Regions Color**: Changes the color of regions within the Time Selection
-    ![07](https://github.com/user-attachments/assets/2e380263-c47c-4042-807f-b6f4f789a6e1)
+   1. **Regions Rename**: Batch rename regions within the time selection and adds numbering (Name_01, Name_02, …)
+       ![06](https://github.com/user-attachments/assets/8dded0aa-8f90-4c6b-8e03-935a7235cb91)
+   2. **Set Master Mix Matrix by Time Selection**: Enable Master Mix in Render Matrix for regions overlapping with time selection
+   3. **Delete Regions in Time Selection**: Delete regions within the time selection area
+       ![08](https://github.com/user-attachments/assets/47b9896b-5d28-47d0-8972-ab52377bc123)
+   4. **Delete All Regions**: Deletes all regions in the project
+   5. **Change Regions Color**: Changes the color of regions within the Time Selection
+       ![07](https://github.com/user-attachments/assets/2e380263-c47c-4042-807f-b6f4f789a6e1)
 
 ---
-## 3. Technical Details
+## 🎮 Technical Details
 - Language: Lua 
 - Library: REAPER v7.0+ / Dear ImGui 
 - Engine: JSFX-to-Lua Data Streaming via gmem 
