@@ -27,7 +27,8 @@ ReaImGui must be installed to use JKK_ReaTools.
     
         <img width="383" height="140" alt="Screenshot 2025-12-30 at 23 00 01" src="https://github.com/user-attachments/assets/3a56e62d-a18f-4477-aaa5-163f6f32048d" />
     2. Select Import/export... → Import repositories.
-    3. Enter the following URL and click OK: `**https://github.com/junkikim-sound/JKK_ReaTools/raw/master/index.xml**`
+    3. Enter the following URL and click OK: 
+       > `https://github.com/junkikim-sound/JKK_ReaTools/raw/master/index.xml`
         <img width="501" height="175" alt="Screenshot 2025-12-30 at 23 00 54" src="https://github.com/user-attachments/assets/534a8455-e648-4baa-a8a5-ee2f0eca660d" />
     4.  Find **JKK_ReaTools** in the package list, right-click to **install**, and click **Apply**.
         <img width="866" height="491" alt="Screenshot 2025-12-30 at 23 01 31" src="https://github.com/user-attachments/assets/26031222-f960-49ad-b85d-98213a5cefc8" />
