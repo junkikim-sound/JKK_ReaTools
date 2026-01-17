@@ -135,122 +135,79 @@
 \widowctrl\hyphauto
 
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel0 \b \fs36 JKK_ReaTools\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 {\b Reaper Toolkit for Game audio designer}\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \u51200 ?\u45716 ? \u44172 ?\u51076 ? \u49324 ?\u50868 ?\u46300 ? \u46356 ?\u51088 ?\u51060 ?\u45320 ? **\u44608 ?\u51456 ?\u44592 ?(Junki Kim)**\u51077 ?\u45768 ?\u45796 ?. \u51200 ?\u45716 ? \u51204 ?\u47928 ? \u54532 ?\u47196 ?\u44536 ?\u47000 ?\u47672 ?\u44032 ? \u50500 ?\u45768 ?\u46972 ?\u49436 ? \u50724 ?\u47448 ?\u50752 ? \u48260 ?\u44536 ?\u51032 ? \u49688 ?\u51221 ?\u50640 ? \u51088 ?\u49888 ?\u51060 ? \u50630 ?\u49845 ?\u45768 ?\u45796 ?\u12636 ?\u12636 ? \u44536 ?\u47000 ?\u46020 ?... \u54841 ?\u49884 ?\u46972 ?\u46020 ? \u44060 ?\u49440 ?\u49324 ?\u54637 ?\u51060 ? \u51080 ?\u45796 ?\u47732 ? \u50616 ?\u51228 ?\u46304 ?\u51648 ? \u51200 ?\u50640 ?\u44172 ? \u47700 ?\u51068 ?\u51012 ? \u48372 ?\u45236 ?\u51452 ?\u49464 ?\u50836 ?!\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 I am Junki Kim, a game sound designer. As I am not a professional programmer, I may not be perfect at fixing every error or bug, but I am always open to feedback! If you have any suggestions or improvements, please feel free to email me.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Contact: junkikim.sound@gmail.com\sa180\par}
 {\pard \qc \f0 \sa180 \li0 \fi0 \emdash\emdash\emdash\emdash\emdash\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 1. \u49444 ?\u52824 ?\u54616 ?\u44592 ?\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 JKK_ReaTools\u47484 ? \u49324 ?\u50857 ?\u54616 ?\u44592 ? \u50948 ?\u54644 ?\u49436 ?\u45716 ? {\b ReaImGui}\u44032 ? \u48152 ?\u46300 ?\u49884 ? \u49444 ?\u52824 ?\u46104 ?\u50612 ? \u51080 ?\u50612 ?\u50556 ? \u54633 ?\u45768 ?\u45796 ?.\par}
-{\pard \ql \f0 \sa180 \li720 \fi0 ReaImGui\u45716 ? REAPER\u50640 ?\u49436 ? \u54788 ?\u45824 ?\u51201 ?\u51064 ? \u51064 ?\u53552 ?\u54168 ?\u51060 ?\u49828 ?(UI)\u47484 ? \u47564 ?\u46308 ? \u49688 ? \u51080 ?\u44172 ? \u54644 ?\u51452 ?\u45716 ? \u54869 ?\u51109 ? \u46972 ?\u51060 ?\u48652 ?\u47084 ?\u47532 ?\u47196 ?, \u51060 ? \u49828 ?\u53356 ?\u47549 ?\u53944 ?\u45716 ? \u47784 ?\u46304 ? UI\u47484 ? ReaImGui \u44592 ?\u48152 ?\u51004 ?\u47196 ? \u44396 ?\u49457 ?\u54616 ?\u44256 ? \u51080 ?\u44592 ? \u46412 ?\u47928 ?\u50640 ? \u54596 ?\u49688 ? \u44396 ?\u49457 ?\u50836 ?\u49548 ?\u51077 ?\u45768 ?\u45796 ?.\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab {\b {\field{\*\fldinst{HYPERLINK "https://reapack.com/"}}{\fldrslt{\ul
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 \u9881 ?\u65039 ? 1. Installation\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 ReaImGui must be installed to use JKK_ReaTools.\par}
+{\pard \ql \f0 \sa180 \li720 \fi0 ReaImGui is an essential library that allows for modern user interfaces within REAPER. Since this script's UI is entirely built on ReaImGui, it is a required component.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab {\b Install {\field{\*\fldinst{HYPERLINK "https://reapack.com/"}}{\fldrslt{\ul
 ReaPack
 }}}
-\u51032 ? \u49444 ?\u52824 ?} ReaImGui\u45716 ? {\field{\*\fldinst{HYPERLINK "https://reapack.com/"}}{\fldrslt{\ul
+} The easiest and safest way to install ReaImGui is through {\field{\*\fldinst{HYPERLINK "https://reapack.com/"}}{\fldrslt{\ul
 {\b ReaPack}
 }}}
-\u51060 ?\u46972 ?\u45716 ? Extension\u51012 ? \u53685 ?\u54644 ? \u49444 ?\u52824 ?\u54616 ?\u45716 ? \u44163 ?\u51060 ? \u44032 ?\u51109 ? \u44036 ?\u45800 ?\u54616 ?\u44256 ? \u50504 ?\u51204 ?\u54633 ?\u45768 ?\u45796 ?. \u44536 ?\u47084 ?\u48064 ?\u47196 ? \u47676 ?\u51200 ? {\field{\*\fldinst{HYPERLINK "https://reapack.com/"}}{\fldrslt{\ul
-{\b ReaPack}
+. Please refer to {\field{\*\fldinst{HYPERLINK "https://reapack.com/"}}{\fldrslt{\ul
+the ReaPack websit
 }}}
-\u51012 ? \u49444 ?\u52824 ?\u54644 ?\u50556 ? \u54633 ?\u45768 ?\u45796 ?. {\field{\*\fldinst{HYPERLINK "https://reapack.com/"}}{\fldrslt{\ul
-{\b ReaPack}
+ for the installation guide. Once installed, you will see an {\b Extensions \u8594 ? ReaPack} menu in REAPER's top menu bar.\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab {\b Install ReaImGui}\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 1.\tx360\tab Navigate to {\b Extensions \u8594 ? ReaPack \u8594 ? Browse Packages}.\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 2.\tx360\tab Search for {\f1 ReaImGui}. (If it doesn't appear, follow the guide at {\field{\*\fldinst{HYPERLINK "https://github.com/cfillion/reaimgui"}}{\fldrslt{\ul
+{\b this site}
 }}}
-\u51032 ? \u49444 ?\u52824 ? \u44032 ?\u51060 ?\u46300 ?\u45716 ? {\field{\*\fldinst{HYPERLINK "https://reapack.com/"}}{\fldrslt{\ul
-\u54644 ?\u45817 ? \u49324 ?\u51060 ?\u53944 ?
-}}}
-\u47484 ? \u52280 ?\u44256 ?\u54644 ?\u51452 ?\u49901 ?\u49884 ?\u50724 ?. \u49444 ?\u52824 ?\u44032 ? \u51221 ?\u49345 ?\u51201 ?\u51004 ?\u47196 ? \u50756 ?\u47308 ?\u46104 ?\u50632 ?\u45796 ?\u47732 ?, \u50952 ?\u46020 ?\u50864 ? \u49345 ?\u45800 ? \u47700 ?\u45684 ?\u48148 ?\u50640 ? {\b Extension \u8594 ? ReaPack}\u51060 ?\u46972 ?\u45716 ? \u47700 ?\u45684 ?\u47484 ? \u54869 ?\u51064 ?\u54624 ? \u49688 ? \u51080 ?\u49845 ?\u45768 ?\u45796 ?. \u51221 ?\u49345 ?\u51201 ?\u51004 ?\u47196 ? \u49444 ?\u52824 ?\u46104 ?\u50632 ?\u45796 ?\u47732 ?, \u50948 ?\u51032 ? \u47700 ?\u45684 ?\u47484 ? \u54869 ?\u51064 ?\u54624 ? \u49688 ? \u51080 ?\u49845 ?\u45768 ?\u45796 ?.\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab {\b ReaImGui\u51032 ? \u49444 ?\u52824 ?}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 1.\tx360\tab REAPER \u49345 ?\u45800 ? \u47700 ?\u45684 ?\u50640 ?\u49436 ? {\b Extensions \u8594 ? ReaPack \u8594 ? Browse Packages} \u47484 ? \u49440 ?\u53469 ?\u54633 ?\u45768 ?\u45796 ?.\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 2.\tx360\tab \u44160 ?\u49353 ?\u52285 ?\u50640 ? {\f1 ReaImGui}\u47484 ? \u51077 ?\u47141 ?\u54633 ?\u45768 ?\u45796 ?. (\u47564 ?\u50557 ? \u50668 ?\u44592 ?\u49436 ? \u44160 ?\u49353 ?\u46104 ?\u51648 ? \u50506 ?\u45716 ?\u45796 ?\u47732 ?, {\field{\*\fldinst{HYPERLINK "https://github.com/cfillion/reaimgui"}}{\fldrslt{\ul
-{\b \u51060 ? \u49324 ?\u51060 ?\u53944 ?}
-}}}
-\u50640 ?\u49436 ? \u50504 ?\u45236 ?\u54616 ?\u45716 ? \u44032 ?\u51060 ?\u46300 ?\u47484 ? \u46384 ?\u47476 ?\u49901 ?\u49884 ?\u50724 ?.)\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 3.\tx360\tab {\b ReaImGui / Extensions(Type)} \u46972 ?\u45716 ? \u54056 ?\u53412 ?\u51648 ?\u47484 ? \u54869 ?\u51064 ?\u54664 ?\u45796 ?\u47732 ?, \u54644 ?\u45817 ? \u54056 ?\u53412 ?\u51648 ?\u47484 ? {\b \u50864 ?\u53364 ?\u47533 ? \u8594 ? Install \u49440 ?\u53469 ?}\u54633 ?\u45768 ?\u45796 ?.\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 4.\tx360\tab {\b \u50864 ?\u52769 ? \u54616 ?\u45800 ?\u51032 ? Apply \u53364 ?\u47533 ?}\u54633 ?\u45768 ?\u45796 ?.\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 5.\tx360\tab \u49444 ?\u52824 ?\u44032 ? \u50756 ?\u47308 ?\u46104 ?\u50632 ?\u45796 ?\u47732 ?, REAPER\u47484 ? \u51116 ?\u49884 ?\u51089 ?\u54616 ?\u47732 ? \u46121 ?\u45768 ?\u45796 ?.\sa180\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 3.\tx360\tab {\b ReaImGui\u51060 ? \u51221 ?\u49345 ?\u51201 ?\u51004 ?\u47196 ? \u49444 ?\u52824 ?\u46104 ?\u50632 ?\u45716 ?\u51648 ? \u54869 ?\u51064 ?\u54616 ?\u44592 ?}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 1.\tx360\tab REAPER\u51032 ? Action List (\u45800 ?\u52629 ?\u53412 ?: ? ) \u52285 ?\u51012 ? \u50685 ?\u45768 ?\u45796 ?.\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 2.\tx360\tab \u44160 ?\u49353 ?\u52285 ?\u50640 ? {\f1 ImGui} \u51077 ?\u47141 ?\u54620 ? \u54980 ?, \u50500 ?\u47000 ?\u50752 ? \u44057 ?\u51008 ? \u50529 ?\u49496 ? \u46608 ?\u45716 ? \u49828 ?\u53356 ?\u47549 ?\u53944 ?\u44032 ? \u48372 ?\u51060 ?\u47732 ? \u51221 ?\u49345 ? \u49444 ?\u52824 ?\u46108 ? \u44163 ?\u51077 ?\u45768 ?\u45796 ?.\line {\b ReaImGui: Demo.lua \u46972 ?\u45716 ? \u49828 ?\u53356 ?\u47549 ?\u53944 ?\u47484 ? \u52286 ?\u51004 ?\u49464 ?\u50836 ?!}\sa180\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 4.\tx360\tab {\b Extensions \u8594 ? ReaPack \u8594 ? Manage repositories}\u47196 ? \u44036 ? \u46244 ?, {\b Import/export... \u8594 ? Import repositories} \par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 5.\tx360\tab \u52285 ?\u50640 ? {\f1 https://github.com/junkikim-sound/JKK_ReaTools/raw/master/index.xml}\u47484 ? \u51077 ?\u47141 ?\u54616 ?\u44256 ? OK\u47484 ? \u45572 ?\u47493 ?\u45768 ?\u45796 ?. \par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 6.\tx360\tab Install/update JKK_ReaTools\u47484 ? \u53685 ?\u54644 ? \u51204 ?\u52404 ? \u49444 ?\u52824 ?\u54616 ?\u47732 ? \u50756 ?\u47308 ?! \par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 7.\tx360\tab Actions\u50640 ?\u49436 ? JKK_ReaTools\u47484 ? \u52286 ?\u50500 ? \u49892 ?\u54665 ?\u54624 ? \u49688 ? \u51080 ?\u49845 ?\u45768 ?\u45796 ?. \sa180\par}
+)\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 3.\tx360\tab Right-click the {\b ReaImGui / Extensions} package and select {\b Install}.\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 4.\tx360\tab Click {\b Apply} in the bottom right corner.\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 5.\tx360\tab Restart REAPER after the installation is complete.\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 3.\tx360\tab Verify ReaImGui Installation\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 1.\tx360\tab Open REAPER\u8217's Action List (Shortcut: {\f1 ?}).\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 2.\tx360\tab Search for {\f1 ImGui}. If you see a script named {\b ReaImGui: Demo.lua}, the installation was successful.\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 4.\tx360\tab Import JKK_Visualizer Repository\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 1.\tx360\tab Go to Extensions \u8594 ? ReaPack \u8594 ? Manage repositories. \par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 2.\tx360\tab Select Import/export... \u8594 ? Import repositories.\par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 3.\tx360\tab Enter the following URL and click OK: {\f1 **https://github.com/junkikim-sound/JKK_ReaTools/raw/master/index.xml**} \par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 4.\tx360\tab Find {\b JKK_ReaTools} in the package list, right-click to {\b install}, and click {\b Apply}. \par}
+{\pard \ql \f0 \sa0 \li720 \fi-360 5.\tx360\tab You can now find and run JKK_ReaTools in your Actions. \sa180\sa180\par}
 {\pard \qc \f0 \sa180 \li0 \fi0 \emdash\emdash\emdash\emdash\emdash\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 2. \u49548 ?\u44060 ?\u54616 ?\u44592 ?\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 \u55357 ?\u56960 ? 2. Introduction\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel2 \b \fs28 A. Item Tools\par}
-{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab {\b Items Batch Controller}\par}
-{\pard \ql \f0 \sa180 \li360 \fi0 {\cf1 [image: https://github.com/user-attachments/assets/3f7a902c-06e4-46b7-8208-ef4ee56d7006]\cf0}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Adjust the volume, pitch and playrate of selected items\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u49440 ?\u53469 ?\u46108 ? \u50500 ?\u51060 ?\u53596 ?\u51032 ? \u48380 ?\u47464 ?\u44284 ? \u54588 ?\u52824 ?\u47484 ? \u51068 ?\u44292 ? \u51312 ?\u51208 ?\u54633 ?\u45768 ?\u45796 ?\sa180\par}
-{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab {\b Group Stretcher}\par}
-{\pard \ql \f0 \sa180 \li360 \fi0 {\cf1 [image: https://github.com/user-attachments/assets/d6b121a7-e00c-4964-b8ed-16d0bc378b5b]\cf0}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Stretch the entire group of selected items by a specified ratio\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u49440 ?\u53469 ?\u46108 ? \u50500 ?\u51060 ?\u53596 ? \u44536 ?\u47353 ? \u51204 ?\u52404 ?\u47484 ? \u51648 ?\u51221 ?\u54620 ? \u48708 ?\u50984 ?\u47196 ? \u49828 ?\u53944 ?\u47112 ?\u52824 ?\u54633 ?\u45768 ?\u45796 ?\sa180\par}
-{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab {\b Random Arranger}\par}
-{\pard \ql \f0 \sa180 \li360 \fi0 {\cf1 [image: https://github.com/user-attachments/assets/c58f0d28-1391-48a4-a36d-ebc838150ac4]\cf0}\par}
-{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab {\b Move Items to Edit Cursor}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Moves the selected items to edit cursor\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u49440 ?\u53469 ?\u46108 ? \u50500 ?\u51060 ?\u53596 ?\u51012 ? \u54200 ?\u51665 ? \u52964 ?\u49436 ? \u50948 ?\u52824 ?\u47196 ? \u51060 ?\u46041 ?\u54633 ?\u45768 ?\u45796 ?\sa180\par}
-{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab {\b Show FX Chain for Item Take}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Open the FX chain for the selected item take\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u49440 ?\u53469 ?\u46108 ? \u50500 ?\u51060 ?\u53596 ? \u53580 ?\u51060 ?\u53356 ?\u51032 ? FX \u52404 ?\u51064 ?\u51012 ? \u50685 ?\u45768 ?\u45796 ?\sa180\par}
-{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab {\b Render Items to New Takes}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Render items to new takes\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u50500 ?\u51060 ?\u53596 ?\u51012 ? \u49352 ?\u47196 ?\u50868 ? \u53580 ?\u51060 ?\u53356 ?\u47196 ? \u47116 ?\u45908 ?\u47553 ?\u54633 ?\u45768 ?\u45796 ?\sa180\par}
-{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab {\b Render Items to Stereo Stem}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Renders selected items to a stereo file on a new track\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u49440 ?\u53469 ?\u46108 ? \u50500 ?\u51060 ?\u53596 ? \u51204 ?\u52404 ?\u47484 ? \u49352 ? \u53944 ?\u47001 ?\u50640 ? \u49828 ?\u53580 ?\u47112 ?\u50724 ? \u54028 ?\u51068 ?\u47196 ? \u47116 ?\u45908 ?\u47553 ?\u54633 ?\u45768 ?\u45796 ?\sa180\par}
-{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab {\b Region Creator}\par}
-{\pard \ql \f0 \sa180 \li360 \fi0 {\cf1 [image: https://github.com/user-attachments/assets/8666253c-ca91-4ee8-aa6a-e53d74a4bc9d]\cf0}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Creates individual regions based on the bounds of each item\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u44033 ? \u50500 ?\u51060 ?\u53596 ?\u51032 ? \u44600 ?\u51060 ?\u47484 ? \u44592 ?\u51456 ?\u51004 ?\u47196 ? \u44060 ?\u48324 ? \u47532 ?\u51204 ?\u51012 ? \u49373 ?\u49457 ?\u54633 ?\u45768 ?\u45796 ? (Name_01, Name_02, \u8230 ?)\sa180\par}
-{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab {\b Change Items Color}\par}
-{\pard \ql \f0 \sa180 \li360 \fi0 {\cf1 [image: https://github.com/user-attachments/assets/229aef56-e939-4d87-b220-0c599c3ec867]\cf0}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Changes the color of selected items\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u49440 ?\u53469 ?\u46108 ? \u50500 ?\u51060 ?\u53596 ?\u51032 ? \u49353 ?\u49345 ?\u51012 ? \u48320 ?\u44221 ?\u54633 ?\u45768 ?\u45796 ?\sa180\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Items Batch Controller}: Adjust the volume, pitch and playrate of selected items {\cf1 [image: https://github.com/user-attachments/assets/3f7a902c-06e4-46b7-8208-ef4ee56d7006]\cf0}\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Group Stretcher}: Stretch the entire group of selected items by a specified ratio {\cf1 [image: https://github.com/user-attachments/assets/d6b121a7-e00c-4964-b8ed-16d0bc378b5b]\cf0}\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Random Arranger}: {\cf1 [image: https://github.com/user-attachments/assets/c58f0d28-1391-48a4-a36d-ebc838150ac4]\cf0}\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Move Items to Edit Cursor}: Moves the selected items to edit cursor\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Show FX Chain for Item Take}: Open the FX chain for the selected item take\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Render Items to New Takes}: Render items to new takes\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Render Items to Stereo Stem}: Renders selected items to a stereo file on a new track\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Region Creator}: Creates individual regions based on the bounds of each item (Name_01, Name_02, \u8230 ?) {\cf1 [image: https://github.com/user-attachments/assets/8666253c-ca91-4ee8-aa6a-e53d74a4bc9d]\cf0}\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Change Items Color}: Changes the color of selected items {\cf1 [image: https://github.com/user-attachments/assets/229aef56-e939-4d87-b220-0c599c3ec867]\cf0}\sa180\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel2 \b \fs28 B. Track Tools\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Tracks Batch Controller}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Adjusts the volume, Pan of selected tracks collectively\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u49440 ?\u53469 ?\u46108 ? \u53944 ?\u47001 ?\u51032 ? \u48380 ?\u47464 ?\u51012 ? \u51068 ?\u44292 ?\u47196 ? \u51312 ?\u51208 ?\u54633 ?\u45768 ?\u45796 ?\sa180\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Track Selector by Level}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Select tracks by folder depth\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u54260 ?\u45908 ? \u44618 ?\u51060 ?\u50640 ? \u46384 ?\u46972 ? \u53944 ?\u47001 ?\u51012 ? \u49440 ?\u53469 ?\u54633 ?\u45768 ?\u45796 ? (0: All, 1: Top-level, 2+: Child tracks)\sa180\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Track Rename}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Batch rename selected tracks using the entered text and add numbering\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u51077 ?\u47141 ?\u54620 ? \u53581 ?\u49828 ?\u53944 ?\u47196 ? \u49440 ?\u53469 ?\u46108 ? \u53944 ?\u47001 ?\u51012 ? \u51068 ?\u44292 ? \u48320 ?\u44221 ?\u54616 ?\u44256 ? \u48264 ?\u54840 ?\u47484 ? \u52628 ?\u44032 ?\u54633 ?\u45768 ?\u45796 ?\sa180\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Time Selection Creator}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Create a time selection based on track item bounds\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u53944 ?\u47001 ? \u50500 ?\u51060 ?\u53596 ?\u51032 ? \u48276 ?\u50948 ?\u47484 ? \u44592 ?\u51456 ?\u51004 ?\u47196 ? \u53440 ?\u51076 ? \u49472 ?\u47113 ?\u49496 ?\u51012 ? \u49373 ?\u49457 ?\u54633 ?\u45768 ?\u45796 ?\sa180\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Regions Creator}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Create regions based on track item bounds (using name of tracks)\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u53944 ?\u47001 ? \u50500 ?\u51060 ?\u53596 ?\u51032 ? \u48276 ?\u50948 ?\u47484 ? \u44592 ?\u51456 ?\u51004 ?\u47196 ? \u47532 ?\u51204 ?\u51012 ? \u49373 ?\u49457 ?\u54633 ?\u45768 ?\u45796 ? (\u53944 ?\u47001 ? \u51060 ?\u47492 ? \u49324 ?\u50857 ?)\sa180\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Create Parallel FX Group}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Automatically creates a parallel FX setup (Dry + 3 Wet tracks) with Pre-FX sends\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u48337 ?\u47148 ? FX \u46972 ?\u50864 ?\u54021 ?(Dry + 3 Wet)\u51012 ? \u51088 ?\u46041 ? \u49373 ?\u49457 ?\u54616 ?\u44256 ? \u50500 ?\u51060 ?\u53596 ? \u51060 ?\u46041 ? \u48143 ? Pre-FX \u49468 ?\u46300 ?\u47484 ? \u50672 ?\u44208 ?\u54633 ?\u45768 ?\u45796 ?\sa180\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Follow Folder Name}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Sync track names with their parent folder and add numbering\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u48512 ?\u47784 ? \u54260 ?\u45908 ? \u53944 ?\u47001 ? \u51060 ?\u47492 ?\u51012 ? \u44592 ?\u51456 ?\u51004 ?\u47196 ? \u53944 ?\u47001 ? \u51060 ?\u47492 ?\u51012 ? \u46041 ?\u44592 ?\u54868 ?\u54616 ?\u44256 ? \u48264 ?\u54840 ?\u47484 ? \u52628 ?\u44032 ?\u54633 ?\u45768 ?\u45796 ?\sa180\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Remove Unused Tracks}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Delete empty or unused tracks in the project\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u54532 ?\u47196 ?\u51229 ?\u53944 ? \u45236 ? \u48708 ?\u50612 ? \u51080 ?\u44144 ?\u45208 ? \u49324 ?\u50857 ?\u46104 ?\u51648 ? \u50506 ?\u45716 ? \u53944 ?\u47001 ?\u51012 ? \u49325 ?\u51228 ?\u54633 ?\u45768 ?\u45796 ?\sa180\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Change Tracks Color}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Changes the color of selected tracks\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u49440 ?\u53469 ?\u46108 ? \u53944 ?\u47001 ?\u51032 ? \u49353 ?\u49345 ?\u51012 ? \u48320 ?\u44221 ?\u54633 ?\u45768 ?\u45796 ?\sa180\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Tracks Batch Controller}: Adjusts the volume, Pan of selected tracks collectively\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Track Selector by Level}: Select tracks by folder depth\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Track Rename}: Batch rename selected tracks using the entered text and add numbering\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Time Selection Creator}: Create a time selection based on track item bounds\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Regions Creator}: Create regions based on track item bounds (using name of tracks)\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Create Parallel FX Group}: Automatically creates a parallel FX setup (Dry + 3 Wet tracks) with Pre-FX sends\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Follow Folder Name}: Sync track names with their parent folder and add numbering\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Remove Unused Tracks}: Delete empty or unused tracks in the project\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Change Tracks Color}: Changes the color of selected tracks\sa180\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel2 \b \fs28 C. Timeline Tools\par}
-{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab {\b Regions Rename}\par}
-{\pard \ql \f0 \sa180 \li360 \fi0 {\cf1 [image: https://github.com/user-attachments/assets/8dded0aa-8f90-4c6b-8e03-935a7235cb91]\cf0}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Batch rename regions within the time selection and adds numbering\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u53440 ?\u51076 ? \u49472 ?\u47113 ?\u49496 ? \u45236 ? \u47532 ?\u51204 ?\u51032 ? \u51060 ?\u47492 ?\u51012 ? \u51068 ?\u44292 ? \u48320 ?\u44221 ?\u54616 ?\u44256 ? \u48264 ?\u54840 ?\u47484 ? \u52628 ?\u44032 ?\u54633 ?\u45768 ?\u45796 ? (Name_01, Name_02, \u8230 ?)\sa180\par}
-{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab {\b Set Master Mix Matrix by Time Selection}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Enable Master Mix in Render Matrix for regions overlapping with time selection\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u53440 ?\u51076 ? \u49472 ?\u47113 ?\u49496 ?\u44284 ? \u44217 ?\u52824 ?\u45716 ? \u47532 ?\u51204 ?\u51032 ? Master Mix \u47116 ?\u45908 ? \u52404 ?\u53356 ?\u47484 ? \u53020 ?\u44256 ? \u45208 ?\u47672 ?\u51648 ?\u45716 ? \u45141 ?\u45768 ?\u45796 ?\sa180\par}
-{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab Delete Regions in Time Selection\par}
-{\pard \ql \f0 \sa180 \li360 \fi0 {\cf1 [image: https://github.com/user-attachments/assets/47b9896b-5d28-47d0-8972-ab52377bc123]\cf0}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Delete regions within the time selection area\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u53440 ?\u51076 ? \u49472 ?\u47113 ?\u49496 ? \u50689 ?\u50669 ?\u50640 ? \u54252 ?\u54632 ?\u46108 ? \u47532 ?\u51204 ?\u51012 ? \u49325 ?\u51228 ?\u54633 ?\u45768 ?\u45796 ?\sa180\par}
-{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab Delete All Regions\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Deletes all regions in the project\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u54532 ?\u47196 ?\u51229 ?\u53944 ? \u45236 ? \u47784 ?\u46304 ? \u47532 ?\u51204 ?\u51012 ? \u49325 ?\u51228 ?\u54633 ?\u45768 ?\u45796 ?\sa180\par}
-{\pard \ql \f0 \sa180 \li360 \fi-360 \bullet \tx360\tab Change Regions Color\par}
-{\pard \ql \f0 \sa180 \li360 \fi0 {\cf1 [image: https://github.com/user-attachments/assets/2e380263-c47c-4042-807f-b6f4f789a6e1]\cf0}\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab Changes the color of regions within the Time Selection\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 \endash \tx360\tab \u53440 ?\u51076 ? \u49472 ?\u47113 ?\u49496 ? \u45236 ? \u47532 ?\u51204 ?\u51032 ? \u49353 ?\u49345 ?\u51012 ? \u48320 ?\u44221 ?\u54633 ?\u45768 ?\u45796 ?\sa180\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Regions Rename}: Batch rename regions within the time selection and adds numbering (Name_01, Name_02, \u8230 ?) {\cf1 [image: https://github.com/user-attachments/assets/8dded0aa-8f90-4c6b-8e03-935a7235cb91]\cf0}\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Set Master Mix Matrix by Time Selection}: Enable Master Mix in Render Matrix for regions overlapping with time selection\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Delete Regions in Time Selection}: Delete regions within the time selection area {\cf1 [image: https://github.com/user-attachments/assets/47b9896b-5d28-47d0-8972-ab52377bc123]\cf0}\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Delete All Regions}: Deletes all regions in the project\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Change Regions Color}: Changes the color of regions within the Time Selection {\cf1 [image: https://github.com/user-attachments/assets/2e380263-c47c-4042-807f-b6f4f789a6e1]\cf0}\sa180\par}
+{\pard \qc \f0 \sa180 \li0 \fi0 \emdash\emdash\emdash\emdash\emdash\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 3. Technical Details\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Language: Lua\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Library: REAPER v7.0+ / Dear ImGui\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Engine: JSFX-to-Lua Data Streaming via gmem\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Optimization: Optimized for low CPU usage even at a smooth 60FPS\sa180\par}
+{\pard \qc \f0 \sa180 \li0 \fi0 \emdash\emdash\emdash\emdash\emdash\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 \u55356 ?\u57098 ? About the Author\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 Junki Kim Game Sound Designer Specializing in game audio implementation and REAPER workflow optimization.\par}
 }
 ]]></description>
   </metadata>
