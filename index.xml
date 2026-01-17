@@ -166,41 +166,42 @@ the ReaPack websit
 {\pard \ql \f0 \sa0 \li720 \fi-360 1.\tx360\tab Open REAPER\u8217's Action List (Shortcut: {\f1 ?}).\par}
 {\pard \ql \f0 \sa0 \li720 \fi-360 2.\tx360\tab Search for {\f1 ImGui}. If you see a script named {\b ReaImGui: Demo.lua}, the installation was successful.\sa180\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 4.\tx360\tab Import JKK_Visualizer Repository\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 1.\tx360\tab Go to Extensions \u8594 ? ReaPack \u8594 ? Manage repositories. \par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 2.\tx360\tab Select Import/export... \u8594 ? Import repositories.\par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 3.\tx360\tab Enter the following URL and click OK: {\f1 **https://github.com/junkikim-sound/JKK_ReaTools/raw/master/index.xml**} \par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 4.\tx360\tab Find {\b JKK_ReaTools} in the package list, right-click to {\b install}, and click {\b Apply}. \par}
-{\pard \ql \f0 \sa0 \li720 \fi-360 5.\tx360\tab You can now find and run JKK_ReaTools in your Actions. \sa180\sa180\par}
+{\pard \ql \f0 \sa180 \li720 \fi-360 1.\tx360\tab Go to Extensions \u8594 ? ReaPack \u8594 ? Manage repositories.\par}
+{\pard \ql \f0 \sa180 \li720 \fi-360 2.\tx360\tab Select Import/export... \u8594 ? Import repositories.\par}
+{\pard \ql \f0 \sa180 \li720 \fi-360 3.\tx360\tab Enter the following URL and click OK: {\f1 **https://github.com/junkikim-sound/JKK_ReaTools/raw/master/index.xml**} \par}
+{\pard \ql \f0 \sa180 \li720 \fi-360 4.\tx360\tab Find {\b JKK_ReaTools} in the package list, right-click to {\b install}, and click {\b Apply}. \par}
+{\pard \ql \f0 \sa180 \li720 \fi-360 5.\tx360\tab You can now find and run JKK_ReaTools in your Actions. \sa180\sa180\par}
 {\pard \qc \f0 \sa180 \li0 \fi0 \emdash\emdash\emdash\emdash\emdash\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 \u55357 ?\u56960 ? 2. Introduction\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel2 \b \fs28 A. Item Tools\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Items Batch Controller}: Adjust the volume, pitch and playrate of selected items {\cf1 [image: https://github.com/user-attachments/assets/3f7a902c-06e4-46b7-8208-ef4ee56d7006]\cf0}\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Group Stretcher}: Stretch the entire group of selected items by a specified ratio {\cf1 [image: https://github.com/user-attachments/assets/d6b121a7-e00c-4964-b8ed-16d0bc378b5b]\cf0}\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Random Arranger}: {\cf1 [image: https://github.com/user-attachments/assets/c58f0d28-1391-48a4-a36d-ebc838150ac4]\cf0}\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Move Items to Edit Cursor}: Moves the selected items to edit cursor\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Show FX Chain for Item Take}: Open the FX chain for the selected item take\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Render Items to New Takes}: Render items to new takes\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Render Items to Stereo Stem}: Renders selected items to a stereo file on a new track\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Region Creator}: Creates individual regions based on the bounds of each item (Name_01, Name_02, \u8230 ?) {\cf1 [image: https://github.com/user-attachments/assets/8666253c-ca91-4ee8-aa6a-e53d74a4bc9d]\cf0}\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Change Items Color}: Changes the color of selected items {\cf1 [image: https://github.com/user-attachments/assets/229aef56-e939-4d87-b220-0c599c3ec867]\cf0}\sa180\par}
+{\pard \ql \f0 \sa180 \li360 \fi-360 1.\tx360\tab {\b Items Batch Controller}: Adjust the volume, pitch and playrate of selected items {\cf1 [image: https://github.com/user-attachments/assets/3f7a902c-06e4-46b7-8208-ef4ee56d7006]\cf0}\par}
+{\pard \ql \f0 \sa180 \li360 \fi-360 2.\tx360\tab {\b Group Stretcher}: Stretch the entire group of selected items by a specified ratio {\cf1 [image: https://github.com/user-attachments/assets/d6b121a7-e00c-4964-b8ed-16d0bc378b5b]\cf0}\par}
+{\pard \ql \f0 \sa180 \li360 \fi-360 3.\tx360\tab {\b Random Arranger}:\par}
+{\pard \ql \f0 \sa180 \li360 \fi0 {\cf1 [image: https://github.com/user-attachments/assets/c58f0d28-1391-48a4-a36d-ebc838150ac4]\cf0}\par}
+{\pard \ql \f0 \sa180 \li360 \fi-360 4.\tx360\tab {\b Move Items to Edit Cursor}: Moves the selected items to edit cursor\par}
+{\pard \ql \f0 \sa180 \li360 \fi-360 5.\tx360\tab {\b Show FX Chain for Item Take}: Open the FX chain for the selected item take\par}
+{\pard \ql \f0 \sa180 \li360 \fi-360 6.\tx360\tab {\b Render Items to New Takes}: Render items to new takes\par}
+{\pard \ql \f0 \sa180 \li360 \fi-360 7.\tx360\tab {\b Render Items to Stereo Stem}: Renders selected items to a stereo file on a new track\par}
+{\pard \ql \f0 \sa180 \li360 \fi-360 8.\tx360\tab {\b Region Creator}: Creates individual regions based on the bounds of each item (Name_01, Name_02, \u8230 ?) {\cf1 [image: https://github.com/user-attachments/assets/8666253c-ca91-4ee8-aa6a-e53d74a4bc9d]\cf0}\par}
+{\pard \ql \f0 \sa180 \li360 \fi-360 9.\tx360\tab {\b Change Items Color}: Changes the color of selected items {\cf1 [image: https://github.com/user-attachments/assets/229aef56-e939-4d87-b220-0c599c3ec867]\cf0}\sa180\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel2 \b \fs28 B. Track Tools\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Tracks Batch Controller}: Adjusts the volume, Pan of selected tracks collectively\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Track Selector by Level}: Select tracks by folder depth\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Track Rename}: Batch rename selected tracks using the entered text and add numbering\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Time Selection Creator}: Create a time selection based on track item bounds\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Regions Creator}: Create regions based on track item bounds (using name of tracks)\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Create Parallel FX Group}: Automatically creates a parallel FX setup (Dry + 3 Wet tracks) with Pre-FX sends\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Follow Folder Name}: Sync track names with their parent folder and add numbering\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Remove Unused Tracks}: Delete empty or unused tracks in the project\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Change Tracks Color}: Changes the color of selected tracks\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab {\b Tracks Batch Controller}: Adjusts the volume, Pan of selected tracks collectively\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab {\b Track Selector by Level}: Select tracks by folder depth\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 3.\tx360\tab {\b Track Rename}: Batch rename selected tracks using the entered text and add numbering\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 4.\tx360\tab {\b Time Selection Creator}: Create a time selection based on track item bounds\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 5.\tx360\tab {\b Regions Creator}: Create regions based on track item bounds (using name of tracks)\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 6.\tx360\tab {\b Create Parallel FX Group}: Automatically creates a parallel FX setup (Dry + 3 Wet tracks) with Pre-FX sends\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 7.\tx360\tab {\b Follow Folder Name}: Sync track names with their parent folder and add numbering\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 8.\tx360\tab {\b Remove Unused Tracks}: Delete empty or unused tracks in the project\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 9.\tx360\tab {\b Change Tracks Color}: Changes the color of selected tracks\sa180\par}
 {\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel2 \b \fs28 C. Timeline Tools\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Regions Rename}: Batch rename regions within the time selection and adds numbering (Name_01, Name_02, \u8230 ?) {\cf1 [image: https://github.com/user-attachments/assets/8dded0aa-8f90-4c6b-8e03-935a7235cb91]\cf0}\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Set Master Mix Matrix by Time Selection}: Enable Master Mix in Render Matrix for regions overlapping with time selection\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Delete Regions in Time Selection}: Delete regions within the time selection area {\cf1 [image: https://github.com/user-attachments/assets/47b9896b-5d28-47d0-8972-ab52377bc123]\cf0}\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Delete All Regions}: Deletes all regions in the project\par}
-{\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab {\b Change Regions Color}: Changes the color of regions within the Time Selection {\cf1 [image: https://github.com/user-attachments/assets/2e380263-c47c-4042-807f-b6f4f789a6e1]\cf0}\sa180\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 1.\tx360\tab {\b Regions Rename}: Batch rename regions within the time selection and adds numbering (Name_01, Name_02, \u8230 ?) {\cf1 [image: https://github.com/user-attachments/assets/8dded0aa-8f90-4c6b-8e03-935a7235cb91]\cf0}\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 2.\tx360\tab {\b Set Master Mix Matrix by Time Selection}: Enable Master Mix in Render Matrix for regions overlapping with time selection\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 3.\tx360\tab {\b Delete Regions in Time Selection}: Delete regions within the time selection area {\cf1 [image: https://github.com/user-attachments/assets/47b9896b-5d28-47d0-8972-ab52377bc123]\cf0}\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 4.\tx360\tab {\b Delete All Regions}: Deletes all regions in the project\par}
+{\pard \ql \f0 \sa0 \li360 \fi-360 5.\tx360\tab {\b Change Regions Color}: Changes the color of regions within the Time Selection {\cf1 [image: https://github.com/user-attachments/assets/2e380263-c47c-4042-807f-b6f4f789a6e1]\cf0}\sa180\par}
 {\pard \qc \f0 \sa180 \li0 \fi0 \emdash\emdash\emdash\emdash\emdash\par}
-{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 3. Technical Details\par}
+{\pard \ql \f0 \sa180 \li0 \fi0 \outlinelevel1 \b \fs32 \u55356 ?\u57262 ? Technical Details\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Language: Lua\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Library: REAPER v7.0+ / Dear ImGui\par}
 {\pard \ql \f0 \sa0 \li360 \fi-360 \bullet \tx360\tab Engine: JSFX-to-Lua Data Streaming via gmem\par}
