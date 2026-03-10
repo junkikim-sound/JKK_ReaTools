@@ -27,23 +27,6 @@ local region_colors = {
   {10,43,70}, {15,64,104}, {23,96,156},  {102,143,182}, {171,186,207}, {225,230,237}, {88,114,47}, {125,162,67}, {159,206,85}, {184,239,99}, {205,244,152}, {226,248,200},
 }
 
-----------------------------------------------------------
--- Icon
-----------------------------------------------------------
-    local REGION_ICONS = {}
-
-    local function LoadRegionIcons()
-        if REGION_ICONS.loaded then return end
-        
-        local path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Images/"
-        
-        REGION_ICONS.setmatrix = reaper.ImGui_CreateImage(path .. "REGION_Set Master Mix Matrix by Time Selection @streamline.png")
-        REGION_ICONS.delsel    = reaper.ImGui_CreateImage(path .. "REGION_Delete in Time Selection @remixicon.png")
-        REGION_ICONS.delall    = reaper.ImGui_CreateImage(path .. "REGION_Delete All Regions @remixicon.png")
-        
-        REGION_ICONS.loaded = true
-    end
-
 ---------------------------------------------------------
 -- Functions: Timeline Helpers
 ---------------------------------------------------------
@@ -234,13 +217,7 @@ local region_colors = {
 ---------------------------------------------------------
 -- UI_Module 
 ---------------------------------------------------------
-    function JKK_TimelineTool_Draw(ctx, shared_info)
-        if shared_info.needs_reload then
-            REGION_ICONS.loaded = false
-            shared_info.needs_reload = false
-        end
-        LoadRegionIcons()
-
+    function JKK_TimelineTool_Draw(ctx)
         local current_ts, current_te = GetTimeSelection()
         if current_ts ~= last_ts or current_te ~= last_te then
             last_ts = current_ts
@@ -258,42 +235,32 @@ local region_colors = {
         reaper.ImGui_Text(ctx, 'Create a TIME SELECTION to use this feature.')
         -- ========================================================
         reaper.ImGui_SeparatorText(ctx, 'Actions')
-        
-            if reaper.ImGui_ImageButton(ctx, "##btn_setmatrix", REGION_ICONS.setmatrix, 22, 22) then
-                ToggleMasterRenderforOverlappingRegions()
-            end
-            if reaper.ImGui_IsItemHovered(ctx) then
-                shared_info.hovered_id = "REGION_SET_MATRIX"
-            end
-            reaper.ImGui_SameLine(ctx)
-        
-            if reaper.ImGui_ImageButton(ctx, "##btn_delsel", REGION_ICONS.delsel, 22, 22) then
-                DeleteOverlappingRegions()
-            end
-            if reaper.ImGui_IsItemHovered(ctx) then
-                shared_info.hovered_id = "REGION_DEL_SELECTED"
+            if reaper.ImGui_Button(ctx, 'Set Region Matrix', 90, 22) then
+                if base_name ~= "" then
+                    ToggleMasterRenderforOverlappingRegions()
+                end
             end
             reaper.ImGui_SameLine(ctx)
 
-            if reaper.ImGui_ImageButton(ctx, "##btn_delall", REGION_ICONS.delall, 22, 22) then
-                DeleteAllRegions()
+            if reaper.ImGui_Button(ctx, 'Delete Selected Regions', 90, 22) then
+                if base_name ~= "" then
+                    DeleteOverlappingRegions()
+                end
             end
-            if reaper.ImGui_IsItemHovered(ctx) then
-                shared_info.hovered_id = "REGION_DEL_ALL"
+            reaper.ImGui_SameLine(ctx)
+
+            if reaper.ImGui_Button(ctx, 'Delete All Regions', 90, 22) then
+                if base_name ~= "" then
+                    DeleteAllRegions()
+                end
             end
             reaper.ImGui_SameLine(ctx)
 
             changed, rename_base_name = reaper.ImGui_InputTextMultiline(ctx, '##RenameRegionBaseName', rename_base_name, 268, 27)
-            if reaper.ImGui_IsItemHovered(ctx) then
-                shared_info.hovered_id = "REGION_RENAME"
-            end
             reaper.ImGui_SameLine(ctx)
             
             if reaper.ImGui_Button(ctx, "Rename Regions", 116, 27) then
                 ApplyChanges()
-            end
-            if reaper.ImGui_IsItemHovered(ctx) then
-                shared_info.hovered_id = "REGION_RENAME"
             end
             reaper.ImGui_Spacing(ctx)
             reaper.ImGui_SetCursorPos(ctx, 0, 550)
@@ -307,12 +274,9 @@ local region_colors = {
 
                 reaper.ImGui_PushID(ctx, "col"..i)
 
-                if reaper.ImGui_ColorButton(ctx, "##Color", packed, 0, 30, 30) then
+                if reaper.ImGui_ColorButton(ctx, "##Color", packed, 0, 25, 25) then
                     selectedColor = col
                     SetRegionColors(selectedColor)
-                end
-                if reaper.ImGui_IsItemHovered(ctx) then
-                    shared_info.hovered_id = "REGION_CHNG_COL"
                 end
 
                 reaper.ImGui_PopID(ctx)
@@ -321,10 +285,6 @@ local region_colors = {
                     reaper.ImGui_SameLine(ctx)
                 end
             end
-        -- ========================================================
-        if reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Space()) then
-            reaper.Main_OnCommand(40044, 0)
-        end
     end
 return {
     JKK_TimelineTool_Draw = JKK_TimelineTool_Draw,

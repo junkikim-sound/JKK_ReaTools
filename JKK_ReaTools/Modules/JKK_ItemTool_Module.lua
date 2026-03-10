@@ -2151,7 +2151,7 @@ math.randomseed(os.time())
 ----------------------------------------------------------
 -- UI_Module 
 ----------------------------------------------------------
-    function JKK_ItemTool_Draw(ctx, prev_count, current_count, shared_info)
+    function JKK_ItemTool_Draw(ctx, prev_count, current_count)
         -- 현재 선택된 아이템 개수 파악
             local selected_item_count = reaper.CountSelectedMediaItems(0)
             local disable_all = (selected_item_count == 0)
@@ -2186,14 +2186,14 @@ math.randomseed(os.time())
                             reaper.ImGui_SameLine(ctx)
 
                             reaper.ImGui_PushItemWidth(ctx, 200)
-                            reaper.ImGui_SetCursorPosX(ctx, 80)
+                            reaper.ImGui_SetCursorPosX(ctx, 494)
                             changed_vol, adjust_vol = reaper.ImGui_SliderDouble(ctx, "##Volume", adjust_vol, -30.00, 30.00, "%.2f")
                             if reaper.ImGui_IsItemClicked(ctx, 1) then adjust_vol = 0.0; ApplyBatchVolume() end
                         -- Pan Slider
                             reaper.ImGui_AlignTextToFramePadding(ctx)
                             reaper.ImGui_Text(ctx, "  Pan")
                             reaper.ImGui_SameLine(ctx)
-                            reaper.ImGui_SetCursorPosX(ctx, 80)
+                            reaper.ImGui_SetCursorPosX(ctx, 494)
 
                             local pan_display_val = math.abs(adjust_pan * 100)
                             local pan_format = "Center"
@@ -2209,7 +2209,7 @@ math.randomseed(os.time())
                             reaper.ImGui_Text(ctx, "  Pitch")
                             reaper.ImGui_SameLine(ctx)
 
-                            reaper.ImGui_SetCursorPosX(ctx, 80)
+                            reaper.ImGui_SetCursorPosX(ctx, 494)
                             changed_pitch, adjust_pitch = reaper.ImGui_SliderDouble(ctx, "##Pitch", adjust_pitch, -12, 12, "%.1f")
                             if reaper.ImGui_IsItemClicked(ctx, 1) then adjust_pitch = 0.0; ApplyBatchPitch() end
                         -- Rate Slider
@@ -2217,7 +2217,7 @@ math.randomseed(os.time())
                             reaper.ImGui_Text(ctx, "  Play Rate")
                             reaper.ImGui_SameLine(ctx)
 
-                            reaper.ImGui_SetCursorPosX(ctx, 80)
+                            reaper.ImGui_SetCursorPosX(ctx, 494)
                             changed_rate, adjust_rate = reaper.ImGui_SliderDouble(ctx, "##Playback Rate", adjust_rate, 0.25, 4.0, "%.2f", reaper.ImGui_SliderFlags_Logarithmic())
                             if reaper.ImGui_IsItemClicked(ctx, 1) then adjust_rate = 1.0; ApplyBatchRate() end
                         -- Group Stretch Ratio Slider
@@ -2225,7 +2225,7 @@ math.randomseed(os.time())
                             reaper.ImGui_Text(ctx, "  Stretch")
                             reaper.ImGui_SameLine(ctx)
 
-                            reaper.ImGui_SetCursorPosX(ctx, 80)
+                            reaper.ImGui_SetCursorPosX(ctx, 494)
                             changed_group_stretch, adjust_ratio = reaper.ImGui_SliderDouble(ctx, "##Group Stretch", group_stretch_ratio, 0.25, 4.0, "%.2f", reaper.ImGui_SliderFlags_Logarithmic())
                             local is_group_stretch_slider_active = reaper.ImGui_IsItemActive(ctx)
                             if current_project_state_count ~= prev_count and not is_group_stretch_slider_active then
@@ -2389,7 +2389,7 @@ math.randomseed(os.time())
                                 reaper.ImGui_AlignTextToFramePadding(ctx)
                                 reaper.ImGui_Text(ctx, "Channel")
                                 reaper.ImGui_SameLine(ctx)
-                                reaper.ImGui_SetCursorPosX(ctx, 477)
+                                reaper.ImGui_SetCursorPosX(ctx, 477 + 413)
                                 DrawChannelModeCombo(ctx, 165)
 
                                 reaper.ImGui_AlignTextToFramePadding(ctx)
@@ -2439,7 +2439,7 @@ math.randomseed(os.time())
                             reaper.ImGui_Text(ctx, "  Interval Width")
                             reaper.ImGui_SameLine(ctx)
                             reaper.ImGui_SetNextItemWidth(ctx, 126)
-                            reaper.ImGui_SetCursorPosX(ctx, 930)
+                            reaper.ImGui_SetCursorPosX(ctx, 930 + 413)
 
                             -- 현재 모드에 따른 포맷과 값 범위 설정
                             local format_str, cur_max, cur_min = "", 0, 0
@@ -2501,7 +2501,7 @@ math.randomseed(os.time())
                             reaper.ImGui_Text(ctx, "  Pos Range")
                             reaper.ImGui_SameLine(ctx)
                             reaper.ImGui_PushItemWidth(ctx, 200)
-                            reaper.ImGui_SetCursorPosX(ctx, 930)
+                            reaper.ImGui_SetCursorPosX(ctx, 930 + 413)
                             changed, pos_range = reaper.ImGui_SliderDouble(ctx, '##Pos Range', pos_range, 0, 1.0, '%.3f')
                             if reaper.ImGui_IsItemClicked(ctx, 1) then pos_range = 0.0 end
                             reaper.ImGui_SameLine(ctx)
@@ -2511,7 +2511,7 @@ math.randomseed(os.time())
                             reaper.ImGui_Text(ctx, "  Pitch Range")
                             reaper.ImGui_SameLine(ctx)
                             reaper.ImGui_PushItemWidth(ctx, 200)
-                            reaper.ImGui_SetCursorPosX(ctx, 930)
+                            reaper.ImGui_SetCursorPosX(ctx, 930 + 413)
                             changed, pitch_range = reaper.ImGui_SliderDouble(ctx, '##Pitch Range', pitch_range, 0, 24, '%.3f')
                             if reaper.ImGui_IsItemClicked(ctx, 1) then pitch_range = 0.0 end
                             reaper.ImGui_SameLine(ctx)
@@ -2521,7 +2521,7 @@ math.randomseed(os.time())
                             reaper.ImGui_Text(ctx, "  Playrate Range")
                             reaper.ImGui_SameLine(ctx)
                             reaper.ImGui_PushItemWidth(ctx, 200)
-                            reaper.ImGui_SetCursorPosX(ctx, 930)
+                            reaper.ImGui_SetCursorPosX(ctx, 930 + 413)
                             changed, playback_range = reaper.ImGui_SliderDouble(ctx, '##Playrate Range', playback_range, 0, 24, '%.3f')
                             if reaper.ImGui_IsItemClicked(ctx, 1) then playback_range = 0.0 end
                             reaper.ImGui_SameLine(ctx)
@@ -2531,7 +2531,7 @@ math.randomseed(os.time())
                             reaper.ImGui_Text(ctx, "  Vol Range")
                             reaper.ImGui_SameLine(ctx)
                             reaper.ImGui_PushItemWidth(ctx, 200)
-                            reaper.ImGui_SetCursorPosX(ctx, 930)
+                            reaper.ImGui_SetCursorPosX(ctx, 930 + 413)
                             changed, vol_range = reaper.ImGui_SliderDouble(ctx, '##Vol Range', vol_range, 0, 10, '%.02f')
                             if reaper.ImGui_IsItemClicked(ctx, 1) then vol_range = 0.0 end
                             reaper.ImGui_SameLine(ctx)
@@ -2572,7 +2572,7 @@ math.randomseed(os.time())
                         reaper.ImGui_Text(ctx, "  Threshold")
                         reaper.ImGui_SameLine(ctx)
                         reaper.ImGui_SetNextItemWidth(ctx, 200)
-                        reaper.ImGui_SetCursorPosX(ctx, 1330)
+                        reaper.ImGui_SetCursorPosX(ctx, 1330 + 413)
                         local thres_changed, new_thres = reaper.ImGui_SliderDouble(ctx, '##Threshold', silenceThreshold, 0.001, 0.3, "%.3f")
                         if thres_changed then silenceThreshold = new_thres end
                         if reaper.ImGui_IsItemClicked(ctx, 1) then 
@@ -2603,7 +2603,7 @@ math.randomseed(os.time())
                         reaper.ImGui_Text(ctx, "  Min Length")
                         reaper.ImGui_SameLine(ctx)
                         reaper.ImGui_SetNextItemWidth(ctx, 200)
-                        reaper.ImGui_SetCursorPosX(ctx, 1330)
+                        reaper.ImGui_SetCursorPosX(ctx, 1330 + 413)
                         local dur_changed, new_dur = reaper.ImGui_SliderDouble(ctx, '##Min Duration', minSilenceDuration, 0.001, 2.0, "%.3f")
                         if dur_changed then minSilenceDuration = new_dur end
                         if reaper.ImGui_IsItemClicked(ctx, 1) then 
@@ -2671,35 +2671,27 @@ math.randomseed(os.time())
                         reaper.ImGui_TableSetupColumn(ctx, 'colors', reaper.ImGui_TableColumnFlags_WidthFixed(), 400)
                         reaper.ImGui_TableSetupColumn(ctx, 'default', reaper.ImGui_TableColumnFlags_WidthFixed(), 400)
                         reaper.ImGui_TableNextColumn(ctx)
-                            -- asdfsdf
-                                local palette_columns = 12                        
-                                for i, col in ipairs(item_colors) do
-                                    local r, g, b = col[1], col[2], col[3]                          
-                                    local packed_col = reaper.ImGui_ColorConvertDouble4ToU32(r/255, g/255, b/255, 1.0)
-                                  
-                                    reaper.ImGui_PushID(ctx, "col"..i)                          
-                                    if reaper.ImGui_ColorButton(ctx, "##Color", packed_col, 0, 25, 25) then
-                                      SetItemColors(r, g, b)
-                                    end
-                                    if reaper.ImGui_IsItemHovered(ctx) then
-                                        shared_info.hovered_id = "ITEM_CHNG_COL"
-                                    end
-                                    reaper.ImGui_PopID(ctx)                          
-                                    if i % palette_columns ~= 0 then
-                                        reaper.ImGui_SameLine(ctx)
-                                    end
+                            local palette_columns = 12                        
+                            for i, col in ipairs(item_colors) do
+                                local r, g, b = col[1], col[2], col[3]                          
+                                local packed_col = reaper.ImGui_ColorConvertDouble4ToU32(r/255, g/255, b/255, 1.0)
+                              
+                                reaper.ImGui_PushID(ctx, "col"..i)                          
+                                if reaper.ImGui_ColorButton(ctx, "##Color", packed_col, 0, 25, 25) then
+                                  SetItemColors(r, g, b)
                                 end
-                                reaper.ImGui_TableNextColumn(ctx)
-                                reaper.ImGui_PushID(ctx, "col_default")
-                                local packed_default_col = reaper.ImGui_ColorConvertDouble4ToU32(0.3, 0.3, 0.3, 1.0)
-                                if reaper.ImGui_ColorButton(ctx, "##DefaultColor", packed_default_col, 0, 30, 55) then
-                                    SetItemColors(0, 0, 0)
+                                reaper.ImGui_PopID(ctx)                          
+                                if i % palette_columns ~= 0 then
+                                    reaper.ImGui_SameLine(ctx)
                                 end
-                                if reaper.ImGui_IsItemHovered(ctx) then
-                                    shared_info.hovered_id = "ITEM_CHNG_COL"
-                                end
-                                reaper.ImGui_PopID(ctx)
-
+                            end
+                            reaper.ImGui_TableNextColumn(ctx)
+                            reaper.ImGui_PushID(ctx, "col_default")
+                            local packed_default_col = reaper.ImGui_ColorConvertDouble4ToU32(0.3, 0.3, 0.3, 1.0)
+                            if reaper.ImGui_ColorButton(ctx, "##DefaultColor", packed_default_col, 0, 30, 55) then
+                                SetItemColors(0, 0, 0)
+                            end
+                            reaper.ImGui_PopID(ctx)
                         reaper.ImGui_TableNextColumn(ctx)
                         reaper.ImGui_EndTable(ctx)
                     end 
@@ -2711,29 +2703,6 @@ math.randomseed(os.time())
         if disable_all then
             reaper.ImGui_EndDisabled(ctx)
         end
-        -- ========================================================
-        -- Key Command
-            -- Space: Play/Stop
-                if not reaper.ImGui_IsAnyItemActive(ctx) then
-                    if reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Space()) then
-                        reaper.Main_OnCommand(40044, 0) -- Transport: Play/stop
-                    end
-                end
-            -- Ctrl+Z: Undo
-                if not reaper.ImGui_IsAnyItemActive(ctx) then
-                    if reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Ctrl()) and reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Z()) then
-                        reaper.Main_OnCommand(40029, 0)
-                    end
-                end
-
-            -- Ctrl+Shift+Z: Redo
-                if not reaper.ImGui_IsAnyItemActive(ctx) then
-                    if reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Ctrl()) and 
-                       reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Shift()) and 
-                       reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Z()) then
-                        reaper.Main_OnCommand(40030, 0)
-                    end
-                end
 
         local general_state_changed = has_changed()
         
