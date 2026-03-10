@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.8.1
+-- @version 0.8.2
 -- @provides 
 --     [nomain] Modules/JKK_ItemTool_Module.lua
 --     [nomain] Modules/JKK_TrackTool_Module.lua
@@ -15,7 +15,6 @@
 --     [nomain] Images/ITEM_Random Arrangement @streamline.png
 --     [nomain] Images/ITEM_Render Items to Stereo @streamline.png
 --     [nomain] Images/ITEM_Render Takes @streamline.png
---     [nomain] Images/REGION_Set Master Mix Matrix by Time Selection @streamline.png
 --     [nomain] Images/REGION_Delete All Regions @remixicon.png
 --     [nomain] Images/REGION_Delete in Time Selection @remixicon.png
 --     [nomain] Images/TRACK_Create Parallel FX Group @streamline.png
@@ -63,35 +62,7 @@ tools[1] = { name = "Item Tools",     module = load_module("/Scripts/JKK_ReaTool
 tools[2] = { name = "Track Tools",    module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_TrackTool_Module.lua") }
 tools[3] = { name = "Timeline Tools", module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_TimelineTool_Module.lua") }
 
-local widget_descriptions = {
-    -- Item Tools
-    ["LOGO"]            = { "Sound Designer 김준기 (Junki Kim)", "junkikim.sound@gmail.com" },
-
-    -- Item Tools
-    ["ITEM_VOL"]            = { "Volume Batch Controller", "Adjust the volume of selected items by a specified dB value\n선택된 아이템의 볼륨을 지정한 dB 값만큼 조절합니다" },
-    ["ITEM_PITCH"]          = { "Pitch Batch Controller", "Adjust the pitch of selected items in semitones\n선택된 아이템의 피치를 반음 단위로 조절합니다" },
-    ["ITEM_PLAYRATE"]       = { "Playrate Batch Controller", "Change the playback rate of selected items\n선택된 아이템의 재생 속도를 변경합니다" },
-    ["ITEM_GRP_STRTCH"]     = { "Group Stretcher", "Stretch the entire group of selected items by a specified ratio\n선택된 아이템 그룹 전체를 지정한 비율로 스트레치합니다" },
-    ["ITEM_ARR_STOFST"]     = { "Start Offset", "Set the starting offset of the randomization area\n랜덤화 영역의 시작 오프셋을 설정합니다" },
-    ["ITEM_ARR_WIDTH"]      = { "Slot Interval", "Set the width of the area where item slots will be randomized\n아이템 슬롯이 랜덤으로 배치될 영역의 폭을 설정합니다" },
-    ["ITEM_ARR_STRTCH"]      = { "Slot Stretch", "Stretches items within each slot while keeping slot intervals fixed\n슬롯 간격은 유지한 채 각 슬롯 내부의 아이템만 스트레치합니다" },
-    ["ITEM_ARR_POS"]        = { "Random Position Range", "Set the maximum range for random position offsets\n아이템 위치를 랜덤으로 이동할 최대 범위를 설정합니다" },
-    ["ITEM_ARR_PITCH"]      = { "Random Pitch Range", "Sets the maximum range for random pitch shifts\n아이템 피치를 랜덤으로 변경할 최대 범위를 설정합니다" },
-    ["ITEM_ARR_PLAYRATE"]   = { "Random Playrate Range", "Sets the maximum range for random playback rate changes\n재생 속도를 랜덤으로 변경할 최대 범위를 설정합니다" },
-    ["ITEM_ARR_VOL"]        = { "Random Volume Range", "Sets the maximum range for random volume changes\n볼륨을 랜덤으로 변경할 최대 범위를 설정합니다" },
-    ["ITEM_ARR_APPLY"]      = { "Random Arrangement", "Randomize item properties within the defined ranges\n설정된 범위 내에서 아이템 속성을 랜덤으로 적용합니다" },
-    ["ITEM_ARR_PLAY"]       = { "Play Next Slot", "Jump to and play the next item start position\n다음 아이템 시작 위치로 이동하여 재생합니다" },
-    ["ITEM_ARR_ALIGN"]      = { "Align Items to Left in Slot", "Snaps all items to the starting position of each slot.\n각 슬롯의 시작 지점으로 모든 아이템을 밀착시킵니다" },
-    ["ITEM_ARR_STOP"]       = { "Stop", "Stops playback\n재생을 중지합니다" },
-    ["ITEM_ARR_LIVE"]       = { "Live Update", "Apply changes in real time while adjusting sliders\n슬라이더 조작 시 변경 사항을 실시간으로 적용합니다" },
-    ["ITEM_ARR_ARR"]        = { "Shuffle Order", "Randomly shuffle the order of selected items\n선택된 아이템의 순서를 랜덤으로 섞습니다" },
-    ["ITEM_MV_EDIT"]        = { "Move Items to Edit Cursor", "Moves the selected items to edit cursor\n선택된 아이템을 편집 커서 위치로 이동합니다" },
-    ["ITEM_INSERT_FX"]      = { "Show FX Chain for Item Take", "Open the FX chain for the selected item take\n선택된 아이템 테이크의 FX 체인을 엽니다" },
-    ["ITEM_RENDER_TAKE"]    = { "Render Items to New Takes", "Render items to new takes\n아이템을 새로운 테이크로 렌더링합니다" },
-    ["ITEM_RENDER"]         = { "Render Items to Stereo Stem", "Renders selected items to a stereo file on a new track\n선택된 아이템 전체를 새 트랙에 스테레오 파일로 렌더링합니다" },
-    ["ITEM_CRT_REGION"]     = { "Region Creator", "Creates individual regions based on the bounds of each item\n각 아이템의 길이를 기준으로 개별 리전을 생성합니다 (Name_01, Name_02, …)" },
-    ["ITEM_CHNG_COL"]       = { "Change Items Color", "Changes the color of selected items\n선택된 아이템의 색상을 변경합니다" },
-    
+local widget_descriptions = {    
     -- Track Tools
     ["TRACK_ADJ_VOL"]       = { "Volume Batch Controller", "Adjusts the volume of selected tracks collectively\n선택된 트랙의 볼륨을 일괄로 조절합니다" },
     ["TRACK_ADJ_PAN"]       = { "Panning Batch Controller", "Adjusts the panning of selected tracks collectively\n선택된 트랙의 패닝을 일괄로 조절합니다" },
@@ -114,147 +85,111 @@ local widget_descriptions = {
 
 local shared_info = { hovered_id = nil }
 ---------------------------------------------------------
+-- Note
+---------------------------------------------------------
+    -- [프로젝트 노트 변수 초기화]
+    local project_note = ""
+    local last_project_ptr = nil
+
+    -- 현재 프로젝트에서 저장된 노트 불러오기
+    local retval, saved_note = reaper.GetProjExtState(0, "JKK_ReaTools_Note", "project_note")
+    if retval > 0 then
+        project_note = saved_note
+    else
+        project_note = ""
+    end
+---------------------------------------------------------
 -- UI
 ---------------------------------------------------------
 local function Main()
     current_project_state_count = reaper.GetProjectStateChangeCount(0)
     local textcol_title = 0xE3DB8EFF
     local textcol_gray = 0x808080FF
+
+    local current_project_ptr, _ = reaper.EnumProjects(-1)
+    if current_project_ptr ~= last_project_ptr then
+        local retval, saved_note = reaper.GetProjExtState(0, "JKK_ReaTools_Note", "project_note")
+        if retval > 0 then
+            project_note = saved_note
+        else
+            project_note = ""
+        end
+        last_project_ptr = current_project_ptr
+    end
     
-    reaper.ImGui_SetNextWindowSize(ctx, 530, 665, reaper.ImGui_Cond_Once())
+    reaper.ImGui_SetNextWindowSize(ctx, 1900, 220, reaper.ImGui_Cond_Once())
     style_pop_count, color_pop_count = ApplyTheme(ctx)
 
-    local visible, open_flag = reaper.ImGui_Begin(ctx, 'JKK_ReaTools v0.7.4', open,
+    local visible, open_flag = reaper.ImGui_Begin(ctx, 'JKK_ReaTools', open,
         reaper.ImGui_WindowFlags_NoCollapse())
 
     if visible then
-        -- Logo ========================================================
-        reaper.ImGui_Dummy(ctx, -5, 0)
-        RPR.ImGui_SameLine(ctx)
-        reaper.ImGui_Image(ctx, image_logo, 45, 45)
-            if reaper.ImGui_IsItemHovered(ctx) then
-                shared_info.hovered_id = "LOGO"
-            end
-        reaper.ImGui_SameLine(ctx)
-
-        -- Title ========================================================
-        RPR.ImGui_PushFont(ctx, font, 24)
-        RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Text(), textcol_title)
-        local text = " "
-        RPR.ImGui_Text(ctx, text)
-        RPR.ImGui_PopFont(ctx)
-        RPR.ImGui_PopStyleColor(ctx, 1)
-        RPR.ImGui_SameLine(ctx)
-        
-        -- Info ========================================================
-        local INFO_LINE_SPACING = 12
-        local INFO_MAX_LINES    = 2
-        local INFO_AREA_HEIGHT  = (INFO_LINE_SPACING * INFO_MAX_LINES) + 5
-        local start_y = RPR.ImGui_GetCursorPosY(ctx)
-        local desc_text = " "
-        if shared_info.hovered_id and widget_descriptions[shared_info.hovered_id] then
-            desc_text = widget_descriptions[shared_info.hovered_id]
-        end
-
-        if desc_text and type(desc_text) == "table" then
-            local title, body = desc_text[1], desc_text[2]
-            local window_width = RPR.ImGui_GetWindowWidth(ctx)
-            local padding = 15
-            local spacing_adjust = -30
-
-            -- Title
-            RPR.ImGui_PushFont(ctx, font, 13)
-            RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Text(), textcol_title)
-            
-            local title_width, _ = RPR.ImGui_CalcTextSize(ctx, title)
-            RPR.ImGui_SetCursorPosX(ctx, window_width - title_width - padding)
-            RPR.ImGui_Text(ctx, title)
-            
-            RPR.ImGui_PopStyleColor(ctx, 1)
-            RPR.ImGui_PopFont(ctx)
-
-            RPR.ImGui_SetCursorPosY(ctx, RPR.ImGui_GetCursorPosY(ctx) + spacing_adjust)
-
-            -- Body
-            if body then
-                RPR.ImGui_PushFont(ctx, font, 11)
-                RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Text(), textcol_gray)
-                
-                for line in body:gmatch("([^\n]+)") do
-                    local line_width, _ = RPR.ImGui_CalcTextSize(ctx, line)
-                    RPR.ImGui_SetCursorPosX(ctx, window_width - line_width - padding)
-                    RPR.ImGui_Text(ctx, line)
-                end
-                
-                RPR.ImGui_PopStyleColor(ctx, 1)
-                RPR.ImGui_PopFont(ctx)
-            end
-        end
-
-        RPR.ImGui_SetCursorPosY(ctx, start_y + INFO_AREA_HEIGHT + 18)
-        reaper.ImGui_Spacing(ctx)
-        RPR.ImGui_SetCursorPosY(ctx, 85)
-
-        -- ========================================================
-        local changed, current_tab = RPR.ImGui_BeginTabBar(ctx, "ToolTabs")
-
-        -- ========================================================
-        if changed then
-            for i, tool in ipairs(tools) do
-                local is_selected, _ = RPR.ImGui_BeginTabItem(ctx, tool.name)
-                if is_selected then
-                    if selected_tool ~= i then
-                        selected_tool = i
-                        shared_info.needs_reload = true
+        local JKK_ReaTools_Table    = reaper.ImGui_TableFlags_SizingFixedFit() | 
+                                    reaper.ImGui_TableFlags_BordersInnerV()
+        if reaper.ImGui_BeginTable(ctx, "JKK_ReaTools_Table", 2, table_full) then
+            reaper.ImGui_TableSetupColumn(ctx, 'JKK_ReaTools_Table_01', reaper.ImGui_TableColumnFlags_WidthFixed(), 1680)
+            reaper.ImGui_TableSetupColumn(ctx, 'JKK_ReaTools_Table_02', reaper.ImGui_TableColumnFlags_WidthFixed(), 1000)
+            reaper.ImGui_TableNextColumn(ctx)
+            -- ========================================================
+                local changed, current_tab = RPR.ImGui_BeginTabBar(ctx, "ToolTabs")
+                if changed then
+                    for i, tool in ipairs(tools) do
+                        local is_selected, _ = RPR.ImGui_BeginTabItem(ctx, tool.name)
+                        if is_selected then
+                            if selected_tool ~= i then
+                                selected_tool = i
+                                shared_info.needs_reload = true
+                            end
+                            RPR.ImGui_EndTabItem(ctx)
+                        end
                     end
-                    RPR.ImGui_EndTabItem(ctx)
-                end
-            end
-            RPR.ImGui_EndTabBar(ctx)
-        end
-
-        local current_tool = tools[selected_tool]
-        
-        -- ========================================================
-        RPR.ImGui_PushFont(ctx, font, 13)
-        if current_tool and current_tool.module then
-            if current_tool.name == "Item Tools" then
-                if current_tool.module.JKK_ItemTool_Draw then
-                    shared_info.hovered_id = nil 
-                    current_tool.module.JKK_ItemTool_Draw(ctx, prev_project_state_count, current_project_state_count, shared_info)
+                    RPR.ImGui_EndTabBar(ctx)
                 end
 
-            elseif current_tool.name == "Track Tools" then
-                if current_tool.module.JKK_TrackTool_Draw then
-                    shared_info.hovered_id = nil 
-                    current_tool.module.JKK_TrackTool_Draw(ctx, shared_info)
-                end
+                local current_tool = tools[selected_tool]
+            -- ========================================================
+                RPR.ImGui_PushFont(ctx, font, 13)
+                if current_tool and current_tool.module then
+                    if current_tool.name == "Item Tools" then
+                        if current_tool.module.JKK_ItemTool_Draw then
+                            shared_info.hovered_id = nil 
+                            current_tool.module.JKK_ItemTool_Draw(ctx, prev_project_state_count, current_project_state_count, shared_info)
+                        end
 
-            elseif current_tool.name == "Timeline Tools" then
-                if current_tool.module.JKK_TimelineTool_Draw then
-                    shared_info.hovered_id = nil 
-                    current_tool.module.JKK_TimelineTool_Draw(ctx, shared_info)
+                    elseif current_tool.name == "Track Tools" then
+                        if current_tool.module.JKK_TrackTool_Draw then
+                            shared_info.hovered_id = nil 
+                            current_tool.module.JKK_TrackTool_Draw(ctx, shared_info)
+                        end
+
+                    elseif current_tool.name == "Timeline Tools" then
+                        if current_tool.module.JKK_TimelineTool_Draw then
+                            shared_info.hovered_id = nil 
+                            current_tool.module.JKK_TimelineTool_Draw(ctx, shared_info)
+                        end
+                    end 
+                    prev_project_state_count = current_project_state_count
+                else
+                    RPR.ImGui_Text(ctx, "Error: Selected module (" .. current_tool.name .. ") failed to load.")
                 end
-            end 
-            
-            prev_project_state_count = current_project_state_count
-            
-        else
-            RPR.ImGui_Text(ctx, "Error: Selected module (" .. current_tool.name .. ") failed to load.")
+            reaper.ImGui_TableNextColumn(ctx)
+            -- NOTE ===================================================
+                reaper.ImGui_Text(ctx, " ")
+                reaper.ImGui_SameLine(ctx)
+                reaper.ImGui_SeparatorText(ctx, 'Project Memo')
+                reaper.ImGui_Text(ctx, " ")
+                reaper.ImGui_SameLine(ctx)
+                local avail_w = reaper.ImGui_GetContentRegionAvail(ctx)
+                local changed, new_note = reaper.ImGui_InputTextMultiline(ctx, "##proj_note", project_note, avail_w, 190)
+                
+                if changed then
+                    project_note = new_note
+                    reaper.SetProjExtState(0, "JKK_ReaTools_Note", "Project_note", project_note)
+                end
+            reaper.ImGui_EndTable(ctx)
         end
         reaper.ImGui_Spacing(ctx)
         RPR.ImGui_PopFont(ctx)
-
-        -- ========================================================
-        -- local credit_text = "Scripted by Junki Kim"
-        -- RPR.ImGui_PushFont(ctx, font, 12) 
-        -- local credit_width, _ = RPR.ImGui_CalcTextSize(ctx, credit_text)
-        -- local cursor_x2 = RPR.ImGui_GetWindowWidth(ctx) - credit_width - 10
-        -- RPR.ImGui_SetCursorPosX(ctx, math.max(cursor_x2, 150))
-        -- RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Text(), textcol_gray)
-        -- RPR.ImGui_Text(ctx, credit_text)
-        -- RPR.ImGui_PopStyleColor(ctx, 1)
-        -- RPR.ImGui_PopFont(ctx)
 
         -- ========================================================
         RPR.ImGui_PopStyleVar(ctx, style_pop_count)
