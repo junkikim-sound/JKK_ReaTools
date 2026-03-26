@@ -69,12 +69,18 @@ local region_colors = {
     local function RenameRegions(regionList, baseName)
         if not baseName or baseName == "" then return end
         for i, rgn in ipairs(regionList) do
-            local newName = string.format("%s_%02d", baseName, i)
+            local newName
+            if is_sequential_rgn_name then
+                newName = string.format("%s_%02d", baseName, i)
+            else
+                newName = baseName
+            end
+            
             reaper.SetProjectMarker3(0, rgn.index, true, rgn.pos, rgn.rgnEnd, newName, rgn.color)
         end
     end
 
-    local function ApplyChanges()
+    local function EditRegionsName()
         local regions = GetOverlappingRegions()
         if not regions or #regions == 0 then
             return
@@ -232,59 +238,97 @@ local region_colors = {
             end
         end
 
-        reaper.ImGui_Text(ctx, 'Create a TIME SELECTION to use this feature.')
+        local table_full      = reaper.ImGui_TableFlags_SizingFixedFit() | 
+                                reaper.ImGui_TableFlags_BordersInnerV()
+        if reaper.ImGui_BeginTable(ctx, "table_full", 2, table_full) then
+            reaper.ImGui_TableSetupColumn(ctx, 'table_01', reaper.ImGui_TableColumnFlags_WidthFixed(), 370)
+            reaper.ImGui_TableSetupColumn(ctx, 'table_02', reaper.ImGui_TableColumnFlags_WidthFixed(), 470)
+            reaper.ImGui_TableNextColumn(ctx)
         -- ========================================================
-        reaper.ImGui_SeparatorText(ctx, 'Actions')
-            if reaper.ImGui_Button(ctx, 'Set Region Matrix', 90, 22) then
-                if base_name ~= "" then
-                    ToggleMasterRenderforOverlappingRegions()
-                end
-            end
+            reaper.ImGui_Text(ctx, "")
             reaper.ImGui_SameLine(ctx)
-
-            if reaper.ImGui_Button(ctx, 'Delete Selected Regions', 90, 22) then
-                if base_name ~= "" then
-                    DeleteOverlappingRegions()
-                end
-            end
-            reaper.ImGui_SameLine(ctx)
-
-            if reaper.ImGui_Button(ctx, 'Delete All Regions', 90, 22) then
-                if base_name ~= "" then
-                    DeleteAllRegions()
-                end
-            end
-            reaper.ImGui_SameLine(ctx)
-
-            changed, rename_base_name = reaper.ImGui_InputTextMultiline(ctx, '##RenameRegionBaseName', rename_base_name, 268, 27)
-            reaper.ImGui_SameLine(ctx)
-            
-            if reaper.ImGui_Button(ctx, "Rename Regions", 116, 27) then
-                ApplyChanges()
-            end
-            reaper.ImGui_Spacing(ctx)
-            reaper.ImGui_SetCursorPos(ctx, 0, 550)
-            
-        -- ========================================================
-        reaper.ImGui_SeparatorText(ctx, 'Region Color Pallete')
-            local columns = 12
-            for i, col in ipairs(region_colors) do
-                local r, g, b = col[1], col[2], col[3]
-                local packed = reaper.ImGui_ColorConvertDouble4ToU32(r/255, g/255, b/255, 1)
-
-                reaper.ImGui_PushID(ctx, "col"..i)
-
-                if reaper.ImGui_ColorButton(ctx, "##Color", packed, 0, 25, 25) then
-                    selectedColor = col
-                    SetRegionColors(selectedColor)
-                end
-
-                reaper.ImGui_PopID(ctx)
-
-                if i % columns ~= 0 then
+            local table_01      = reaper.ImGui_TableFlags_SizingFixedFit()
+            if reaper.ImGui_BeginTable(ctx, "table_01", 1, table_01) then
+                reaper.ImGui_TableSetupColumn(ctx, 'table_01_1', reaper.ImGui_TableColumnFlags_WidthFixed(), 350)
+                reaper.ImGui_TableNextColumn(ctx)
+                reaper.ImGui_SeparatorText(ctx, 'Region Batch Renamer')
+                    local changed_rgn_name, new_rgn_name = reaper.ImGui_InputTextMultiline(ctx, '##RgnBaseName', rename_base_name, 272, 22)
+                    if changed_rgn_name then rename_base_name = new_rgn_name end
                     reaper.ImGui_SameLine(ctx)
+                    if reaper.ImGui_Button(ctx, "Clear##ClearBaseName", 55, 22) then
+                        base_name = ""
+                    end
+
+                    if reaper.ImGui_Button(ctx, "Edit Regions Name", 132, 22) then
+                        EditRegionsName()
+                    end
+                    reaper.ImGui_SameLine(ctx)
+                    local chk_rgn_changed, chk_rgn_val = reaper.ImGui_Checkbox(ctx, "_nn##RgnSeq", is_sequential_rgn_name)
+                    if chk_rgn_changed then
+                        is_sequential_rgn_name = chk_rgn_val
+                    end
+                    reaper.ImGui_Spacing(ctx)
+
+                reaper.ImGui_SeparatorText(ctx, 'Actions')
+                    if reaper.ImGui_Button(ctx, 'Set Region Matrix', 164, 22) then
+                        if base_name ~= "" then
+                            ToggleMasterRenderforOverlappingRegions()
+                        end
+                    end
+
+                    if reaper.ImGui_Button(ctx, 'Delete Selected Regions', 164, 22) then
+                        if base_name ~= "" then
+                            DeleteOverlappingRegions()
+                        end
+                    end
+                    reaper.ImGui_SameLine(ctx)
+
+                    if reaper.ImGui_Button(ctx, 'Delete All Regions', 164, 22) then
+                        if base_name ~= "" then
+                            DeleteAllRegions()
+                        end
+                    end
+                    reaper.ImGui_EndTable(ctx)
                 end
+            reaper.ImGui_TableNextColumn(ctx)
+        -- ========================================================
+            reaper.ImGui_Text(ctx, "")
+            reaper.ImGui_SameLine(ctx)
+            local table_02      = reaper.ImGui_TableFlags_SizingFixedFit()
+            if reaper.ImGui_BeginTable(ctx, "table_02", 1, table_02) then
+                reaper.ImGui_TableSetupColumn(ctx, 'table_02_1', reaper.ImGui_TableColumnFlags_WidthFixed(), 400)
+                reaper.ImGui_TableNextColumn(ctx)
+                reaper.ImGui_SeparatorText(ctx, 'Region Color Pallete')
+                reaper.ImGui_Text(ctx, " ")
+                reaper.ImGui_SameLine(ctx)
+                local table_03      = reaper.ImGui_TableFlags_SizingFixedFit()
+                if reaper.ImGui_BeginTable(ctx, "table_03", 1, table_03) then
+                    reaper.ImGui_TableSetupColumn(ctx, 'table_03_1', reaper.ImGui_TableColumnFlags_WidthFixed(), 400)
+                    reaper.ImGui_TableNextColumn(ctx)
+                    local columns = 12
+                    for i, col in ipairs(region_colors) do
+                        local r, g, b = col[1], col[2], col[3]
+                        local packed = reaper.ImGui_ColorConvertDouble4ToU32(r/255, g/255, b/255, 1)
+
+                        reaper.ImGui_PushID(ctx, "col"..i)
+
+                        if reaper.ImGui_ColorButton(ctx, "##Color", packed, 0, 25, 25) then
+                            selectedColor = col
+                            SetRegionColors(selectedColor)
+                        end
+
+                        reaper.ImGui_PopID(ctx)
+
+                        if i % columns ~= 0 then
+                            reaper.ImGui_SameLine(ctx)
+                        end
+                    end
+                    reaper.ImGui_EndTable(ctx)
+                end
+                reaper.ImGui_EndTable(ctx)
             end
+            reaper.ImGui_EndTable(ctx)
+        end
     end
 return {
     JKK_TimelineTool_Draw = JKK_TimelineTool_Draw,
