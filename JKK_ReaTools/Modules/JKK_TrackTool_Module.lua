@@ -210,7 +210,7 @@ local track_colors = {
                 local vol_format = (volume_db <= MIN_DB) and "-inf dB" or string.format("%.1f dB", volume_db)
                 -- 2. Volume Slider (슬라이더 내부 텍스트 포맷팅 적용)
                 reaper.ImGui_AlignTextToFramePadding(ctx)
-                reaper.ImGui_Text(ctx, "   Volume")
+                reaper.ImGui_Text(ctx, "  Volume")
                 reaper.ImGui_SameLine(ctx)
 
                 local current_slider_pos = db_to_slider_pos(volume_db)
@@ -232,7 +232,7 @@ local track_colors = {
                 end
             -- 3. Pan Slider
                 reaper.ImGui_AlignTextToFramePadding(ctx)
-                reaper.ImGui_Text(ctx, "   Pan")
+                reaper.ImGui_Text(ctx, "  Pan")
                 reaper.ImGui_SameLine(ctx)
 
                 local pan_display_val = math.abs(pan_val * 100)
@@ -267,7 +267,7 @@ local track_colors = {
 
                 -- 3. Width Slider 그리기
                 reaper.ImGui_AlignTextToFramePadding(ctx)
-                reaper.ImGui_Text(ctx, "   Width")
+                reaper.ImGui_Text(ctx, "  Width")
                 reaper.ImGui_SameLine(ctx)
                 reaper.ImGui_SetNextItemWidth(ctx, 272)
                 reaper.ImGui_SetCursorPosX(ctx, 494)
@@ -351,7 +351,26 @@ local track_colors = {
             reaper.Undo_EndBlock("JKK: Delete Unused Tracks", -1)
         end
     -- Track Automation Mode (Trim/Read, Read, Write)
-    -- Track Channel Set (7.1 까지)
+        local function Action_SetSelectedTracksAutomationMode(mode_idx)
+            reaper.Undo_BeginBlock()
+            local sel_cnt = reaper.CountSelectedTracks(0)
+            for i = 0, sel_cnt - 1 do
+                local tr = reaper.GetSelectedTrack(0, i)
+                -- 0: Trim/Read, 1: Read, 2: Touch, 3: Latch, 4: Write, 5: Latch Preview
+                reaper.SetMediaTrackInfo_Value(tr, "I_AUTOMODE", mode_idx)
+            end
+            reaper.Undo_EndBlock("Set Selected Tracks Automation Mode", -1)
+        end
+    -- Track Channel Set
+        local function Action_SetTrackChannels(num_channels)
+            reaper.Undo_BeginBlock()
+            local sel_cnt = reaper.CountSelectedTracks(0)
+            for i = 0, sel_cnt - 1 do
+                local tr = reaper.GetSelectedTrack(0, i)
+                reaper.SetMediaTrackInfo_Value(tr, "I_NCHAN", num_channels)
+            end
+            reaper.Undo_EndBlock("Set Track Channels", -1)
+        end
 
 ----------------------------------------------------------
 -- Color Palette 
@@ -395,89 +414,152 @@ local track_colors = {
             end
             last_sel_tr_guid = current_guid
         end
+        local sel_track_count = reaper.CountSelectedTracks(0)
+        local is_disabled = (sel_track_count == 0)
+        reaper.ImGui_BeginDisabled(ctx, is_disabled)
+
         local table_full      = reaper.ImGui_TableFlags_SizingFixedFit() | 
                                 reaper.ImGui_TableFlags_BordersInnerV()
         if reaper.ImGui_BeginTable(ctx, "table_full", 3, table_full) then
-            reaper.ImGui_TableSetupColumn(ctx, 'table_01', reaper.ImGui_TableColumnFlags_WidthFixed(), 405)
-            reaper.ImGui_TableSetupColumn(ctx, 'table_02', reaper.ImGui_TableColumnFlags_WidthFixed(), 425)
+            reaper.ImGui_TableSetupColumn(ctx, 'table_01', reaper.ImGui_TableColumnFlags_WidthFixed(), 370)
+            reaper.ImGui_TableSetupColumn(ctx, 'table_02', reaper.ImGui_TableColumnFlags_WidthFixed(), 470)
             reaper.ImGui_TableSetupColumn(ctx, 'table_03', reaper.ImGui_TableColumnFlags_WidthFixed(), 460)
             reaper.ImGui_TableNextColumn(ctx)
             -- Tracks Batch Controller ====================================
-                reaper.ImGui_SeparatorText(ctx, 'Tracks Batch Controller')
-                    reaper.ImGui_Text(ctx, " ")
-                    reaper.ImGui_SameLine(ctx)
-                    local changed_base_name, new_base_name = reaper.ImGui_InputTextMultiline(ctx, '##RenameNewBaseName', base_name, 272, 22)
-                    if changed_base_name then base_name = new_base_name end
-                    reaper.ImGui_SameLine(ctx)
-                    if reaper.ImGui_Button(ctx, "Clear##ClearBaseName", 55, 22) then
-                        base_name = ""
-                    end
-
-                    reaper.ImGui_Text(ctx, " ")
-                    reaper.ImGui_SameLine(ctx)
-                    if reaper.ImGui_Button(ctx, 'Edit Tracks Name', 132, 22) then
-                        if base_name ~= "" then
-                            RenameTracks()
-                        end
-                    end
-                    reaper.ImGui_SameLine(ctx)
-                    if reaper.ImGui_Button(ctx, 'Follow Folder Name', 132, 22) then
-                        if base_name ~= "" then
-                            FollowFolderName()
-                        end
-                    end
-                    reaper.ImGui_SameLine(ctx)
-                    local chk_changed, chk_val = reaper.ImGui_Checkbox(ctx, "_nn", is_sequential_name)
-                    if chk_changed then
-                        is_sequential_name = chk_val -- 값 업데이트
-                    end
-                    reaper.ImGui_Spacing(ctx)
-                    DrawTrackBatchController(ctx)
-            -- Actions ====================================================
-                reaper.ImGui_SeparatorText(ctx, 'Actions')
-                
-                if reaper.ImGui_Button(ctx, 'Delete Empty Tracks', 90, 22) then
-                    if base_name ~= "" then
-                        DeleteEmptyTracksAndFolders()
-                    end
-                end
-
-                reaper.ImGui_Spacing(ctx)
-            -- Track Color Palette ========================================
-                reaper.ImGui_SeparatorText(ctx, 'Track Color Palette')
-                local table_03      = reaper.ImGui_TableFlags_SizingFixedFit()
-                if reaper.ImGui_BeginTable(ctx, "table_color", 2, table_01) then
-                    reaper.ImGui_TableSetupColumn(ctx, 'colors', reaper.ImGui_TableColumnFlags_WidthFixed(), 400)
-                    reaper.ImGui_TableSetupColumn(ctx, 'default', reaper.ImGui_TableColumnFlags_WidthFixed(), 400)
+                local table_01      = reaper.ImGui_TableFlags_SizingFixedFit()
+                if reaper.ImGui_BeginTable(ctx, "table_01", 1, table_01) then
+                    reaper.ImGui_TableSetupColumn(ctx, 'Tracks Batch Controller', reaper.ImGui_TableColumnFlags_WidthFixed(), 360)
                     reaper.ImGui_TableNextColumn(ctx)
-                        local palette_columns = 12
-                        for i, col in ipairs(track_colors) do
-                            local r, g, b = col[1], col[2], col[3]                          
-                            local packed_col = reaper.ImGui_ColorConvertDouble4ToU32(r/255, g/255, b/255, 1.0)    
+                    reaper.ImGui_SeparatorText(ctx, 'Tracks Batch Controller')
+                        reaper.ImGui_Text(ctx, "")
+                        reaper.ImGui_SameLine(ctx)
+                        local changed_base_name, new_base_name = reaper.ImGui_InputTextMultiline(ctx, '##RenameNewBaseName', base_name, 272, 22)
+                        if changed_base_name then base_name = new_base_name end
+                        reaper.ImGui_SameLine(ctx)
+                        if reaper.ImGui_Button(ctx, "Clear##ClearBaseName", 55, 22) then
+                            base_name = ""
+                        end
 
-                            reaper.ImGui_PushID(ctx, "col"..i)                          
-                            if reaper.ImGui_ColorButton(ctx, "##Color", packed_col, 0, 25, 25) then
-                                SetTrackColors(r, g, b)
+                        reaper.ImGui_Text(ctx, "")
+                        reaper.ImGui_SameLine(ctx)
+                        if reaper.ImGui_Button(ctx, 'Edit Tracks Name', 132, 22) then
+                            if base_name ~= "" then
+                                RenameTracks()
+                            end
+                        end
+                        reaper.ImGui_SameLine(ctx)
+                        if reaper.ImGui_Button(ctx, 'Follow Folder Name', 132, 22) then
+                            if base_name ~= "" then
+                                FollowFolderName()
+                            end
+                        end
+                        reaper.ImGui_SameLine(ctx)
+                        local chk_changed, chk_val = reaper.ImGui_Checkbox(ctx, "_nn", is_sequential_name)
+                        if chk_changed then
+                            is_sequential_name = chk_val
+                        end
+                        reaper.ImGui_Spacing(ctx)
+                        DrawTrackBatchController(ctx)
+                    -- asdfasdf
+                        reaper.ImGui_AlignTextToFramePadding(ctx)
+                        reaper.ImGui_Text(ctx, "  Channels")
+                        reaper.ImGui_SameLine(ctx)
+                        reaper.ImGui_SetCursorPosX(ctx, 494)
+                        -- [1] Track Channels 콤보박스
+                        local channel_options = " 2 ch\0 4 ch\0 6 ch\0 8 ch\0 10 ch\0 12 ch\0 16 ch\0"
+                        local current_nchan = sel_tr and reaper.GetMediaTrackInfo_Value(sel_tr, "I_NCHAN") or 2
+                        
+                        -- 현재 채널 수에 맞는 인덱스 찾기
+                        local channel_idx = 0
+                        local nchan_map = { 2, 4, 6, 8, 10, 12, 16}
+                        for i, v in ipairs(nchan_map) do if v == current_nchan then channel_idx = i - 1 break end end
+
+                        reaper.ImGui_SetNextItemWidth(ctx, 120)
+                        local ch_changed, new_ch_idx = reaper.ImGui_Combo(ctx, "##Channels", channel_idx, channel_options)
+                        if ch_changed then
+                            Action_SetTrackChannels(nchan_map[new_ch_idx + 1])
+                        end
+                    reaper.ImGui_EndTable(ctx)
+                end
+            reaper.ImGui_TableNextColumn(ctx)
+            -- Actions ====================================================
+                reaper.ImGui_Text(ctx, "")
+                reaper.ImGui_SameLine(ctx)
+                local table_02      = reaper.ImGui_TableFlags_SizingFixedFit()
+                if reaper.ImGui_BeginTable(ctx, "table_02", 1, table_02) then
+                    reaper.ImGui_TableSetupColumn(ctx, 'Tracks Batch Controller', reaper.ImGui_TableColumnFlags_WidthFixed(), 470)
+                    reaper.ImGui_TableNextColumn(ctx)
+                -- Actions ================================================
+                    reaper.ImGui_SeparatorText(ctx, 'Actions')
+                        reaper.ImGui_Text(ctx, " ")
+                        reaper.ImGui_SameLine(ctx)
+                    -- Del Unused Tracks
+                        if reaper.ImGui_Button(ctx, 'Delete Unused Tracks', 160, 22) then
+                            if base_name ~= "" then
+                                DeleteEmptyTracksAndFolders()
+                            end
+                        end
+                        reaper.ImGui_SameLine(ctx)
+                    
+                    -- Trim/Read
+                        if reaper.ImGui_Button(ctx, 'Trim', 70) then
+                            Action_SetSelectedTracksAutomationMode(0)
+                        end
+                        reaper.ImGui_SameLine(ctx)
+
+                    -- Read
+                        if reaper.ImGui_Button(ctx, 'Read', 70) then
+                            Action_SetSelectedTracksAutomationMode(1)
+                        end
+                        reaper.ImGui_SameLine(ctx)
+
+                    -- Write
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x882222FF)
+                        if reaper.ImGui_Button(ctx, 'Write', 70) then
+                            Action_SetSelectedTracksAutomationMode(4)
+                        end
+                        reaper.ImGui_PopStyleColor(ctx)
+                    reaper.ImGui_Spacing(ctx)
+                -- Track Color Palette ========================================
+                    reaper.ImGui_SeparatorText(ctx, 'Track Color Palette')
+                    reaper.ImGui_Text(ctx, " ")
+                    reaper.ImGui_SameLine(ctx)
+                    local table_03      = reaper.ImGui_TableFlags_SizingFixedFit()
+                    if reaper.ImGui_BeginTable(ctx, "table_color", 2, table_01) then
+                        reaper.ImGui_TableSetupColumn(ctx, 'colors', reaper.ImGui_TableColumnFlags_WidthFixed(), 400)
+                        reaper.ImGui_TableSetupColumn(ctx, 'default', reaper.ImGui_TableColumnFlags_WidthFixed(), 400)
+                        reaper.ImGui_TableNextColumn(ctx)
+                            local palette_columns = 12
+                            for i, col in ipairs(track_colors) do
+                                local r, g, b = col[1], col[2], col[3]                          
+                                local packed_col = reaper.ImGui_ColorConvertDouble4ToU32(r/255, g/255, b/255, 1.0)    
+
+                                reaper.ImGui_PushID(ctx, "col"..i)                          
+                                if reaper.ImGui_ColorButton(ctx, "##Color", packed_col, 0, 25, 25) then
+                                    SetTrackColors(r, g, b)
+                                end
+                                reaper.ImGui_PopID(ctx)
+                                if i % palette_columns ~= 0 then
+                                    reaper.ImGui_SameLine(ctx)
+                                end
+                            end
+                            reaper.ImGui_TableNextColumn(ctx)
+                            reaper.ImGui_PushID(ctx, "col_default")
+                            local packed_default_col = reaper.ImGui_ColorConvertDouble4ToU32(0.3, 0.3, 0.3, 1.0)
+                            if reaper.ImGui_ColorButton(ctx, "##DefaultColor", packed_default_col, 0, 30, 55) then
+                                SetTrackColors(0, 0, 0)
                             end
                             reaper.ImGui_PopID(ctx)
-                            if i % palette_columns ~= 0 then
-                                reaper.ImGui_SameLine(ctx)
-                            end
-                        end
                         reaper.ImGui_TableNextColumn(ctx)
-                        reaper.ImGui_PushID(ctx, "col_default")
-                        local packed_default_col = reaper.ImGui_ColorConvertDouble4ToU32(0.3, 0.3, 0.3, 1.0)
-                        if reaper.ImGui_ColorButton(ctx, "##DefaultColor", packed_default_col, 0, 30, 55) then
-                            SetTrackColors(0, 0, 0)
-                        end
-                        reaper.ImGui_PopID(ctx)
-                    reaper.ImGui_TableNextColumn(ctx)
+                        reaper.ImGui_EndTable(ctx)
+                    end 
                     reaper.ImGui_EndTable(ctx)
-                end 
+                end
             reaper.ImGui_TableNextColumn(ctx)
             reaper.ImGui_TableNextColumn(ctx)
             reaper.ImGui_EndTable(ctx)
         end
+        reaper.ImGui_EndDisabled(ctx)
     end
 return {
     JKK_TrackTool_Draw = JKK_TrackTool_Draw
