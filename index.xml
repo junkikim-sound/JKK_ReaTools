@@ -1,23 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="JKK_ReaTools" commit="0ee9cef67d272e7ebcc7a4c534d5f4e6d6ca56c1">
-  <category name="JKK_ReaTools">
-    <reapack name="JKK_ReaTools.lua" type="script">
-      <version name="0.8.9" author="Junki Kim" time="2026-03-26T01:59:17Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/e52de8efd58496a7df4435482c10e0a6483f0658/JKK_ReaTools/JKK_ReaTools.lua</source>
-        <source file="Modules/JKK_ItemTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/e52de8efd58496a7df4435482c10e0a6483f0658/JKK_ReaTools/Modules/JKK_ItemTool_Module.lua</source>
-        <source file="Modules/JKK_TrackTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/e52de8efd58496a7df4435482c10e0a6483f0658/JKK_ReaTools/Modules/JKK_TrackTool_Module.lua</source>
-        <source file="Modules/JKK_TimelineTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/e52de8efd58496a7df4435482c10e0a6483f0658/JKK_ReaTools/Modules/JKK_TimelineTool_Module.lua</source>
-        <source file="Modules/JKK_Theme.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/e52de8efd58496a7df4435482c10e0a6483f0658/JKK_ReaTools/Modules/JKK_Theme.lua</source>
-      </version>
-      <version name="0.9.0" author="Junki Kim" time="2026-04-16T14:16:45Z">
-        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/0ee9cef67d272e7ebcc7a4c534d5f4e6d6ca56c1/JKK_ReaTools/JKK_ReaTools.lua</source>
-        <source file="Modules/JKK_ItemTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/0ee9cef67d272e7ebcc7a4c534d5f4e6d6ca56c1/JKK_ReaTools/Modules/JKK_ItemTool_Module.lua</source>
-        <source file="Modules/JKK_TrackTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/0ee9cef67d272e7ebcc7a4c534d5f4e6d6ca56c1/JKK_ReaTools/Modules/JKK_TrackTool_Module.lua</source>
-        <source file="Modules/JKK_TimelineTool_Module.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/0ee9cef67d272e7ebcc7a4c534d5f4e6d6ca56c1/JKK_ReaTools/Modules/JKK_TimelineTool_Module.lua</source>
-        <source file="Modules/JKK_Theme.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/0ee9cef67d272e7ebcc7a4c534d5f4e6d6ca56c1/JKK_ReaTools/Modules/JKK_Theme.lua</source>
-      </version>
-    </reapack>
-  </category>
+<index version="1" name="JKK_ReaTools" commit="8caf537a7b5b24284ce81b305bfa96d37b5753fd">
   <metadata>
     <description><![CDATA[{\rtf1\ansi\deff0{\fonttbl{\f0 \fswiss Helvetica;}{\f1 \fmodern Courier;}}
 {\colortbl;\red255\green0\blue0;\red0\green0\blue255;}
