@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.9.1
+-- @version 0.9.2
 -- @provides 
 --     [nomain] Modules/JKK_ItemTool_Module.lua
 --     [nomain] Modules/JKK_TrackTool_Module.lua
@@ -20,7 +20,7 @@ local selected_tool = 1
 local prev_project_state_count = reaper.GetProjectStateChangeCount(0) 
 local current_project_state_count = prev_project_state_count
 
-local theme_path = RPR.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme.lua"
+local theme_path = RPR.GetResourcePath() .. "/Scripts/JKK_ReaTools/Modules/JKK_Theme.lua"
 local ApplyTheme = (RPR.file_exists(theme_path) and dofile(theme_path).ApplyTheme) 
                    or function(ctx) return 0, 0 end
 
@@ -40,9 +40,9 @@ end
 
 --========================================================
 local tools = {}
-tools[1] = { name = "Item Tools",     module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_ItemTool_Module.lua") }
-tools[2] = { name = "Track Tools",    module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_TrackTool_Module.lua") }
-tools[3] = { name = "Timeline Tools", module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_TimelineTool_Module.lua") }
+tools[1] = { name = "Item Tools",     module = load_module("/Scripts/JKK_ReaTools/Modules/JKK_ItemTool_Module.lua") }
+tools[2] = { name = "Track Tools",    module = load_module("/Scripts/JKK_ReaTools/Modules/JKK_TrackTool_Module.lua") }
+tools[3] = { name = "Timeline Tools", module = load_module("/Scripts/JKK_ReaTools/Modules/JKK_TimelineTool_Module.lua") }
 
 ---------------------------------------------------------
 -- Note & State Tracking Variables
