@@ -1,12 +1,12 @@
 --========================================================
--- @title JKK_Track Manager_Module
+-- @title JKK_TrackTools
 -- @author Junki Kim
 -- @noindex
 --========================================================
 
 local open = true
 
-local theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_Theme/JKK_Theme.lua"
+local theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/Modules/JKK_Theme.lua"
 local theme_module = nil
 if reaper.file_exists(theme_path) then
     theme_module = dofile(theme_path)
@@ -287,94 +287,87 @@ local track_colors = {
 -- FX List
 ------------------------------------------------------------
     local function DrawTrackFXList(ctx, track)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF)
         reaper.ImGui_SeparatorText(ctx, 'Track FX List')
+        reaper.ImGui_PopStyleColor(ctx)
         
-        if not track or reaper.TrackFX_GetCount(track) == 0 then
-            reaper.ImGui_Text(ctx, "  No FX on this track")
+        if not track then
+            reaper.ImGui_Text(ctx, "  No track selected")
             return
         end
 
         local fx_count = reaper.TrackFX_GetCount(track)
 
-        for i = 0, fx_count - 1 do
-            local _, fx_name = reaper.TrackFX_GetFXName(track, i, "")
-            local is_enabled = reaper.TrackFX_GetEnabled(track, i)
-            
-            reaper.ImGui_PushID(ctx, "fx_item_" .. i)
-            
-            -- 1. Bypass
-            local changed, new_enabled = reaper.ImGui_Checkbox(ctx, "##enabled", is_enabled)
-            if changed then
-                reaper.Undo_BeginBlock()
-                reaper.TrackFX_SetEnabled(track, i, new_enabled)
-                reaper.Undo_EndBlock("Toggle FX Bypass via Checkbox", -1)
-            end
-            
-            reaper.ImGui_SameLine(ctx)
-            
-            -- 2. FX Name
-            if reaper.ImGui_Selectable(ctx, fx_name, false) then
-                local alt_pressed = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Key_LeftAlt()) or 
-                                    reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Key_RightAlt())
+        -- FX가 있을 때만 리스트를 그립니다.
+        if fx_count > 0 then
+            for i = 0, fx_count - 1 do
+                local _, fx_name = reaper.TrackFX_GetFXName(track, i, "")
+                local clean_name = fx_name:gsub("^.-: ", ""):gsub("^.-:", "")
+                local is_enabled = reaper.TrackFX_GetEnabled(track, i)
                 
-                local shift_pressed = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Key_LeftShift()) or 
-                                      reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Key_RightShift())
+                reaper.ImGui_PushID(ctx, "fx_item_" .. i)
+                
+                -- 1. Bypass Checkbox
+                local changed, new_enabled = reaper.ImGui_Checkbox(ctx, "##enabled", is_enabled)
+                if changed then
+                    reaper.Undo_BeginBlock()
+                    reaper.TrackFX_SetEnabled(track, i, new_enabled)
+                    reaper.Undo_EndBlock("Toggle FX Bypass", -1)
+                end
+                
+                reaper.ImGui_SameLine(ctx)
+                
+                -- 2. FX Name Selectable
+                if reaper.ImGui_Selectable(ctx, clean_name, false) then
+                    local alt = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Key_LeftAlt())
+                    local shift = reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Key_LeftShift())
 
-                if alt_pressed then
-                    -- Alt + Click
-                    reaper.Undo_BeginBlock()
-                    reaper.TrackFX_Delete(track, i)
-                    reaper.Undo_EndBlock("Delete FX via UI (Alt-Click)", -1)
-                    
-                elseif shift_pressed then
-                    -- Shift + Click
-                    reaper.Undo_BeginBlock()
-                    reaper.TrackFX_SetEnabled(track, i, not is_enabled)
-                    reaper.Undo_EndBlock("Toggle FX Bypass via UI (Shift-Click)", -1)
-                    
-                else
-                    -- Click
-                    local is_open = reaper.TrackFX_GetOpen(track, i)
-                    if is_open then
-                        reaper.TrackFX_Show(track, i, 2)
+                    if alt then
+                        reaper.TrackFX_Delete(track, i)
+                    elseif shift then
+                        reaper.TrackFX_SetEnabled(track, i, not is_enabled)
                     else
-                        reaper.TrackFX_Show(track, i, 3)
+                        local is_open = reaper.TrackFX_GetOpen(track, i)
+                        reaper.TrackFX_Show(track, i, is_open and 2 or 3)
                     end
                 end
-            end
 
-            -- 3. Right Click
-            if reaper.ImGui_BeginPopupContextItem(ctx) then
-                if reaper.ImGui_MenuItem(ctx, "Delete FX") then
-                    reaper.Undo_BeginBlock()
-                    reaper.TrackFX_Delete(track, i)
-                    reaper.Undo_EndBlock("Delete FX via Context Menu", -1)
+                -- Drag & Drop / Popup 로직
+                if reaper.ImGui_BeginPopupContextItem(ctx) then
+                    if reaper.ImGui_MenuItem(ctx, "Delete FX") then reaper.TrackFX_Delete(track, i) end
+                    reaper.ImGui_EndPopup(ctx)
                 end
-                reaper.ImGui_EndPopup(ctx)
-            end
+                
+                if reaper.ImGui_BeginDragDropSource(ctx) then
+                    reaper.ImGui_SetDragDropPayload(ctx, 'FX_DRAG_DROP', tostring(i))
+                    reaper.ImGui_Text(ctx, "Move: " .. clean_name)
+                    reaper.ImGui_EndDragDropSource(ctx)
+                end
 
-            -- 4. Drag and Drop Source
-            if reaper.ImGui_BeginDragDropSource(ctx) then
-                reaper.ImGui_SetDragDropPayload(ctx, 'FX_DRAG_DROP', tostring(i))
-                reaper.ImGui_Text(ctx, "Move: " .. fx_name)
-                reaper.ImGui_EndDragDropSource(ctx)
-            end
-
-            -- 5. Drag and Drop Target
-            if reaper.ImGui_BeginDragDropTarget(ctx) then
-                local rv, payload = reaper.ImGui_AcceptDragDropPayload(ctx, 'FX_DRAG_DROP')
-                if rv then
-                    local src_idx = tonumber(payload)
-                    local dest_idx = i
-                    if src_idx ~= dest_idx then
-                        reaper.TrackFX_CopyToTrack(track, src_idx, track, dest_idx, true)
+                if reaper.ImGui_BeginDragDropTarget(ctx) then
+                    local rv, payload = reaper.ImGui_AcceptDragDropPayload(ctx, 'FX_DRAG_DROP')
+                    if rv then
+                        reaper.TrackFX_CopyToTrack(track, tonumber(payload), track, i, true)
                     end
+                    reaper.ImGui_EndDragDropTarget(ctx)
                 end
-                reaper.ImGui_EndDragDropTarget(ctx)
+                
+                reaper.ImGui_PopID(ctx)
             end
-            
-            reaper.ImGui_PopID(ctx)
+        else
+            -- FX가 하나도 없을 때 보여줄 안내 문구
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0x888888FF)
+            reaper.ImGui_Text(ctx, "  Empty FX Chain")
+            reaper.ImGui_PopStyleColor(ctx)
         end
+
+        -- Add New FX
+        reaper.ImGui_Spacing(ctx)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xAAAAAAFF)
+        if reaper.ImGui_Selectable(ctx, "  Add New FX...", false) then
+            reaper.Main_OnCommand(40291, 0)
+        end
+        reaper.ImGui_PopStyleColor(ctx)
     end
 
 ------------------------------------------------------------
@@ -431,7 +424,8 @@ local track_colors = {
                         local fx, p, min_v, max_v = vals[1], vals[2], vals[3], vals[4]
                         
                         if fx < reaper.TrackFX_GetCount(track) then
-                            local _, fx_name = reaper.TrackFX_GetFXName(track, fx, "")
+                            local _, raw_fx_name = reaper.TrackFX_GetFXName(track, fx, "")
+                            local fx_name = raw_fx_name:gsub("^.-: ", ""):gsub("^.-:", "")
                             local _, param_name = reaper.TrackFX_GetParamName(track, fx, p, "")
                             table.insert(dest_table, {
                                 fx_idx = fx, param_idx = p,
@@ -531,10 +525,12 @@ local track_colors = {
         end
         
         if is_peak then
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x00AAFFAA)
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x068FC3FF)
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x49B6CCFF)
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x053359FF)
         end
         
-        if reaper.ImGui_Button(ctx, is_peak and "Peak: C" or "Peak: R", 72) then
+        if reaper.ImGui_Button(ctx, is_peak and "Center" or "Normal", 72) then
             if learn_id == 1 then 
                 state.x_peak = not state.x_peak 
             else 
@@ -543,14 +539,16 @@ local track_colors = {
             state.needs_save = true
         end
         
-        if is_peak then reaper.ImGui_PopStyleColor(ctx) end
+        if is_peak then reaper.ImGui_PopStyleColor(ctx, 3) end
         
         reaper.ImGui_SameLine(ctx)
         
         -- Learn 버튼
         local is_learning = (state.learn_mode == learn_id)
         if is_learning then
-            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x00FF00AA)
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x068FC3FF)
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x49B6CCFF)
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x053359FF)
         end
         if reaper.ImGui_Button(ctx, is_learning and "Learning..." or "Learn", 72) then
             if is_learning then
@@ -573,7 +571,7 @@ local track_colors = {
         end
         
         if is_learning then
-            reaper.ImGui_PopStyleColor(ctx)
+            reaper.ImGui_PopStyleColor(ctx, 3)
             
             local ret, tr, fx, p = reaper.GetLastTouchedFX()
             if ret then
@@ -599,7 +597,8 @@ local track_colors = {
                         end
                         
                         if not is_duplicate then
-                            local _, fx_name = reaper.TrackFX_GetFXName(track, fx, "")
+                            local _, raw_fx_name = reaper.TrackFX_GetFXName(track, fx, "")
+                            local fx_name = raw_fx_name:gsub("^.-: ", ""):gsub("^.-:", "")
                             local _, param_name = reaper.TrackFX_GetParamName(track, fx, p, "")
                             table.insert(maps, {
                                 fx_idx = fx, param_idx = p,
@@ -628,13 +627,18 @@ local track_colors = {
             reaper.ImGui_SameLine(ctx)
             
             reaper.ImGui_PushID(ctx, axis_name .. "_map_" .. i)
-            
+
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x992222FF)
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0xCC3333FF)
+            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0xFF4444FF)
             if reaper.ImGui_Button(ctx, "X", 20, 46) then
                 table.remove(maps, i)
                 state.needs_save = true
+                reaper.ImGui_PopStyleColor(ctx, 3)
                 reaper.ImGui_PopID(ctx)
                 break
             end
+            reaper.ImGui_PopStyleColor(ctx, 3)
             
             reaper.ImGui_SameLine(ctx)
             
@@ -686,7 +690,9 @@ local track_colors = {
             state = GetTrackMacroState(track)
         end
 
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF)
         reaper.ImGui_SeparatorText(ctx, 'XY Pad & Macros')
+        reaper.ImGui_PopStyleColor(ctx)
 
         if is_disabled then
             reaper.ImGui_BeginDisabled(ctx)
@@ -713,8 +719,8 @@ local track_colors = {
                 local is_active = reaper.ImGui_IsItemActive(ctx)
                 local is_right_clicked = reaper.ImGui_IsItemClicked(ctx, 1)
 
-                local bg_col = reaper.ImGui_ColorConvertDouble4ToU32(0.1, 0.1, 0.1, 1.0)
-                local border_col = reaper.ImGui_ColorConvertDouble4ToU32(0.4, 0.4, 0.4, 1.0)
+                local bg_col = reaper.ImGui_ColorConvertDouble4ToU32(0.117, 0.117, 0.117, 1.0)
+                local border_col = reaper.ImGui_ColorConvertDouble4ToU32(0.7, 0.7, 0.7, 0.3)
                 reaper.ImGui_DrawList_AddRectFilled(draw_list, p_x, p_y, p_x + pad_size, p_y + pad_size, bg_col, 5.0)
                 reaper.ImGui_DrawList_AddRect(draw_list, p_x, p_y, p_x + pad_size, p_y + pad_size, border_col, 5.0)
                 reaper.ImGui_DrawList_AddLine(draw_list, p_x + pad_size/2, p_y, p_x + pad_size/2, p_y + pad_size, border_col)
@@ -740,7 +746,7 @@ local track_colors = {
 
                 local dot_x = p_x + (state.x_cur * pad_size)
                 local dot_y = p_y + ((1.0 - state.y_cur) * pad_size)
-                local dot_col = reaper.ImGui_ColorConvertDouble4ToU32(0.2, 0.8, 0.5, 1.0)
+                local dot_col = 0xE3DB8EFF
                 reaper.ImGui_DrawList_AddCircleFilled(draw_list, dot_x, dot_y, 8.0, dot_col)
                 
             -- [Column 2] X 축 & Y 축 맵핑 리스트
@@ -911,7 +917,9 @@ local track_colors = {
                 if reaper.ImGui_BeginTable(ctx, "table_batch_control", 1, table_batch_control) then
                     reaper.ImGui_TableSetupColumn(ctx, 'Tracks Batch Controller', reaper.ImGui_TableColumnFlags_WidthFixed(), 360)
                     reaper.ImGui_TableNextColumn(ctx)
+                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF)
                     reaper.ImGui_SeparatorText(ctx, 'Tracks Batch Controller')
+                    reaper.ImGui_PopStyleColor(ctx)
                         reaper.ImGui_Text(ctx, "")
                         reaper.ImGui_SameLine(ctx)
                         local changed_base_name, new_base_name = reaper.ImGui_InputTextMultiline(ctx, '##RenameNewBaseName', base_name, 272, 22)
@@ -991,7 +999,9 @@ local track_colors = {
                     reaper.ImGui_TableSetupColumn(ctx, 'table_action', reaper.ImGui_TableColumnFlags_WidthFixed(), 450)
                     reaper.ImGui_TableNextColumn(ctx)
                 -- Actions ================================================
+                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF)
                     reaper.ImGui_SeparatorText(ctx, 'Actions')
+                    reaper.ImGui_PopStyleColor(ctx)
                         reaper.ImGui_Text(ctx, " ")
                         reaper.ImGui_SameLine(ctx)
                     -- Del Unused Tracks
@@ -1015,14 +1025,18 @@ local track_colors = {
                         reaper.ImGui_SameLine(ctx)
 
                     -- Write
-                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x882222FF)
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x992222FF)
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0xCC3333FF)
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0xFF4444FF)
                         if reaper.ImGui_Button(ctx, 'Write', 70) then
                             Action_SetSelectedTracksAutomationMode(3)
                         end
-                        reaper.ImGui_PopStyleColor(ctx)
+                        reaper.ImGui_PopStyleColor(ctx, 3)
                     reaper.ImGui_Spacing(ctx)
                 -- Track Color Palette ========================================
+                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF)
                     reaper.ImGui_SeparatorText(ctx, 'Track Color Palette')
+                    reaper.ImGui_PopStyleColor(ctx)
                     reaper.ImGui_Text(ctx, " ")
                     reaper.ImGui_SameLine(ctx)
                     local table_color      = reaper.ImGui_TableFlags_SizingFixedFit()

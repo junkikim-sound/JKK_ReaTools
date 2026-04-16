@@ -1,12 +1,12 @@
 --========================================================
--- @title JKK_ItemTool_Module (Cluster Mode)
--- @author Junki Kim & Modified for Clustering
+-- @title JKK_ItemTools
+-- @author Junki Kim
 -- @noindex
 --========================================================
 
 local open = true
 
-local theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_Theme/JKK_Theme.lua"
+local theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/Modules/JKK_Theme.lua"
 local theme_module = nil
 if reaper.file_exists(theme_path) then
     theme_module = dofile(theme_path)
@@ -327,7 +327,7 @@ math.randomseed(os.time())
             end
 
             -- 6. 메인 위젯 시각화
-            local col_line = reaper.ImGui_IsItemHovered(ctx) and 0x55FF55FF or 0x00AA00FF
+            local col_line = reaper.ImGui_IsItemHovered(ctx) and 0x49B6CCFF or 0x068FC3FF
             
             local start_x, start_y, end_x, end_y
             local convex_cp_x, convex_cp_y, concave_cp_x, concave_cp_y
@@ -2176,7 +2176,9 @@ math.randomseed(os.time())
                     reaper.ImGui_TableSetupColumn(ctx, 'Renamer', reaper.ImGui_TableColumnFlags_WidthFixed(), 400)
                     reaper.ImGui_TableNextColumn(ctx)
                     -- Items Batch Controller ================================
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF)
                         reaper.ImGui_SeparatorText(ctx, 'Items Batch Controller')
+                        reaper.ImGui_PopStyleColor(ctx)
                         -- Volume Slider
                             reaper.ImGui_AlignTextToFramePadding(ctx)
                             reaper.ImGui_Text(ctx, "  Volume")
@@ -2304,6 +2306,9 @@ math.randomseed(os.time())
                             end
                             reaper.ImGui_Spacing(ctx)
                         -- Reverse
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x233C4FFF)
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x435665FF)
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x042239FF)
                             if reaper.ImGui_Button(ctx, 'Reverse', 90, 22) then
                                 if base_name ~= "" then
                                     reaper.Undo_BeginBlock()
@@ -2311,13 +2316,18 @@ math.randomseed(os.time())
                                     reaper.Undo_EndBlock("Take Reverse", -1)
                                 end
                             end
+                            reaper.ImGui_PopStyleColor(ctx, 3)
                             reaper.ImGui_Spacing(ctx)
                         -- Take FX
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x233C4FFF)
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x435665FF)
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x042239FF)
                             if reaper.ImGui_Button(ctx, "Take FX", 90, 22) then
                                 if reaper.CountSelectedMediaItems(0) > 0 then
                                     reaper.Main_OnCommand(40638, 0)
                                 end
                             end
+                            reaper.ImGui_PopStyleColor(ctx, 3)
                         -- Render Take
                             if reaper.ImGui_Button(ctx, "Render Take", 90, 22) then
                                 if reaper.CountSelectedMediaItems(0) > 0 then
@@ -2353,11 +2363,15 @@ math.randomseed(os.time())
                                     end
                                 end
                                 reaper.ImGui_SameLine(ctx)
+                                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x233C4FFF)
+                                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x435665FF)
+                                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x042239FF)
                                 if reaper.ImGui_Button(ctx, 'Create Regions', 137, 22) then
                                     if base_name ~= "" then
                                         CreateRegionsFromSelectedItems()
                                     end
                                 end
+                                reaper.ImGui_PopStyleColor(ctx, 3)
                                 reaper.ImGui_SameLine(ctx)
                                 local chk_changed, chk_val = reaper.ImGui_Checkbox(ctx, "_nn", is_sequential_name)
                                 if chk_changed then
@@ -2429,7 +2443,9 @@ math.randomseed(os.time())
                     reaper.ImGui_TableSetupColumn(ctx, 'Items Arranger & Randomizer', reaper.ImGui_TableColumnFlags_WidthFixed(), 400)
                     reaper.ImGui_TableNextColumn(ctx)
                     -- Items Arranger & Randomizer ============================
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF)
                         reaper.ImGui_SeparatorText(ctx, 'Items Arranger & Randomizer')
+                        reaper.ImGui_PopStyleColor(ctx)
                         local changed
                         -- Width
                             reaper.ImGui_AlignTextToFramePadding(ctx)
@@ -2535,16 +2551,24 @@ math.randomseed(os.time())
                         -- Btn Apply
                             reaper.ImGui_Text(ctx, "")
                             reaper.ImGui_SameLine(ctx)
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x233C4FFF)
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x435665FF)
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x042239FF)
                             if reaper.ImGui_Button(ctx, "Apply", 100, 22) then
                                 arrange_items()
                                 update_prev()
                                 SaveSettings()
                             end
+                            reaper.ImGui_PopStyleColor(ctx, 3)
                             reaper.ImGui_SameLine(ctx)
                         -- Random Order
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x233C4FFF)
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x435665FF)
+                            reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x042239FF)
                             if reaper.ImGui_Button(ctx, "Shuffle Order", 100, 22) then
                                 shuffle_item_order()
                             end
+                            reaper.ImGui_PopStyleColor(ctx, 3)
                             reaper.ImGui_SameLine(ctx)
                         -- Live Update
                             changed, live_update = reaper.ImGui_Checkbox(ctx, 'Live Update', live_update)
@@ -2561,7 +2585,9 @@ math.randomseed(os.time())
                     reaper.ImGui_TableSetupColumn(ctx, 'Items Spliter & Color', reaper.ImGui_TableColumnFlags_WidthFixed(), 430)
                     reaper.ImGui_TableNextColumn(ctx)
                 -- Items Spliter ================================================
+                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF)
                     reaper.ImGui_SeparatorText(ctx, 'Item Spliter')
+                    reaper.ImGui_PopStyleColor(ctx)
                     -- Threshold 
                         reaper.ImGui_AlignTextToFramePadding(ctx)
                         reaper.ImGui_Text(ctx, "  Threshold")
@@ -2576,6 +2602,9 @@ math.randomseed(os.time())
                         end
                         reaper.ImGui_SameLine(ctx)
                     -- Split
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x233C4FFF)
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x435665FF)
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x042239FF)
                         if reaper.ImGui_Button(ctx, 'Split', 100, 22) then
                             cleanup()
                             reaper.Undo_BeginBlock()
@@ -2593,6 +2622,7 @@ math.randomseed(os.time())
                             end
                             reaper.Undo_EndBlock("Split", -1)
                         end
+                        reaper.ImGui_PopStyleColor(ctx, 3)
                     -- Min Duration
                         reaper.ImGui_AlignTextToFramePadding(ctx)
                         reaper.ImGui_Text(ctx, "  Min Length")
@@ -2660,7 +2690,9 @@ math.randomseed(os.time())
                             if not showGuideBox then clearTemporaryItems() end
                         end
                 -- Item Color Palette =====================================
+                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF)
                     reaper.ImGui_SeparatorText(ctx, 'Item Color Palette')
+                    reaper.ImGui_PopStyleColor(ctx)
                     local table_03      = reaper.ImGui_TableFlags_SizingFixedFit()
                     if reaper.ImGui_BeginTable(ctx, "table_color", 2, table_01) then
                         reaper.ImGui_TableSetupColumn(ctx, 'colors', reaper.ImGui_TableColumnFlags_WidthFixed(), 400)

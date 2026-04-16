@@ -1,12 +1,12 @@
 --========================================================
--- @title JKK_TimelineTool_Module
+-- @title JKK_TimelineTools
 -- @author Junki Kim
 -- @noindex
 --========================================================
 
 local open = true
 
-local theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_Theme/JKK_Theme.lua"
+local theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/Modules/JKK_Theme.lua"
 local theme_module = nil
 if reaper.file_exists(theme_path) then
     theme_module = dofile(theme_path)
@@ -254,7 +254,9 @@ local region_colors = {
             if reaper.ImGui_BeginTable(ctx, "table_01", 1, table_01) then
                 reaper.ImGui_TableSetupColumn(ctx, 'table_01_1', reaper.ImGui_TableColumnFlags_WidthFixed(), 350)
                 reaper.ImGui_TableNextColumn(ctx)
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF)
                 reaper.ImGui_SeparatorText(ctx, 'Region Batch Renamer')
+                reaper.ImGui_PopStyleColor(ctx)
                     local changed_rgn_name, new_rgn_name = reaper.ImGui_InputTextMultiline(ctx, '##RgnBaseName', rename_base_name, 272, 22)
                     if changed_rgn_name then rename_base_name = new_rgn_name end
                     reaper.ImGui_SameLine(ctx)
@@ -272,12 +274,18 @@ local region_colors = {
                     end
                     reaper.ImGui_Spacing(ctx)
 
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF)
                 reaper.ImGui_SeparatorText(ctx, 'Actions')
+                reaper.ImGui_PopStyleColor(ctx)
+                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x233C4FFF)
+                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x435665FF)
+                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x042239FF)
                     if reaper.ImGui_Button(ctx, 'Set Region Matrix', 164, 22) then
                         if base_name ~= "" then
                             ToggleMasterRenderforOverlappingRegions()
                         end
                     end
+                    reaper.ImGui_PopStyleColor(ctx, 3)
                     reaper.ImGui_SameLine(ctx)
 
                     if reaper.ImGui_Button(ctx, 'Open Render Window', 164, 22) then
@@ -308,7 +316,9 @@ local region_colors = {
             if reaper.ImGui_BeginTable(ctx, "table_02", 1, table_02) then
                 reaper.ImGui_TableSetupColumn(ctx, 'table_02_1', reaper.ImGui_TableColumnFlags_WidthFixed(), 400)
                 reaper.ImGui_TableNextColumn(ctx)
+                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF)
                 reaper.ImGui_SeparatorText(ctx, 'Region Color Pallete')
+                reaper.ImGui_PopStyleColor(ctx)
                 reaper.ImGui_Text(ctx, " ")
                 reaper.ImGui_SameLine(ctx)
                 local table_03      = reaper.ImGui_TableFlags_SizingFixedFit()

@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.9.0
+-- @version 0.9.1
 -- @provides 
 --     [nomain] Modules/JKK_ItemTool_Module.lua
 --     [nomain] Modules/JKK_TrackTool_Module.lua
@@ -20,7 +20,7 @@ local selected_tool = 1
 local prev_project_state_count = reaper.GetProjectStateChangeCount(0) 
 local current_project_state_count = prev_project_state_count
 
-local theme_path = RPR.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme.lua"
+local theme_path = RPR.GetResourcePath() .. "/Scripts/JKK_ReaTools/Modules/JKK_Theme.lua"
 local ApplyTheme = (RPR.file_exists(theme_path) and dofile(theme_path).ApplyTheme) 
                    or function(ctx) return 0, 0 end
 
@@ -40,9 +40,9 @@ end
 
 --========================================================
 local tools = {}
-tools[1] = { name = "Item Tools",     module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_ItemTool_Module.lua") }
-tools[2] = { name = "Track Tools",    module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_TrackTool_Module.lua") }
-tools[3] = { name = "Timeline Tools", module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_TimelineTool_Module.lua") }
+tools[1] = { name = "Item Tools",     module = load_module("/Scripts/JKK_ReaTools/Modules/JKK_ItemTool_Module.lua") }
+tools[2] = { name = "Track Tools",    module = load_module("/Scripts/JKK_ReaTools/Modules/JKK_TrackTool_Module.lua") }
+tools[3] = { name = "Timeline Tools", module = load_module("/Scripts/JKK_ReaTools/Modules/JKK_TimelineTool_Module.lua") }
 
 ---------------------------------------------------------
 -- Note & State Tracking Variables
@@ -141,15 +141,24 @@ local function Main()
                 -- Note
                     reaper.ImGui_Text(ctx, " ")
                     reaper.ImGui_SameLine(ctx)
+                    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF)
                     reaper.ImGui_SeparatorText(ctx, 'Project Memo')
+                    reaper.ImGui_PopStyleColor(ctx)
                     reaper.ImGui_Text(ctx, " ")
                     reaper.ImGui_SameLine(ctx)
-                    local changed, new_note = reaper.ImGui_InputTextMultiline(ctx, "##proj_note", project_note, 375, 190)
+                    local changed, new_note = reaper.ImGui_InputTextMultiline(ctx, "##proj_note", project_note, 375, 160) --190
                     
                     if changed then
                         project_note = new_note
                         reaper.SetProjExtState(0, "JKK_ReaTools_Note", "Project_note", project_note)
                     end
+                    reaper.ImGui_Spacing(ctx)
+                    reaper.ImGui_Text(ctx, " ")
+                    reaper.ImGui_SameLine(ctx)
+                        if reaper.ImGui_Button(ctx, "Peaks Display Settings", 375, 22) then
+                            reaper.Main_OnCommand(42074, 0)
+                            reaper.Main_OnCommand(40048, 0)
+                        end
                     reaper.ImGui_EndTable(ctx)
                 end
             reaper.ImGui_TableNextColumn(ctx)
