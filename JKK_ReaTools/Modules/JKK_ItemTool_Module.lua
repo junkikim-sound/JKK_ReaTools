@@ -567,7 +567,7 @@ math.randomseed(os.time())
                         if val_vol > 0.00000001 then
                             adjust_vol = 20 * (math.log(val_vol) / math.log(10))
                         else
-                            adjust_vol = -150.0 -- -Inf 처리
+                            adjust_vol = -150.0
                         end
                         -- Volume Clamp
                         if adjust_vol < -30 then adjust_vol = -30 end
@@ -580,7 +580,6 @@ math.randomseed(os.time())
 
                         -- Take Channel
                         take_chan_mode = math.floor(reaper.GetMediaItemTakeInfo_Value(take, "I_CHANMODE"))
-                        --take_pitch_mode = math.floor(reaper.GetMediaItemTakeInfo_Value(take, "I_PITCHMODE"))
                         local raw_pitch = math.floor(reaper.GetMediaItemTakeInfo_Value(take, "I_PITCHMODE"))
                         if raw_pitch == -1 then
                             take_pitch_mode = -1
@@ -673,7 +672,7 @@ math.randomseed(os.time())
 
                 -- B. Mono (3 ~ 12)
                 if reaper.ImGui_BeginMenu(ctx, "Mono (3-12)") then
-                    for i = 3, 12 do -- 3부터 12까지 루프
+                    for i = 3, 12 do
                         local real_val = i + 2
                         
                         if reaper.ImGui_MenuItem(ctx, "Mono " .. i, nil, take_chan_mode == real_val) then
@@ -686,7 +685,7 @@ math.randomseed(os.time())
 
                 -- C. Stereo (1 ~ 12)
                 if reaper.ImGui_BeginMenu(ctx, "Stereo (1-12)") then
-                    for i = 1, 12 do -- 1부터 12까지 루프
+                    for i = 1, 12 do
                         local real_val = i + 66
                         local label = string.format("Stereo %d/%d", i, i+1)
                         
@@ -732,7 +731,7 @@ math.randomseed(os.time())
                     
                     if reaper.ImGui_Selectable(ctx, label, is_selected) then
                         take_pitch_mode = mode.id
-                        take_pitch_sub_mode = 0 -- 알고리즘 변경 시 서브모드 리셋
+                        take_pitch_sub_mode = 0
                         ApplyTakePitchMode(take_pitch_mode, take_pitch_sub_mode)
                     end
 
@@ -1043,10 +1042,8 @@ math.randomseed(os.time())
                 local sorted_items = CollectAndSortSelectedItems()
                 
                 if use_clustering then
-                    -- 기존 방식: 겹쳐진 것끼리 묶음
                     persistentClusters = BuildClusters(sorted_items)
                 else
-                    -- 개별 방식: 모든 아이템을 각각 독립된 클러스터로 만듦
                     persistentClusters = {}
                     for _, data in ipairs(sorted_items) do
                         table.insert(persistentClusters, {
@@ -2364,7 +2361,7 @@ math.randomseed(os.time())
                                 reaper.ImGui_SameLine(ctx)
                                 local chk_changed, chk_val = reaper.ImGui_Checkbox(ctx, "_nn", is_sequential_name)
                                 if chk_changed then
-                                    is_sequential_name = chk_val -- 값 업데이트
+                                    is_sequential_name = chk_val
                                 end
                                 reaper.ImGui_TableNextColumn(ctx)
                                 if reaper.ImGui_Button(ctx, '>', 20, 49) then
@@ -2451,7 +2448,6 @@ math.randomseed(os.time())
                                 format_str = string.format("%.2fs", width)
                                 cur_min, cur_max = 0.0, max_sec
                             elseif spacing_mode == 2 then
-                                -- RPM 모드일 때 (width가 RPM 값이라고 가정)
                                 format_str = string.format("%.1f RPM", width)
                                 cur_min, cur_max = min_rpm, max_rpm
                             end
@@ -2471,7 +2467,6 @@ math.randomseed(os.time())
                             -- 우클릭 시 3가지 모드 순환 (0 -> 1 -> 2 -> 0)
                             if reaper.ImGui_IsItemClicked(ctx, 1) then
                                 spacing_mode = (spacing_mode + 1) % 3
-                                -- 모드 전환 시 기본값 세팅
                                 if spacing_mode == 0 then width = 2.0
                                 elseif spacing_mode == 1 then width = 1.5
                                 elseif spacing_mode == 2 then width = 120.0

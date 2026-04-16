@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.8.8
+-- @version 0.9.0
 -- @provides 
 --     [nomain] Modules/JKK_ItemTool_Module.lua
 --     [nomain] Modules/JKK_TrackTool_Module.lua
@@ -45,7 +45,7 @@ tools[2] = { name = "Track Tools",    module = load_module("/Scripts/JKK_ReaTool
 tools[3] = { name = "Timeline Tools", module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_TimelineTool_Module.lua") }
 
 ---------------------------------------------------------
--- Note
+-- Note & State Tracking Variables
 ---------------------------------------------------------
     -- [프로젝트 노트 변수 초기화]
     local project_note = ""
@@ -58,6 +58,13 @@ tools[3] = { name = "Timeline Tools", module = load_module("/Scripts/JKK_ReaTool
     else
         project_note = ""
     end
+
+    -- [자동 탭 전환을 위한 상태 추적 변수]
+    local prev_sel_item = nil
+    local prev_sel_track = nil
+    local prev_edit_cursor = -1
+    local force_tab = nil
+
 ---------------------------------------------------------
 -- UI
 ---------------------------------------------------------
@@ -77,6 +84,41 @@ local function Main()
         last_project_ptr = current_project_ptr
     end
     
+    -- [자동 탭 전환 로직 시작]
+    local cur_sel_items_count = reaper.CountSelectedMediaItems(0)
+    local cur_sel_tracks_count = reaper.CountSelectedTracks(0)
+    local cur_sel_item = cur_sel_items_count > 0 and reaper.GetSelectedMediaItem(0, 0) or nil
+    local cur_sel_track = cur_sel_tracks_count > 0 and reaper.GetSelectedTrack(0, 0) or nil
+    local cur_edit_cursor = reaper.GetCursorPosition()
+
+    -- 이벤트 상태 분류
+    local item_gained_or_changed = (cur_sel_item ~= prev_sel_item and cur_sel_items_count > 0)
+    local track_gained_or_changed = (cur_sel_track ~= prev_sel_track and cur_sel_tracks_count > 0)
+    local cursor_changed = (cur_edit_cursor ~= prev_edit_cursor)
+    local item_lost = (cur_sel_item ~= prev_sel_item and cur_sel_items_count == 0)
+
+    -- 우선순위에 따른 탭 전환 분기
+    if item_gained_or_changed then
+        force_tab = 1
+        
+    elseif track_gained_or_changed then
+        force_tab = 2
+        
+    elseif cursor_changed then
+        force_tab = 3
+        
+    elseif item_lost and cur_sel_tracks_count > 0 then
+        force_tab = 2
+        
+    else
+        force_tab = nil
+    end
+
+    -- 상태 업데이트
+    prev_sel_item = cur_sel_item
+    prev_sel_track = cur_sel_track
+    prev_edit_cursor = cur_edit_cursor
+
     reaper.ImGui_SetNextWindowSize(ctx, 1900, 220, reaper.ImGui_Cond_Once())
     style_pop_count, color_pop_count = ApplyTheme(ctx)
 
@@ -89,7 +131,7 @@ local function Main()
                                     reaper.ImGui_TableFlags_BordersInnerV()
         if reaper.ImGui_BeginTable(ctx, "JKK_ReaTools_Table", 2, JKK_ReaTools_Table) then
             reaper.ImGui_TableSetupColumn(ctx, 'JKK_ReaTools_Table_01', reaper.ImGui_TableColumnFlags_WidthFixed(), 400)
-            reaper.ImGui_TableSetupColumn(ctx, 'JKK_ReaTools_Table_02', reaper.ImGui_TableColumnFlags_WidthFixed(), 3000) --1680
+            reaper.ImGui_TableSetupColumn(ctx, 'JKK_ReaTools_Table_02', reaper.ImGui_TableColumnFlags_WidthFixed(), 3000)
             reaper.ImGui_TableNextColumn(ctx)
             -- NOTE ===================================================
                 local NoteTable    = reaper.ImGui_TableFlags_SizingFixedFit()
@@ -114,16 +156,21 @@ local function Main()
             -- ========================================================
                 reaper.ImGui_Text(ctx, " ")
                 reaper.ImGui_SameLine(ctx)
-                local changed, current_tab = RPR.ImGui_BeginTabBar(ctx, "ToolTabs")
-                if changed then
+                
+                if RPR.ImGui_BeginTabBar(ctx, "ToolTabs") then
                     for i, tool in ipairs(tools) do
-                        local is_selected, _ = RPR.ImGui_BeginTabItem(ctx, tool.name)
+                        local flags = 0
+                        if force_tab == i then
+                            flags = reaper.ImGui_TabItemFlags_SetSelected()
+                        end
+
+                        local is_selected, _ = RPR.ImGui_BeginTabItem(ctx, tool.name, nil, flags)
                         if is_selected then
                             if selected_tool ~= i then
                                 selected_tool = i
                             end
                             RPR.ImGui_EndTabItem(ctx)
-                    end
+                        end
                     end
                     RPR.ImGui_EndTabBar(ctx)
                 end
