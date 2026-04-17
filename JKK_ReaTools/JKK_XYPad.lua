@@ -2,12 +2,11 @@
 -- @title JKK_XYPad
 -- @author Junki Kim
 -- @version 0.5.0
--- @provides
---     [nomain] Modules/JKK_Theme.lua
 --========================================================
 
 local reaper = reaper
-local ctx = reaper.ImGui_CreateContext('JKK XY Pad')
+-- [수정] 컨텍스트 이름 변경
+local ctx = reaper.ImGui_CreateContext('JKK_XYPad')
 
 local global_state = nil
 
@@ -213,6 +212,11 @@ end
 --========================================================
 local function DrawMacroMapList(ctx, state, axis_name, maps, learn_id)
     reaper.ImGui_PushID(ctx, "MacroList_" .. learn_id)
+    
+    local pad_x = 10
+    
+    reaper.ImGui_SetCursorPosX(ctx, pad_x)
+    reaper.ImGui_AlignTextToFramePadding(ctx)
     reaper.ImGui_Text(ctx, axis_name .. " Axis")
     
     local cursor_x = reaper.ImGui_GetCursorPosX(ctx)
@@ -221,17 +225,17 @@ local function DrawMacroMapList(ctx, state, axis_name, maps, learn_id)
     local btn_w = 80
     local total_w = combo_w + btn_w + 8
     
-    if avail_header_w > total_w then
-        reaper.ImGui_SameLine(ctx, cursor_x + avail_header_w - total_w)
+    if avail_header_w - pad_x > total_w then
+        reaper.ImGui_SameLine(ctx, cursor_x + avail_header_w - total_w - pad_x)
     else
         reaper.ImGui_SameLine(ctx)
     end
     
     local mode = (learn_id == 1) and state.x_mode or state.y_mode
     reaper.ImGui_SetNextItemWidth(ctx, combo_w)
-    
+    reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FramePadding(), 10, 3)
     local changed_mode, new_mode = reaper.ImGui_Combo(ctx, "##mode", mode, "Normal\0Center Peak\0Radial Peak\0Radial Valley\0")
-    
+    reaper.ImGui_PopStyleVar(ctx)
     if changed_mode then
         if learn_id == 1 then state.x_mode = new_mode else state.y_mode = new_mode end
         state.needs_save = true
@@ -322,14 +326,19 @@ local function DrawMacroMapList(ctx, state, axis_name, maps, learn_id)
     for i, map in ipairs(maps) do
         reaper.ImGui_PushID(ctx, "map"..i)
         
+        -- [수정] 맵핑 리스트 요소들에 좌측 여백 적용
+        reaper.ImGui_SetCursorPosX(ctx, pad_x)
+        
         if reaper.ImGui_Button(ctx, "X##del") then table.remove(maps, i); state.needs_save = true; reaper.ImGui_PopID(ctx); break end
         reaper.ImGui_SameLine(ctx)
         reaper.ImGui_Text(ctx, string.format("[%s] %s: %s", map.target_name, map.fx_name, map.param_name))
         
-        reaper.ImGui_Indent(ctx, 28)
+        -- 버튼 너비(28) + 좌측 여백(10) 만큼 들여쓰기
+        reaper.ImGui_Indent(ctx, 38)
         
         local avail_w = reaper.ImGui_GetContentRegionAvail(ctx)
-        local slider_w = (avail_w * 0.5) - 45 
+        -- 우측 여백(10)을 고려하여 슬라이더 너비 계산
+        local slider_w = ((avail_w - pad_x) * 0.5) - 45 
         if slider_w < 50 then slider_w = 50 end 
         
         reaper.ImGui_SetNextItemWidth(ctx, slider_w)
@@ -342,17 +351,21 @@ local function DrawMacroMapList(ctx, state, axis_name, maps, learn_id)
         
         if c1 or c2 then map.min_val, map.max_val = n1, n2; state.needs_save = true end
         
-        reaper.ImGui_Unindent(ctx, 28)
+        reaper.ImGui_Unindent(ctx, 38)
         reaper.ImGui_PopID(ctx)
     end
     reaper.ImGui_PopID(ctx)
 end
 
 function Loop()
-    local style_pop_count, color_pop_count = ApplyTheme(ctx)
+    local style_pop_count, color_pop_count = 0, 0
+    if ApplyTheme then style_pop_count, color_pop_count = ApplyTheme(ctx) end
 
     reaper.ImGui_SetNextWindowSizeConstraints(ctx, 350, 300, 9999, 9999)
-    local visible, open = reaper.ImGui_Begin(ctx, 'JKK XY Pad Global', true)
+    
+    local window_flags = reaper.ImGui_WindowFlags_NoCollapse()
+    -- [수정] 창 타이틀 이름 변경
+    local visible, open = reaper.ImGui_Begin(ctx, 'JKK_XYPad', true, window_flags)
     
     if visible then
         local state = GetGlobalMacroState()
@@ -434,8 +447,10 @@ function Loop()
             reaper.ImGui_Spacing(ctx)
             
             if reaper.ImGui_BeginChild(ctx, "ListRegion", 0, 0) then
+                reaper.ImGui_AlignTextToFramePadding(ctx)
                 DrawMacroMapList(ctx, state, "X", state.x_maps, 1)
                 reaper.ImGui_Separator(ctx)
+                reaper.ImGui_AlignTextToFramePadding(ctx)
                 DrawMacroMapList(ctx, state, "Y", state.y_maps, 2)
                 reaper.ImGui_EndChild(ctx)
             end
