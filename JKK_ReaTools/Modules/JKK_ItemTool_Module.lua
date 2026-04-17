@@ -2168,6 +2168,11 @@ math.randomseed(os.time())
             reaper.ImGui_TableSetupColumn(ctx, 'table_02', reaper.ImGui_TableColumnFlags_WidthFixed(), 425)
             reaper.ImGui_TableSetupColumn(ctx, 'table_03', reaper.ImGui_TableColumnFlags_WidthFixed(), 460)
             reaper.ImGui_TableNextColumn(ctx)
+
+            local sel_item = reaper.GetSelectedMediaItem(0, 0)
+            local sel_take = sel_item and reaper.GetActiveTake(sel_item) or nil
+            local has_take_fx = sel_take and (reaper.TakeFX_GetCount(sel_take) > 0) or false
+            local has_multiple_takes = sel_item and (reaper.CountTakes(sel_item) > 1) or false
             -- 1st Table: Items Batch Controller ===============================
                 local table_01      = reaper.ImGui_TableFlags_SizingFixedFit()
                 if reaper.ImGui_BeginTable(ctx, "table_01", 3, table_01) then
@@ -2322,11 +2327,18 @@ math.randomseed(os.time())
                             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x233C4FFF)
                             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x435665FF)
                             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x042239FF)
+                            
+                            if has_take_fx then
+                                reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF)
+                            end
+                            
                             if reaper.ImGui_Button(ctx, "Take FX", 90, 22) then
                                 if reaper.CountSelectedMediaItems(0) > 0 then
                                     reaper.Main_OnCommand(40638, 0)
                                 end
                             end
+                            if has_take_fx then reaper.ImGui_PopStyleColor(ctx) end
+                            
                             reaper.ImGui_PopStyleColor(ctx, 3)
                         -- Render Take
                             if reaper.ImGui_Button(ctx, "Render Take", 90, 22) then
@@ -2346,43 +2358,43 @@ math.randomseed(os.time())
                             reaper.ImGui_TableSetupColumn(ctx, 'next take', reaper.ImGui_TableColumnFlags_WidthFixed(), 25)
                             reaper.ImGui_TableNextColumn(ctx)
                             -- Items Take Renamer =================================
+                                reaper.ImGui_BeginDisabled(ctx, not has_multiple_takes)
+                                
                                 if reaper.ImGui_Button(ctx, '<', 20, 49) then
                                     reaper.Undo_BeginBlock()
                                     reaper.Main_OnCommand(42350, 0)
                                     reaper.Undo_EndBlock("Prev Take", -1)
                                 end
+                                
+                                reaper.ImGui_EndDisabled(ctx)
+                                
                                 reaper.ImGui_TableNextColumn(ctx)
+                                
                                 changed, base_name = reaper.ImGui_InputTextMultiline(ctx, '##BaseName', base_name, 282, 22)
                                 reaper.ImGui_SameLine(ctx)
-                                if reaper.ImGui_Button(ctx, "Clear##ClearBaseName", 55, 22) then
-                                    base_name = ""
-                                end
-                                if reaper.ImGui_Button(ctx, 'Edit Take Name', 137, 22) then
-                                    if base_name ~= "" then
-                                        RenameSelectedTakes()
-                                    end
-                                end
+                                if reaper.ImGui_Button(ctx, "Clear##ClearBaseName", 55, 22) then base_name = "" end
+                                if reaper.ImGui_Button(ctx, 'Edit Take Name', 137, 22) then if base_name ~= "" then RenameSelectedTakes() end end
                                 reaper.ImGui_SameLine(ctx)
                                 reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x233C4FFF)
                                 reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x435665FF)
                                 reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x042239FF)
-                                if reaper.ImGui_Button(ctx, 'Create Regions', 137, 22) then
-                                    if base_name ~= "" then
-                                        CreateRegionsFromSelectedItems()
-                                    end
-                                end
+                                if reaper.ImGui_Button(ctx, 'Create Regions', 137, 22) then if base_name ~= "" then CreateRegionsFromSelectedItems() end end
                                 reaper.ImGui_PopStyleColor(ctx, 3)
                                 reaper.ImGui_SameLine(ctx)
                                 local chk_changed, chk_val = reaper.ImGui_Checkbox(ctx, "_nn", is_sequential_name)
-                                if chk_changed then
-                                    is_sequential_name = chk_val
-                                end
+                                if chk_changed then is_sequential_name = chk_val end
+                                
                                 reaper.ImGui_TableNextColumn(ctx)
+                                
+                                reaper.ImGui_BeginDisabled(ctx, not has_multiple_takes)
+                                
                                 if reaper.ImGui_Button(ctx, '>', 20, 49) then
                                     reaper.Undo_BeginBlock()
                                     reaper.Main_OnCommand(42349, 0)
                                     reaper.Undo_EndBlock("Next Take", -1)
                                 end
+                                
+                                reaper.ImGui_EndDisabled(ctx)
                             reaper.ImGui_EndTable(ctx)
                         end
                         reaper.ImGui_Spacing(ctx)

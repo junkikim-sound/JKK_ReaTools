@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.9.3
+-- @version 0.9.4
 -- @provides 
 --     [nomain] Modules/JKK_ItemTool_Module.lua
 --     [nomain] Modules/JKK_TrackTool_Module.lua
@@ -91,33 +91,47 @@ local function Main()
     local cur_sel_track = cur_sel_tracks_count > 0 and reaper.GetSelectedTrack(0, 0) or nil
     local cur_edit_cursor = reaper.GetCursorPosition()
 
-    -- 이벤트 상태 분류
-    local item_gained_or_changed = (cur_sel_item ~= prev_sel_item and cur_sel_items_count > 0)
-    local track_gained_or_changed = (cur_sel_track ~= prev_sel_track and cur_sel_tracks_count > 0)
+    -- [핵심 수정] 갯수 변화도 감지하여 Shift 클릭으로 아이템이 '추가'되는 것을 명확히 알아챕니다.
+    local item_count_changed = (cur_sel_items_count ~= (prev_sel_items_count or 0))
+    local track_count_changed = (cur_sel_tracks_count ~= (prev_sel_tracks_count or 0))
+
+    local item_changed = (cur_sel_item ~= prev_sel_item) or item_count_changed
+    local track_changed = (cur_sel_track ~= prev_sel_track) or track_count_changed
     local cursor_changed = (cur_edit_cursor ~= prev_edit_cursor)
-    local item_lost = (cur_sel_item ~= prev_sel_item and cur_sel_items_count == 0)
+
+    local item_gained = item_changed and (cur_sel_items_count > 0)
+    local item_lost = item_changed and (cur_sel_items_count == 0)
+    local track_gained = track_changed and (cur_sel_tracks_count > 0)
 
     -- 우선순위에 따른 탭 전환 분기
-    if item_gained_or_changed then
-        force_tab = 1
+    if item_gained then
+        -- 1순위: 아이템이 새로 선택되거나 Shift로 '추가'되었을 때 무조건 Item Tools 유지
+        force_tab = 1 
         
-    elseif track_gained_or_changed then
+    elseif track_gained and not item_changed then
+        -- [핵심 수정] 2순위: 아이템 선택에 변화가 없을 때'만' Track Tools로 넘어갑니다.
+        -- 아이템을 누르면서 트랙이 같이 선택된 경우는 무시하게 됩니다!
+        force_tab = 2 
+        
+    elseif item_lost and cur_sel_tracks_count > 0 then
+        -- 3순위: 아이템 선택이 완전히 풀리고 트랙만 남았을 때 (빈 트랙 클릭)
         force_tab = 2
         
     elseif cursor_changed then
+        -- 4순위: 타임라인이나 빈 배경을 클릭해 커서가 움직였을 때
         force_tab = 3
-        
-    elseif item_lost and cur_sel_tracks_count > 0 then
-        force_tab = 2
         
     else
         force_tab = nil
     end
 
-    -- 상태 업데이트
+    -- 상태 업데이트 (count 변수들을 추가로 저장해 주어야 합니다)
     prev_sel_item = cur_sel_item
     prev_sel_track = cur_sel_track
     prev_edit_cursor = cur_edit_cursor
+    prev_sel_items_count = cur_sel_items_count
+    prev_sel_tracks_count = cur_sel_tracks_count
+    -- [자동 탭 전환 로직 끝]
 
     reaper.ImGui_SetNextWindowSize(ctx, 1900, 220, reaper.ImGui_Cond_Once())
     style_pop_count, color_pop_count = ApplyTheme(ctx)
@@ -157,7 +171,7 @@ local function Main()
                     reaper.ImGui_SameLine(ctx)
                         if reaper.ImGui_Button(ctx, "Peaks Display Settings", 375, 22) then
                             reaper.Main_OnCommand(42074, 0)
-                            reaper.Main_OnCommand(40047, 0)
+                            reaper.Main_OnCommand(40441, 0)
                         end
                     reaper.ImGui_EndTable(ctx)
                 end
