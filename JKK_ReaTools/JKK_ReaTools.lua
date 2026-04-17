@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.9.2
+-- @version 0.9.3
 -- @provides 
 --     [nomain] Modules/JKK_ItemTool_Module.lua
 --     [nomain] Modules/JKK_TrackTool_Module.lua
@@ -157,7 +157,7 @@ local function Main()
                     reaper.ImGui_SameLine(ctx)
                         if reaper.ImGui_Button(ctx, "Peaks Display Settings", 375, 22) then
                             reaper.Main_OnCommand(42074, 0)
-                            reaper.Main_OnCommand(40048, 0)
+                            reaper.Main_OnCommand(40047, 0)
                         end
                     reaper.ImGui_EndTable(ctx)
                 end
