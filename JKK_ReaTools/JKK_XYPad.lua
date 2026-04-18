@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_XYPad
 -- @author Junki Kim
--- @version 0.6.0
+-- @version 0.9.0
 --========================================================
 
 local reaper = reaper
@@ -38,7 +38,7 @@ local function FindTrackByGUID(guid)
 end
 
 --========================================================
--- 직렬화 & 역직렬화 (데이터 저장 - 궤도 데이터 추가)
+-- 직렬화 & 역직렬화
 --========================================================
 local function SerializeMacroState(state)
     local function serialize_maps(maps)
@@ -48,9 +48,9 @@ local function SerializeMacroState(state)
         end
         return table.concat(t, ";")
     end
-    return string.format("%f,%f,%d,%d,%f,%f,%f,%f|%s|%s", 
+    return string.format("%f,%f,%d,%d,%f,%f,%f,%f,%f|%s|%s", 
         state.x_tgt, state.y_tgt, state.x_mode, state.y_mode, 
-        state.pad_ratio or 0.0, state.glide_speed or 0.25, state.orbit_radius or 0.0, state.orbit_speed or 0.0, 
+        state.list_height or 0.0, state.glide_speed or 0.25, state.orbit_radius or 0.0, state.orbit_speed or 0.0, state.orbit_flatten or 0.0,
         serialize_maps(state.x_maps), serialize_maps(state.y_maps))
 end
 
@@ -67,10 +67,11 @@ local function DeserializeMacroState(str, state)
             state.x_mode = coords[3] and math.floor(coords[3]) or 0
             state.y_mode = coords[4] and math.floor(coords[4]) or 0
         end
-        if #coords >= 5 and coords[5] > 0 then state.pad_ratio = coords[5] end
+        if #coords >= 5 and coords[5] > 1.0 then state.list_height = coords[5] end
         if #coords >= 6 then state.glide_speed = coords[6] end
         if #coords >= 7 then state.orbit_radius = coords[7] end
         if #coords >= 8 then state.orbit_speed = coords[8] end
+        if #coords >= 9 then state.orbit_flatten = coords[9] end
     end
     local function deserialize_maps(map_str, dest_table)
         if not map_str then return end
@@ -115,9 +116,10 @@ end
 local function GetGlobalMacroState()
     if not global_state then
         global_state = {
-            x_tgt=0.5, x_cur=0.5, y_tgt=0.5, y_cur=0.5, pad_ratio=nil, 
+            x_tgt=0.5, x_cur=0.5, y_tgt=0.5, y_cur=0.5, list_height=nil, 
             x_mode=0, y_mode=0,
-            glide_speed=0.25, orbit_radius=0.0, orbit_speed=0.0, orbit_angle=0.0,
+            glide_speed=0.25, orbit_radius=0.0, orbit_speed=0.0, orbit_flatten=0.0,
+            orbit_angle=0.0, shape_angle=0.0,
             x_final=0.5, y_final=0.5,
             x_maps={}, y_maps={}, learn_mode=0, needs_save=false,
             learn_track=-1, learn_fx=-1, learn_param=-1, learn_val=0.0
@@ -178,36 +180,39 @@ local function ValidateAndSyncMacros(state)
 end
 
 --========================================================
--- 매크로 로직 업데이트 (Glide 및 Orbit 계산)
+-- 매크로 로직 업데이트 (Flatten & 통합 Rotation)
 --========================================================
 local function UpdateAndApplyMacros(state)
     if state.learn_mode > 0 then return end
     
-    -- 1. Glide 처리 (점 A를 따라가는 중심점 계산)
     local speed = state.glide_speed or 0.25
     state.x_cur = state.x_cur + (state.x_tgt - state.x_cur) * speed
     state.y_cur = state.y_cur + (state.y_tgt - state.y_cur) * speed
     
-    -- 2. Orbit 회전 계산
     local orbit_s = state.orbit_speed or 0.0
     local radius = state.orbit_radius or 0.0
+    local flatten = state.orbit_flatten or 0.0
     
-    -- 각도를 프레임당 회전속도만큼 누적 (-1 ~ 1 범위를 적절한 회전 속도 계수로 스케일링)
-    state.orbit_angle = (state.orbit_angle or 0.0) + (orbit_s * 1.0)
-    
-    -- 각도가 너무 커지거나 작아지지 않게 0 ~ 2π 내로 유지
+    state.orbit_angle = (state.orbit_angle or 0.0) + (orbit_s * 1.2)
     if state.orbit_angle > math.pi * 2 then state.orbit_angle = state.orbit_angle - math.pi * 2 end
     if state.orbit_angle < 0 then state.orbit_angle = state.orbit_angle + math.pi * 2 end
     
-    -- 3. 최종 점 B 좌표 계산 (중심점 + 삼각함수)
-    local final_x_raw = state.x_cur + math.cos(state.orbit_angle) * radius
-    local final_y_raw = state.y_cur + math.sin(state.orbit_angle) * radius
+    state.shape_angle = (state.shape_angle or 0.0) + (orbit_s * 0.52)
+    if state.shape_angle > math.pi * 2 then state.shape_angle = state.shape_angle - math.pi * 2 end
+    if state.shape_angle < 0 then state.shape_angle = state.shape_angle + math.pi * 2 end
     
-    -- 패드(0.0 ~ 1.0) 범위를 벗어나지 않게 클램핑
+    local raw_x = math.cos(state.orbit_angle) * radius
+    local raw_y = math.sin(state.orbit_angle) * radius * (1.0 - flatten)
+    
+    local rot_x = raw_x * math.cos(state.shape_angle) - raw_y * math.sin(state.shape_angle)
+    local rot_y = raw_x * math.sin(state.shape_angle) + raw_y * math.cos(state.shape_angle)
+    
+    local final_x_raw = state.x_cur + rot_x
+    local final_y_raw = state.y_cur + rot_y
+    
     state.x_final = math.max(0.0, math.min(1.0, final_x_raw))
     state.y_final = math.max(0.0, math.min(1.0, final_y_raw))
     
-    -- 4. 실제 파라미터 적용 로직
     local function Apply(maps, mode, axis_val_final, axis_x_final, axis_y_final)
         local shaped = axis_val_final
         if mode == 1 then -- Center Peak
@@ -391,7 +396,7 @@ function Loop()
     
     local window_flags = reaper.ImGui_WindowFlags_NoCollapse()
     local visible, open = reaper.ImGui_Begin(ctx, 'JKK_XYPad', true, window_flags)
-
+    
     if visible then
         reaper.ImGui_PushFont(ctx, font, 13)
         local state = GetGlobalMacroState()
@@ -401,38 +406,53 @@ function Loop()
             
             local avail_w, avail_h = reaper.ImGui_GetContentRegionAvail(ctx)
             local top_area_h
+            local splitter_space = 10
             
-            if state.pad_ratio then
-                top_area_h = avail_h * state.pad_ratio
+            if state.list_height then
+                top_area_h = avail_h - state.list_height - splitter_space
             else
                 local expected_list_h = 80 + (#state.x_maps + #state.y_maps) * 55 
-                top_area_h = math.max(220, avail_h - expected_list_h - 10)
+                top_area_h = math.max(220, avail_h - expected_list_h - splitter_space)
             end
             
-            top_area_h = math.max(150, math.min(top_area_h, avail_h - 50))
+            top_area_h = math.max(150, math.min(top_area_h, avail_h - 100))
             
             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF)
             reaper.ImGui_SeparatorText(ctx, 'XY Pad Setting')
             reaper.ImGui_PopStyleColor(ctx)
             if reaper.ImGui_BeginChild(ctx, "PadRegion", 0, top_area_h) then
-                reaper.ImGui_PushItemWidth(ctx, -1)
                 
-                -- 1. Glide Speed (기본값: 0.20)
-                local c1, v1 = reaper.ImGui_SliderDouble(ctx, "##glide", state.glide_speed or 0.20, 0.01, 1.0, "Glide Speed: %.2f")
+                reaper.ImGui_SetNextItemWidth(ctx, -1)
+                local c1, v1 = reaper.ImGui_SliderDouble(ctx, "##glide", state.glide_speed or 0.25, 0.01, 1.0, "Glide Speed: %.2f")
                 if c1 then state.glide_speed = v1; state.needs_save = true end
-                if reaper.ImGui_IsItemClicked(ctx, 1) then state.glide_speed = 0.20; state.needs_save = true end
-                
-                -- 2. Orbit Radius (기본값: 0.05)
-                local c2, v2 = reaper.ImGui_SliderDouble(ctx, "##orbit_r", state.orbit_radius or 0.05, 0.0, 0.5, "Orbit Radius: %.2f")
+                if reaper.ImGui_IsItemClicked(ctx, 1) then state.glide_speed = 0.25; state.needs_save = true end
+
+                local avail_w = reaper.ImGui_GetContentRegionAvail(ctx)
+                local spacing = 8
+                local item_w = (avail_w - (spacing * 2)) / 3 
+
+                reaper.ImGui_SetNextItemWidth(ctx, item_w)
+                local c2, v2 = reaper.ImGui_SliderDouble(ctx, "##orbit_r", state.orbit_radius or 0.0, 0.0, 0.3, "Radius: %.2f")
                 if c2 then state.orbit_radius = v2; state.needs_save = true end
-                if reaper.ImGui_IsItemClicked(ctx, 1) then state.orbit_radius = 0.05; state.needs_save = true end
-                
-                -- 3. Orbit Speed/Dir (기본값: 0.4)
-                local c3, v3 = reaper.ImGui_SliderDouble(ctx, "##orbit_s", state.orbit_speed or 0.4, -1.0, 1.0, "Orbit Speed/Dir: %.2f")
+                if reaper.ImGui_IsItemClicked(ctx, 1) then state.orbit_radius = 0.0; state.needs_save = true end
+
+                reaper.ImGui_SameLine(ctx)
+
+                reaper.ImGui_SetNextItemWidth(ctx, item_w)
+                local c3, v3 = reaper.ImGui_SliderDouble(ctx, "##orbit_s", state.orbit_speed or 0.4, -1.0, 1.0, "Speed: %.2f")
                 if c3 then state.orbit_speed = v3; state.needs_save = true end
                 if reaper.ImGui_IsItemClicked(ctx, 1) then state.orbit_speed = 0.4; state.needs_save = true end
+
+                reaper.ImGui_SameLine(ctx)
+
+                reaper.ImGui_SetNextItemWidth(ctx, item_w)
+                local c4, v4 = reaper.ImGui_SliderDouble(ctx, "##orbit_f", state.orbit_flatten or 0.0, 0.0, 1.0, "Shape: %.2f")
+                if c4 then state.orbit_flatten = v4; state.needs_save = true end
+                if reaper.ImGui_IsItemClicked(ctx, 1) then state.orbit_flatten = 0.0; state.needs_save = true end
+
+                reaper.ImGui_Spacing(ctx)
+                reaper.ImGui_Separator(ctx)
                 
-                reaper.ImGui_PopItemWidth(ctx)
                 
                 local pad_avail_w, pad_avail_h = reaper.ImGui_GetContentRegionAvail(ctx)
                 local pad_w = math.max(50, pad_avail_w - 20)
@@ -460,20 +480,14 @@ function Loop()
                 
                 UpdateAndApplyMacros(state)
                 
-                -- [신규] 듀얼 닷(Dual Dot) 및 궤도 연결선 그리기
                 local dot_radius = math.max(4, math.min(pad_w, pad_h) * 0.02)
                 
-                -- 가이드 점 (A)
                 local guide_x = p_x + (state.x_tgt * pad_w)
                 local guide_y = p_y + ((1 - state.y_tgt) * pad_h)
-                
-                -- 액터 점 (B)
                 local actor_x = p_x + (state.x_final * pad_w)
                 local actor_y = p_y + ((1 - state.y_final) * pad_h)
-                                
-                -- 점 A (속이 빈 회색 원)
-                reaper.ImGui_DrawList_AddCircleFilled(draw_list, guide_x, guide_y, dot_radius * 1.2, 0xEEEEEEFF)
-                -- 점 B (꽉 찬 노란색 원)
+                
+                reaper.ImGui_DrawList_AddCircleFilled(draw_list, guide_x, guide_y, dot_radius, 0xEEEEEEFF)
                 reaper.ImGui_DrawList_AddCircleFilled(draw_list, actor_x, actor_y, dot_radius, 0xE3DB8EFF)
                 
                 reaper.ImGui_EndChild(ctx)
@@ -484,20 +498,22 @@ function Loop()
             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x555555FF)
             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x777777FF)
             
-            reaper.ImGui_Button(ctx, "##splitter", -1, 5) 
+            reaper.ImGui_Button(ctx, "##splitter", -1, 3) 
             
             if reaper.ImGui_IsItemActive(ctx) then
                 local _, delta_y = reaper.ImGui_GetMouseDelta(ctx)
-                local new_h = top_area_h + delta_y
-                state.pad_ratio = new_h / avail_h
-                state.pad_ratio = math.max(0.1, math.min(state.pad_ratio, 0.9)) 
+                local new_top_h = top_area_h + delta_y
+                
+                new_top_h = math.max(150, math.min(new_top_h, avail_h - 100))
+                
+                state.list_height = avail_h - new_top_h - splitter_space
                 state.needs_save = true
             end
             
             if reaper.ImGui_IsItemHovered(ctx) then
                 reaper.ImGui_SetMouseCursor(ctx, reaper.ImGui_MouseCursor_ResizeNS())
                 if reaper.ImGui_IsMouseDoubleClicked(ctx, 0) then
-                    state.pad_ratio = nil 
+                    state.list_height = nil  
                     state.needs_save = true
                 end
             end
@@ -505,7 +521,7 @@ function Loop()
             reaper.ImGui_PopStyleColor(ctx, 3)
             reaper.ImGui_PopStyleVar(ctx)
             reaper.ImGui_Spacing(ctx)
-
+            
             reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF)
             reaper.ImGui_SeparatorText(ctx, 'Macro Mapping')
             reaper.ImGui_PopStyleColor(ctx)
