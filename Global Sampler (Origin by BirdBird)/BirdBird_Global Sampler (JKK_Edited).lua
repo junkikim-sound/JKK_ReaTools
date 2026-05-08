@@ -1,5 +1,5 @@
--- @description Global Sampler
--- @version 0.99.8.5
+-- @description Global Sampler (Edited by JKK)
+-- @version 0.99.8.51
 -- @author BirdBird
 -- @provides
 --    [nomain]global_sampler_libraries/global_resampler_lib.lua
@@ -8,7 +8,7 @@
 --    [main]BirdBird_Sample Last Playthrough.lua
 --    [main]BirdBird_Sample Last X Seconds.lua
 --    [main]BirdBird_Global Sampler Theme Editor.lua
---    [effect] BirdBird_Global Sampler (JKK_Edited).jsfx
+--    [effect]BirdBird_Global Sampler (JKK_Edited).jsfx
 
 reaper_version = tonumber((reaper.GetAppVersion()):match("^[0-9]+%.?[0-9]*"))
 
