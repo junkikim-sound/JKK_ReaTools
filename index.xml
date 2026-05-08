@@ -1,7 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="JKK_ReaTools" commit="ab2286f7647c9e0789fd4b1cbb1ea221d5dccaff">
+<index version="1" name="JKK_ReaTools" commit="e81010a0d15990d4f21b1ce7a8663b75bc5c45c6">
   <category name="Global Sampler (Origin by BirdBird)">
-    <reapack name="BirdBird_Global Sampler (JKK_Edited).lua" type="script" desc="Global Sampler">
+    <reapack name="BirdBird_Global Sampler (JKK_Edited).lua" type="script" desc="Global Sampler (Edited by JKK)">
       <version name="0.99.8.5" author="BirdBird" time="2026-05-08T13:57:22Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/ab2286f7647c9e0789fd4b1cbb1ea221d5dccaff/Global%20Sampler%20(Origin%20by%20BirdBird)/BirdBird_Global%20Sampler%20(JKK_Edited).lua</source>
         <source file="global_sampler_libraries/global_resampler_lib.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ab2286f7647c9e0789fd4b1cbb1ea221d5dccaff/Global%20Sampler%20(Origin%20by%20BirdBird)/global_sampler_libraries/global_resampler_lib.lua</source>
@@ -11,6 +11,16 @@
         <source main="main" file="BirdBird_Sample Last X Seconds.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ab2286f7647c9e0789fd4b1cbb1ea221d5dccaff/Global%20Sampler%20(Origin%20by%20BirdBird)/BirdBird_Sample%20Last%20X%20Seconds.lua</source>
         <source main="main" file="BirdBird_Global Sampler Theme Editor.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ab2286f7647c9e0789fd4b1cbb1ea221d5dccaff/Global%20Sampler%20(Origin%20by%20BirdBird)/BirdBird_Global%20Sampler%20Theme%20Editor.lua</source>
         <source type="effect" file="BirdBird_Global Sampler (JKK_Edited).jsfx">https://github.com/junkikim-sound/JKK_ReaTools/raw/ab2286f7647c9e0789fd4b1cbb1ea221d5dccaff/Global%20Sampler%20(Origin%20by%20BirdBird)/BirdBird_Global%20Sampler%20(JKK_Edited).jsfx</source>
+      </version>
+      <version name="0.99.8.51" author="BirdBird" time="2026-05-08T14:16:26Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/e81010a0d15990d4f21b1ce7a8663b75bc5c45c6/Global%20Sampler%20(Origin%20by%20BirdBird)/BirdBird_Global%20Sampler%20(JKK_Edited).lua</source>
+        <source file="global_sampler_libraries/global_resampler_lib.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/e81010a0d15990d4f21b1ce7a8663b75bc5c45c6/Global%20Sampler%20(Origin%20by%20BirdBird)/global_sampler_libraries/global_resampler_lib.lua</source>
+        <source file="global_sampler_libraries/json.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/e81010a0d15990d4f21b1ce7a8663b75bc5c45c6/Global%20Sampler%20(Origin%20by%20BirdBird)/global_sampler_libraries/json.lua</source>
+        <source file="global_sampler_libraries/themes.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/e81010a0d15990d4f21b1ce7a8663b75bc5c45c6/Global%20Sampler%20(Origin%20by%20BirdBird)/global_sampler_libraries/themes.lua</source>
+        <source main="main" file="BirdBird_Sample Last Playthrough.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/e81010a0d15990d4f21b1ce7a8663b75bc5c45c6/Global%20Sampler%20(Origin%20by%20BirdBird)/BirdBird_Sample%20Last%20Playthrough.lua</source>
+        <source main="main" file="BirdBird_Sample Last X Seconds.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/e81010a0d15990d4f21b1ce7a8663b75bc5c45c6/Global%20Sampler%20(Origin%20by%20BirdBird)/BirdBird_Sample%20Last%20X%20Seconds.lua</source>
+        <source main="main" file="BirdBird_Global Sampler Theme Editor.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/e81010a0d15990d4f21b1ce7a8663b75bc5c45c6/Global%20Sampler%20(Origin%20by%20BirdBird)/BirdBird_Global%20Sampler%20Theme%20Editor.lua</source>
+        <source type="effect" file="BirdBird_Global Sampler (JKK_Edited).jsfx">https://github.com/junkikim-sound/JKK_ReaTools/raw/e81010a0d15990d4f21b1ce7a8663b75bc5c45c6/Global%20Sampler%20(Origin%20by%20BirdBird)/BirdBird_Global%20Sampler%20(JKK_Edited).jsfx</source>
       </version>
     </reapack>
   </category>
