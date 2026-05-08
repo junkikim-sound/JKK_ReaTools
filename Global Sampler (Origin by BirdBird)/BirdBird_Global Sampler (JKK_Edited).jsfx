@@ -4,7 +4,7 @@ original author: BirdBird
 editor author: Junki Kim (no distrubution)
 
 options:gmem=BB_Sampler, maxmem=33554432, gfx_idle=1
-desc: Global Sampler
+desc: Global Sampler (Edited by JKK)
 
 in_pin:left input
 in_pin:right input
