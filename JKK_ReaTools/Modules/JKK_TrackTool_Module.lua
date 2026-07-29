@@ -922,8 +922,13 @@ local track_colors = {
                     reaper.ImGui_PopStyleColor(ctx)
                         reaper.ImGui_Text(ctx, "")
                         reaper.ImGui_SameLine(ctx)
-                        local changed_base_name, new_base_name = reaper.ImGui_InputTextMultiline(ctx, '##RenameNewBaseName', base_name, 272, 22)
+                        reaper.ImGui_SetNextItemWidth(ctx, 272)
+                        local changed_base_name, new_base_name = reaper.ImGui_InputText(ctx, '##RenameNewBaseName', base_name)
                         if changed_base_name then base_name = new_base_name end
+
+                        -- 엔터 키 감지
+                        local enter_pressed = reaper.ImGui_IsItemFocused(ctx) and (reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Enter()) or reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_KeypadEnter()))
+
                         reaper.ImGui_SameLine(ctx)
                         if reaper.ImGui_Button(ctx, "Clear##ClearBaseName", 55, 22) then
                             base_name = ""
@@ -931,7 +936,8 @@ local track_colors = {
 
                         reaper.ImGui_Text(ctx, "")
                         reaper.ImGui_SameLine(ctx)
-                        if reaper.ImGui_Button(ctx, 'Edit Tracks Name', 132, 22) then
+                        -- 버튼 클릭 또는 엔터 키 입력 시 실행
+                        if reaper.ImGui_Button(ctx, 'Edit Tracks Name', 132, 22) or enter_pressed then
                             if base_name ~= "" then
                                 RenameTracks()
                             end

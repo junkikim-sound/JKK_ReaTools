@@ -257,14 +257,20 @@ local region_colors = {
                 reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF)
                 reaper.ImGui_SeparatorText(ctx, 'Region Batch Renamer')
                 reaper.ImGui_PopStyleColor(ctx)
-                    local changed_rgn_name, new_rgn_name = reaper.ImGui_InputTextMultiline(ctx, '##RgnBaseName', rename_base_name, 272, 22)
+                    reaper.ImGui_SetNextItemWidth(ctx, 272)
+                    local changed_rgn_name, new_rgn_name = reaper.ImGui_InputText(ctx, '##RgnBaseName', rename_base_name)
                     if changed_rgn_name then rename_base_name = new_rgn_name end
+
+                    -- 엔터 키(일반 엔터 및 텐키패드 엔터) 감지
+                    local enter_pressed = reaper.ImGui_IsItemFocused(ctx) and (reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Enter()) or reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_KeypadEnter()))
+
                     reaper.ImGui_SameLine(ctx)
                     if reaper.ImGui_Button(ctx, "Clear##ClearBaseName", 55, 22) then
-                        base_name = ""
+                        rename_base_name = "" -- 버그 수정: base_name -> rename_base_name
                     end
 
-                    if reaper.ImGui_Button(ctx, "Edit Regions Name", 132, 22) then
+                    -- 버튼 클릭 또는 엔터 키 입력 시 실행
+                    if reaper.ImGui_Button(ctx, "Edit Regions Name", 132, 22) or enter_pressed then
                         EditRegionsName()
                     end
                     reaper.ImGui_SameLine(ctx)

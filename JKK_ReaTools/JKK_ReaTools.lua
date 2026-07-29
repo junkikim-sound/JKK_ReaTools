@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.9.41
+-- @version 0.9.5
 -- @provides 
 --     [nomain] Modules/JKK_ItemTool_Module.lua
 --     [nomain] Modules/JKK_TrackTool_Module.lua
@@ -103,21 +103,22 @@ local function Main()
     local track_gained = track_changed and (cur_sel_tracks_count > 0)
 
     -- 우선순위에 따른 탭 전환 분기
-    if item_gained then
-        force_tab = 1 
-        
-    elseif track_gained and not item_changed then
-        force_tab = 2 
-        
-    elseif item_lost and cur_sel_tracks_count > 0 then
-        force_tab = 2
-        
-    elseif cursor_changed then
-        force_tab = 3
-        
-    else
-        force_tab = nil
-    end
+    force_tab = nil
+    ---if item_gained then
+    ---    force_tab = 1 
+    ---    
+    ---elseif track_gained and not item_changed then
+    ---    force_tab = 2 
+    ---    
+    ---elseif item_lost and cur_sel_tracks_count > 0 then
+    ---    force_tab = 2
+    ---    
+    ---elseif cursor_changed then
+    ---    force_tab = 3
+    ---    
+    ---else
+    ---    force_tab = nil
+    ---end
 
     -- 상태 업데이트
     prev_sel_item = cur_sel_item

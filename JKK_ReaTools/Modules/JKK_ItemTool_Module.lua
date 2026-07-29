@@ -1060,8 +1060,28 @@ math.randomseed(os.time())
             reaper.Undo_BeginBlock()
             reaper.PreventUIRefresh(1)
 
+            local track_counters = {}
+            local track_start_pos = {}
+
             for i, cluster in ipairs(clusters) do
-                local cluster_base_pos = start_pos + spacing * (i - 1)
+                local cluster_base_pos = start_pos
+                
+                if not use_clustering then
+                    -- 그룹 해제 시: 트랙별 독립 정렬
+                    local track = reaper.GetMediaItem_Track(cluster.items_data[1].item)
+                    if not track_counters[track] then
+                        track_counters[track] = 1
+                        -- 커서 기준이 아니면 각 트랙의 첫 아이템 위치를 시작점으로 설정
+                        track_start_pos[track] = use_edit_cursor and start_pos or cluster.start_pos
+                    else
+                        track_counters[track] = track_counters[track] + 1
+                    end
+                    local cluster_idx = track_counters[track]
+                    cluster_base_pos = track_start_pos[track] + spacing * (cluster_idx - 1)
+                else
+                    -- 그룹 체크 시: 기존처럼 전체 통합 정렬
+                    cluster_base_pos = start_pos + spacing * (i - 1)
+                end
                 
                 if stored_offsets[i] ~= nil then
                     cluster_base_pos = cluster_base_pos + stored_offsets[i]
@@ -1102,15 +1122,46 @@ math.randomseed(os.time())
             reaper.Undo_BeginBlock()
             reaper.PreventUIRefresh(1)
 
-            -- 3. 클러스터 관리
+            -- 3. 클러스터 관리 (버그 수정: 그룹 해제 상태 반영)
             if not IsPersistentClustersValid() then
-                persistentClusters = BuildClusters(sorted_items)
+                if use_clustering then
+                    persistentClusters = BuildClusters(sorted_items)
+                else
+                    persistentClusters = {}
+                    for _, data in ipairs(sorted_items) do
+                        table.insert(persistentClusters, {
+                            items = {data.item},
+                            start_pos = data.pos,
+                            end_pos = data.end_pos,
+                            items_data = {{item = data.item, rel_pos = 0}}
+                        })
+                    end
+                end
             end
             local clusters = persistentClusters
 
+            local track_counters = {}
+            local track_start_pos = {}
+
             -- 4. 랜덤 및 배치 로직 루프
             for i, cluster in ipairs(clusters) do
-                local cluster_base_pos = start_pos + spacing * (i - 1)
+                local cluster_base_pos = start_pos
+                
+                if not use_clustering then
+                    -- 그룹 해제 시: 트랙별 독립 정렬
+                    local track = reaper.GetMediaItem_Track(cluster.items_data[1].item)
+                    if not track_counters[track] then
+                        track_counters[track] = 1
+                        track_start_pos[track] = use_edit_cursor and start_pos or cluster.start_pos
+                    else
+                        track_counters[track] = track_counters[track] + 1
+                    end
+                    local cluster_idx = track_counters[track]
+                    cluster_base_pos = track_start_pos[track] + spacing * (cluster_idx - 1)
+                else
+                    -- 그룹 체크 시: 기존처럼 전체 통합 정렬
+                    cluster_base_pos = start_pos + spacing * (i - 1)
+                end
 
                 for j, item_data in ipairs(cluster.items_data) do
                     local item = item_data.item
@@ -1164,13 +1215,27 @@ math.randomseed(os.time())
             reaper.UpdateArrange()
             current_play_slot = 0
         end
-        function shuffle_item_order()
+    function shuffle_item_order()
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt == 0 then return end
 
             -- 1. 현재 배치 상태를 기준으로 클러스터 빌드 (슬롯 생성)
             local sorted_items = CollectAndSortSelectedItems()
-            local clusters = BuildClusters(sorted_items)
+            local clusters
+            
+            if use_clustering then
+                clusters = BuildClusters(sorted_items)
+            else
+                clusters = {}
+                for _, data in ipairs(sorted_items) do
+                    table.insert(clusters, {
+                        items = {data.item},
+                        start_pos = data.pos,
+                        end_pos = data.end_pos,
+                        items_data = {{item = data.item, rel_pos = 0}}
+                    })
+                end
+            end
 
             -- 2. 트랙별로 아이템 모으기
             local track_map = {}
@@ -1210,14 +1275,11 @@ math.randomseed(os.time())
                 end
             end
 
-            -- 5. 변경된 클러스터 구조 저장 및 캐시 초기화
+            -- 5. 변경된 클러스터 구조 저장 (기존 볼륨/피치 상태 유지)
             persistentClusters = clusters
-            stored_offsets = {}
-            stored_pitch = {}
-            stored_playrates = {}
-            stored_vols = {}
 
-            arrange_items()
+            -- arrange_items() 대신 위치(간격)만 재배열하는 함수 호출
+            apply_spacing_only()
         end
 
 ----------------------------------------------------------
@@ -2370,10 +2432,19 @@ math.randomseed(os.time())
                                 
                                 reaper.ImGui_TableNextColumn(ctx)
                                 
-                                changed, base_name = reaper.ImGui_InputTextMultiline(ctx, '##BaseName', base_name, 282, 22)
+                                reaper.ImGui_SetNextItemWidth(ctx, 282)
+                                changed, base_name = reaper.ImGui_InputText(ctx, '##BaseName', base_name)
+
+                                -- 엔터 키 감지
+                                local enter_pressed = reaper.ImGui_IsItemFocused(ctx) and (reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Enter()) or reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_KeypadEnter()))
+
                                 reaper.ImGui_SameLine(ctx)
                                 if reaper.ImGui_Button(ctx, "Clear##ClearBaseName", 55, 22) then base_name = "" end
-                                if reaper.ImGui_Button(ctx, 'Edit Take Name', 137, 22) then if base_name ~= "" then RenameSelectedTakes() end end
+
+                                -- 버튼 클릭 또는 엔터 키 입력 시 실행
+                                if reaper.ImGui_Button(ctx, 'Edit Take Name', 137, 22) or enter_pressed then 
+                                    if base_name ~= "" then RenameSelectedTakes() end 
+                                end
                                 reaper.ImGui_SameLine(ctx)
                                 reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x233C4FFF)
                                 reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x435665FF)
@@ -2528,7 +2599,17 @@ math.randomseed(os.time())
                             changed, pos_range = reaper.ImGui_SliderDouble(ctx, '##Pos Range', pos_range, 0, 1.0, '%.3f')
                             if reaper.ImGui_IsItemClicked(ctx, 1) then pos_range = 0.0 end
                             reaper.ImGui_SameLine(ctx)
-                            changed, random_pos = reaper.ImGui_Checkbox(ctx, 'Rand##pos', random_pos)
+                            
+                            local changed_pos, new_pos = reaper.ImGui_Checkbox(ctx, 'Rand##pos', random_pos)
+                            if changed_pos and reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Ctrl()) then
+                                random_pos, random_pitch, random_play, random_vol = new_pos, new_pos, new_pos, new_pos
+                            elseif reaper.ImGui_IsItemClicked(ctx, 1) then
+                                local target_val = not random_pos
+                                random_pos, random_pitch, random_play, random_vol = target_val, target_val, target_val, target_val
+                            else
+                                random_pos = new_pos
+                            end
+
                         -- Pitch Range
                             reaper.ImGui_AlignTextToFramePadding(ctx)
                             reaper.ImGui_Text(ctx, "  Pitch Range")
@@ -2538,7 +2619,17 @@ math.randomseed(os.time())
                             changed, pitch_range = reaper.ImGui_SliderDouble(ctx, '##Pitch Range', pitch_range, 0, 24, '%.3f')
                             if reaper.ImGui_IsItemClicked(ctx, 1) then pitch_range = 0.0 end
                             reaper.ImGui_SameLine(ctx)
-                            changed, random_pitch = reaper.ImGui_Checkbox(ctx, 'Rand##pitch', random_pitch)
+                            
+                            local changed_pitch, new_pitch = reaper.ImGui_Checkbox(ctx, 'Rand##pitch', random_pitch)
+                            if changed_pitch and reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Ctrl()) then
+                                random_pos, random_pitch, random_play, random_vol = new_pitch, new_pitch, new_pitch, new_pitch
+                            elseif reaper.ImGui_IsItemClicked(ctx, 1) then
+                                local target_val = not random_pitch
+                                random_pos, random_pitch, random_play, random_vol = target_val, target_val, target_val, target_val
+                            else
+                                random_pitch = new_pitch
+                            end
+
                         -- Playback Rate Range
                             reaper.ImGui_AlignTextToFramePadding(ctx)
                             reaper.ImGui_Text(ctx, "  Playrate Range")
@@ -2548,7 +2639,17 @@ math.randomseed(os.time())
                             changed, playback_range = reaper.ImGui_SliderDouble(ctx, '##Playrate Range', playback_range, 0, 24, '%.3f')
                             if reaper.ImGui_IsItemClicked(ctx, 1) then playback_range = 0.0 end
                             reaper.ImGui_SameLine(ctx)
-                            changed, random_play = reaper.ImGui_Checkbox(ctx, 'Rand##playback', random_play)
+                            
+                            local changed_play, new_play = reaper.ImGui_Checkbox(ctx, 'Rand##playback', random_play)
+                            if changed_play and reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Ctrl()) then
+                                random_pos, random_pitch, random_play, random_vol = new_play, new_play, new_play, new_play
+                            elseif reaper.ImGui_IsItemClicked(ctx, 1) then
+                                local target_val = not random_play
+                                random_pos, random_pitch, random_play, random_vol = target_val, target_val, target_val, target_val
+                            else
+                                random_play = new_play
+                            end
+
                         -- Volume Range
                             reaper.ImGui_AlignTextToFramePadding(ctx)
                             reaper.ImGui_Text(ctx, "  Vol Range")
@@ -2558,8 +2659,16 @@ math.randomseed(os.time())
                             changed, vol_range = reaper.ImGui_SliderDouble(ctx, '##Vol Range', vol_range, 0, 10, '%.02f')
                             if reaper.ImGui_IsItemClicked(ctx, 1) then vol_range = 0.0 end
                             reaper.ImGui_SameLine(ctx)
-                            changed, random_vol = reaper.ImGui_Checkbox(ctx, 'Rand##vol', random_vol)
-                            reaper.ImGui_Spacing(ctx)                         
+                            
+                            local changed_vol_rand, new_vol_rand = reaper.ImGui_Checkbox(ctx, 'Rand##vol', random_vol)
+                            if changed_vol_rand and reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Ctrl()) then
+                                random_pos, random_pitch, random_play, random_vol = new_vol_rand, new_vol_rand, new_vol_rand, new_vol_rand
+                            elseif reaper.ImGui_IsItemClicked(ctx, 1) then
+                                local target_val = not random_vol
+                                random_pos, random_pitch, random_play, random_vol = target_val, target_val, target_val, target_val
+                            else
+                                random_vol = new_vol_rand
+                            end                       
                         -- Btn Apply
                             reaper.ImGui_Text(ctx, "")
                             reaper.ImGui_SameLine(ctx)
