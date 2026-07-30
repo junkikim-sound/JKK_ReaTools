@@ -788,7 +788,7 @@ math.randomseed(os.time())
             local width        = 5
             local spacing_mode = 0
             local use_clustering = true
-            local use_edit_cursor = false
+            local use_gap_mode = false -- use_edit_cursor 대체
             local pos_range    = 0
             local pitch_range      = 0
             local playback_range   = 0
@@ -809,6 +809,7 @@ math.randomseed(os.time())
         -- Save
             local prev_width, prev_pos_range = width, pos_range
             local prev_pitch_range, prev_playback_range, prev_vol_range = pitch_range, playback_range, vol_range
+            local prev_use_gap_mode = use_gap_mode
             local prev_random_pos, prev_random_pitch, prev_random_play, prev_random_vol, prev_random_order =
                 random_pos, random_pitch, random_play, random_vol, random_order
         -- freeze (Cluster IDs based)
@@ -824,6 +825,7 @@ math.randomseed(os.time())
                 width        ~= prev_width or
                 use_clustering ~= prev_use_clustering or
                 spacing_mode  ~= prev_spacing_mode or
+                use_gap_mode  ~= prev_use_gap_mode or
                 pos_range    ~= prev_pos_range or
                 pitch_range  ~= prev_pitch_range or
                 playback_range ~= prev_playback_range or
@@ -845,6 +847,7 @@ math.randomseed(os.time())
         function update_prev()
             prev_width        = width
             prev_use_clustering = use_clustering
+            prev_use_gap_mode   = use_gap_mode
             prev_spacing_mode   = spacing_mode
             prev_pos_range    = pos_range
             prev_pitch_range  = pitch_range
@@ -866,7 +869,7 @@ math.randomseed(os.time())
             width = tonumber(reaper.GetExtState("JKK_ItemTool", "width")) or 5.0
             use_clustering = (tonumber(reaper.GetExtState("JKK_ItemTool", "use_clustering")) or 1) == 1
             spacing_mode = tonumber(reaper.GetExtState("JKK_ItemTool", "spacing_mode")) or 0
-            use_edit_cursor = LoadFlag("JKK_ItemTool", "use_edit_cursor", false)
+            use_gap_mode = LoadFlag("JKK_ItemTool", "use_gap_mode", false)
             pos_range = tonumber(reaper.GetExtState("JKK_ItemTool", "pos_range")) or 0.0
             pitch_range = tonumber(reaper.GetExtState("JKK_ItemTool", "pitch_range")) or 0.0
             playback_range = tonumber(reaper.GetExtState("JKK_ItemTool", "playback_range")) or 0.0
@@ -885,7 +888,7 @@ math.randomseed(os.time())
             reaper.SetExtState("JKK_ItemTool", "width", tostring(width), true)
             reaper.SetExtState("JKK_ItemTool", "use_clustering", use_clustering and "1" or "0", true)
             reaper.SetExtState("JKK_ItemTool", "spacing_mode", tostring(spacing_mode), true)
-            reaper.SetExtState("JKK_ItemTool", "use_edit_cursor", use_edit_cursor and "1" or "0", true)
+            reaper.SetExtState("JKK_ItemTool", "use_gap_mode", use_gap_mode and "1" or "0", true)
             reaper.SetExtState("JKK_ItemTool", "pos_range", tostring(pos_range), true)
             reaper.SetExtState("JKK_ItemTool", "pitch_range", tostring(pitch_range), true)
             reaper.SetExtState("JKK_ItemTool", "playback_range", tostring(playback_range), true)
@@ -1023,20 +1026,9 @@ math.randomseed(os.time())
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt == 0 then return end
 
-            local base_anchor
-            if use_edit_cursor then
-                base_anchor = reaper.GetCursorPosition()
-            else
-                if anchor_min_pos == nil then
-                    local sorted = CollectAndSortSelectedItems()
-                    if sorted[1] then anchor_min_pos = sorted[1].pos end
-                end
-                base_anchor = anchor_min_pos
-            end
-
+            local start_pos = reaper.GetCursorPosition() -- 에디트 커서 고정
             local _, grid_size = reaper.GetSetProjectGrid(0, false)
             local spacing = CalculateSpacingAmount(width)
-            local start_pos = base_anchor
 
             if not IsPersistentClustersValid() then
                 local sorted_items = CollectAndSortSelectedItems()
@@ -1062,38 +1054,52 @@ math.randomseed(os.time())
 
             local track_counters = {}
             local track_start_pos = {}
+            local track_last_end_pos = {}
 
             for i, cluster in ipairs(clusters) do
                 local cluster_base_pos = start_pos
                 
+                local track_key = "global"
                 if not use_clustering then
-                    -- 그룹 해제 시: 트랙별 독립 정렬
-                    local track = reaper.GetMediaItem_Track(cluster.items_data[1].item)
-                    if not track_counters[track] then
-                        track_counters[track] = 1
-                        -- 커서 기준이 아니면 각 트랙의 첫 아이템 위치를 시작점으로 설정
-                        track_start_pos[track] = use_edit_cursor and start_pos or cluster.start_pos
-                    else
-                        track_counters[track] = track_counters[track] + 1
-                    end
-                    local cluster_idx = track_counters[track]
-                    cluster_base_pos = track_start_pos[track] + spacing * (cluster_idx - 1)
-                else
-                    -- 그룹 체크 시: 기존처럼 전체 통합 정렬
-                    cluster_base_pos = start_pos + spacing * (i - 1)
+                    track_key = reaper.GetMediaItem_Track(cluster.items_data[1].item)
                 end
                 
-                if stored_offsets[i] ~= nil then
+                if not track_counters[track_key] then
+                    track_counters[track_key] = 1
+                    track_start_pos[track_key] = start_pos
+                    cluster_base_pos = start_pos
+                else
+                    track_counters[track_key] = track_counters[track_key] + 1
+                    if use_gap_mode then
+                        -- Gap 모드: 이전 아이템의 꼬리부터 간격 시작
+                        cluster_base_pos = track_last_end_pos[track_key] + spacing
+                    else
+                        -- 기본 모드: 일정한 Start-to-Start 간격
+                        cluster_base_pos = track_start_pos[track_key] + spacing * (track_counters[track_key] - 1)
+                    end
+                end
+                
+                -- Gap 모드일 때는 저장된 오프셋 무시 (랜덤 방지)
+                if not use_gap_mode and stored_offsets[i] ~= nil then
                     cluster_base_pos = cluster_base_pos + stored_offsets[i]
                 end
                 
+                local max_cluster_end = cluster_base_pos
                 for _, item_data in ipairs(cluster.items_data) do
                     local item = item_data.item
                     if reaper.ValidatePtr(item, "MediaItem*") then
                         local new_pos = cluster_base_pos + item_data.rel_pos
                         reaper.SetMediaItemInfo_Value(item, "D_POSITION", new_pos)
+                        
+                        -- 배치 후 꼬리 길이 계산
+                        local len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+                        if new_pos + len > max_cluster_end then
+                            max_cluster_end = new_pos + len
+                        end
                     end
                 end
+                -- 다음 배치를 위해 가장 긴 꼬리 위치 저장
+                track_last_end_pos[track_key] = max_cluster_end
             end
 
             reaper.PreventUIRefresh(-1)
@@ -1106,23 +1112,13 @@ math.randomseed(os.time())
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt == 0 then return end
 
-            -- 1. 아이템 수집 및 기준 위치(Anchor) 설정
             local sorted_items = CollectAndSortSelectedItems()
-            
-            if anchor_min_pos == nil then
-                if sorted_items[1] then anchor_min_pos = sorted_items[1].pos end
-            end
-
-            local start_pos = base_anchor or anchor_min_pos
-            if use_edit_cursor then start_pos = reaper.GetCursorPosition() end
-            
-            -- 2. 간격 계산
+            local start_pos = reaper.GetCursorPosition() -- 에디트 커서 고정
             local spacing = CalculateSpacingAmount(width)
 
             reaper.Undo_BeginBlock()
             reaper.PreventUIRefresh(1)
 
-            -- 3. 클러스터 관리 (버그 수정: 그룹 해제 상태 반영)
             if not IsPersistentClustersValid() then
                 if use_clustering then
                     persistentClusters = BuildClusters(sorted_items)
@@ -1142,27 +1138,30 @@ math.randomseed(os.time())
 
             local track_counters = {}
             local track_start_pos = {}
+            local track_last_end_pos = {}
 
-            -- 4. 랜덤 및 배치 로직 루프
             for i, cluster in ipairs(clusters) do
                 local cluster_base_pos = start_pos
                 
+                local track_key = "global"
                 if not use_clustering then
-                    -- 그룹 해제 시: 트랙별 독립 정렬
-                    local track = reaper.GetMediaItem_Track(cluster.items_data[1].item)
-                    if not track_counters[track] then
-                        track_counters[track] = 1
-                        track_start_pos[track] = use_edit_cursor and start_pos or cluster.start_pos
-                    else
-                        track_counters[track] = track_counters[track] + 1
-                    end
-                    local cluster_idx = track_counters[track]
-                    cluster_base_pos = track_start_pos[track] + spacing * (cluster_idx - 1)
+                    track_key = reaper.GetMediaItem_Track(cluster.items_data[1].item)
+                end
+                
+                if not track_counters[track_key] then
+                    track_counters[track_key] = 1
+                    track_start_pos[track_key] = start_pos
+                    cluster_base_pos = start_pos
                 else
-                    -- 그룹 체크 시: 기존처럼 전체 통합 정렬
-                    cluster_base_pos = start_pos + spacing * (i - 1)
+                    track_counters[track_key] = track_counters[track_key] + 1
+                    if use_gap_mode then
+                        cluster_base_pos = track_last_end_pos[track_key] + spacing
+                    else
+                        cluster_base_pos = track_start_pos[track_key] + spacing * (track_counters[track_key] - 1)
+                    end
                 end
 
+                local max_cluster_end = cluster_base_pos
                 for j, item_data in ipairs(cluster.items_data) do
                     local item = item_data.item
                     if reaper.ValidatePtr(item, "MediaItem*") then
@@ -1171,7 +1170,15 @@ math.randomseed(os.time())
 
                         local rnd_pitch_val = random_pitch and ((math.random() * pitch_range * 2) - pitch_range) or (stored_pitch[item_key] or 0)
                         local rnd_play_rate = random_play and (2 ^ (((math.random() * playback_range * 2) - playback_range) / 12)) or (stored_playrates[item_key] or 1.0)
-                        local rnd_pos_offset = random_pos and ((math.random() * pos_range * 2) - pos_range) or (stored_offsets[item_key] or 0)
+                        
+                        -- Gap 모드일 경우 겹침 방지를 위해 랜덤 위치 오프셋 무시
+                        local rnd_pos_offset = 0
+                        if use_gap_mode then
+                            rnd_pos_offset = 0
+                            stored_offsets[item_key] = 0
+                        else
+                            rnd_pos_offset = random_pos and ((math.random() * pos_range * 2) - pos_range) or (stored_offsets[item_key] or 0)
+                        end
                         
                         local rnd_vol_val = stored_vols[item_key] or 1.0
                         if random_vol then
@@ -1183,13 +1190,12 @@ math.randomseed(os.time())
                             end
                         end
 
-                        -- 데이터 캐싱
                         stored_vols[item_key] = rnd_vol_val
                         stored_pitch[item_key] = rnd_pitch_val
                         stored_playrates[item_key] = rnd_play_rate
-                        stored_offsets[item_key] = rnd_pos_offset
+                        if not use_gap_mode then stored_offsets[item_key] = rnd_pos_offset end
 
-                        -- 테이크 속성 적용
+                        local new_len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
                         if take then
                             reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", rnd_pitch_val)
                             reaper.SetMediaItemTakeInfo_Value(take, "D_VOL", rnd_vol_val)
@@ -1197,7 +1203,7 @@ math.randomseed(os.time())
                             local current_length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
                             local current_rate = reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE")
                             local source_len = current_length * current_rate
-                            local new_len = source_len / rnd_play_rate
+                            new_len = source_len / rnd_play_rate
                             
                             reaper.SetMediaItemLength(item, new_len, true)
                             reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", rnd_play_rate)
@@ -1205,9 +1211,15 @@ math.randomseed(os.time())
 
                         local final_cluster_pos = cluster_base_pos + rnd_pos_offset
                         local scaled_rel_pos = item_data.rel_pos / rnd_play_rate
-                        reaper.SetMediaItemInfo_Value(item, "D_POSITION", final_cluster_pos + scaled_rel_pos)
+                        local new_item_pos = final_cluster_pos + scaled_rel_pos
+                        reaper.SetMediaItemInfo_Value(item, "D_POSITION", new_item_pos)
+
+                        if new_item_pos + new_len > max_cluster_end then
+                            max_cluster_end = new_item_pos + new_len
+                        end
                     end
                 end
+                track_last_end_pos[track_key] = max_cluster_end
             end
 
             reaper.PreventUIRefresh(-1)
@@ -2579,7 +2591,13 @@ math.randomseed(os.time())
                             end
 
                             reaper.ImGui_SameLine(ctx)
-                            _, use_edit_cursor = reaper.ImGui_Checkbox(ctx, 'Cursor', use_edit_cursor)
+                            local changed_gap, new_gap = reaper.ImGui_Checkbox(ctx, 'Gap', use_gap_mode)
+                            if changed_gap then
+                                use_gap_mode = new_gap
+                            end
+                            if reaper.ImGui_IsItemHovered(ctx) then
+                                reaper.ImGui_SetTooltip(ctx, "Checked: End-to-Start (Previous item's tail to next item's head)\nUnchecked: Start-to-Start (Fixed interval)\n* Rand Pos is disabled when Gap is ON")
+                            end
                             reaper.ImGui_SameLine(ctx)
                             local changed_chk, new_chk = reaper.ImGui_Checkbox(ctx, "Group", use_clustering)
                             if changed_chk then
