@@ -449,6 +449,34 @@ math.randomseed(os.time())
             reaper.UpdateArrange()
             reaper.Undo_EndBlock("Create Regions from Items", -1)
         end
+        local function CreateRegionsFromItemNames()
+            local project = reaper.EnumProjects(-1, 0)
+            if not project then return end
+
+            local item_count = reaper.CountSelectedMediaItems(project)
+            if item_count == 0 then return end
+
+            reaper.Undo_BeginBlock()
+            
+            for i = 0, item_count - 1 do
+                local item = reaper.GetSelectedMediaItem(project, i)
+                local start_time = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+                local length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+                local end_time = start_time + length
+                
+                -- 테이크 이름을 가져옴
+                local take = reaper.GetActiveTake(item)
+                local take_name = "Region"
+                if take then
+                    take_name = reaper.GetTakeName(take)
+                end
+                
+                reaper.AddProjectMarker(project, 1, start_time, end_time, take_name, -1)
+            end
+
+            reaper.UpdateArrange()
+            reaper.Undo_EndBlock("Create Regions from Item Names", -1)
+        end
     -- Take Channel Mode & Pitch Mode
         function ApplyTakeChannelMode(mode)
             local cnt = reaper.CountSelectedMediaItems(0)
@@ -2461,7 +2489,21 @@ math.randomseed(os.time())
                                 reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x233C4FFF)
                                 reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x435665FF)
                                 reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x042239FF)
-                                if reaper.ImGui_Button(ctx, 'Create Regions', 137, 22) then if base_name ~= "" then CreateRegionsFromSelectedItems() end end
+
+                                if reaper.ImGui_Button(ctx, 'Create Regions', 137, 22) then 
+                                    -- Shift 키가 눌려있는지 확인
+                                    if reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Shift()) then
+                                        CreateRegionsFromItemNames()
+                                    else
+                                        if base_name ~= "" then CreateRegionsFromSelectedItems() end 
+                                    end
+                                end
+
+                                -- 기능 안내 툴팁 추가 (직관성 보완)
+                                if reaper.ImGui_IsItemHovered(ctx) then
+                                    reaper.ImGui_SetTooltip(ctx, "Click: Regions from Base Name\nShift+Click: Regions from Item Names")
+                                end
+
                                 reaper.ImGui_PopStyleColor(ctx, 3)
                                 reaper.ImGui_SameLine(ctx)
                                 local chk_changed, chk_val = reaper.ImGui_Checkbox(ctx, "_nn", is_sequential_name)
