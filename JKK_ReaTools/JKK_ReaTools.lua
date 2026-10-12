@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.9.50
+-- @version 0.9.55
 -- @provides 
 --     [nomain] Modules/JKK_ItemTool_Module.lua
 --     [nomain] Modules/JKK_TrackTool_Module.lua
@@ -153,19 +153,49 @@ local function Main()
                     reaper.ImGui_PopStyleColor(ctx)
                     reaper.ImGui_Text(ctx, " ")
                     reaper.ImGui_SameLine(ctx)
-                    local changed, new_note = reaper.ImGui_InputTextMultiline(ctx, "##proj_note", project_note, 375, 160) --190
-                    
+                    local changed, new_note = reaper.ImGui_InputTextMultiline(ctx, "##proj_note", project_note, 375, 140)
+
                     if changed then
                         project_note = new_note
+                    end
+                    -- 텍스트 상자에서 포커스가 벗어났을 때(입력이 끝났을 때) 딱 한 번만 프로젝트에 저장
+                    if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then
                         reaper.SetProjExtState(0, "JKK_ReaTools_Note", "Project_note", project_note)
                     end
+
                     reaper.ImGui_Spacing(ctx)
                     reaper.ImGui_Text(ctx, " ")
                     reaper.ImGui_SameLine(ctx)
-                        if reaper.ImGui_Button(ctx, "Peaks Display Settings", 375, 22) then
-                            reaper.Main_OnCommand(42074, 0)
-                            reaper.Main_OnCommand(40441, 0)
+
+                    -- 2. Peaks Display Settings 버튼 (필요한 액션 ID 확인 요망)
+                    if reaper.ImGui_Button(ctx, "Peaks Display Settings", 375, 22) then
+                        reaper.Main_OnCommand(42074, 0)
+                        -- reaper.Main_OnCommand(40441, 0) -- 이 부분이 의도한게 맞는지 확인이 필요합니다.
+                    end
+
+                    reaper.ImGui_Text(ctx, " ")
+                    reaper.ImGui_SameLine(ctx)
+
+                    -- 3. Open Project Directory 버튼에 폴더 열기 로직 통합
+                    if reaper.ImGui_Button(ctx, "Open Project Directory", 375, 22) then
+                        local retval, proj_path = reaper.EnumProjects(0)
+                        if retval ~= nil and proj_path ~= "" then
+                            local proj_dir = proj_path:match("(.*[/\\])")
+                            if proj_dir then
+                                if reaper.GetOS() == "Win32" or reaper.GetOS() == "Win64" then
+                                    os.execute('start "" "' .. proj_dir .. '"')
+                                elseif reaper.GetOS() == "OSX32" or reaper.GetOS() == "OSX64" or reaper.GetOS() == "Other" then
+                                    os.execute('open "' .. proj_dir .. '"')
+                                else
+                                    os.execute('xdg-open "' .. proj_dir .. '"')
+                                end
+                            else
+                                reaper.ShowMessageBox("저장되지 않은 새 프로젝트입니다. 먼저 프로젝트를 저장해주세요.", "알림", 0)
+                            end
+                        else
+                            reaper.ShowMessageBox("열려 있는 프로젝트가 없습니다.", "오류", 0)
                         end
+                    end
                     reaper.ImGui_EndTable(ctx)
                 end
             reaper.ImGui_TableNextColumn(ctx)
