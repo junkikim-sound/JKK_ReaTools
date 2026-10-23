@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.9.55
+-- @version 0.9.60
 -- @provides 
 --     [nomain] Modules/JKK_ItemTool_Module.lua
 --     [nomain] Modules/JKK_TrackTool_Module.lua
@@ -178,22 +178,14 @@ local function Main()
 
                     -- 3. Open Project Directory 버튼에 폴더 열기 로직 통합
                     if reaper.ImGui_Button(ctx, "Open Project Directory", 375, 22) then
-                        local retval, proj_path = reaper.EnumProjects(0)
-                        if retval ~= nil and proj_path ~= "" then
-                            local proj_dir = proj_path:match("(.*[/\\])")
-                            if proj_dir then
-                                if reaper.GetOS() == "Win32" or reaper.GetOS() == "Win64" then
-                                    os.execute('start "" "' .. proj_dir .. '"')
-                                elseif reaper.GetOS() == "OSX32" or reaper.GetOS() == "OSX64" or reaper.GetOS() == "Other" then
-                                    os.execute('open "' .. proj_dir .. '"')
-                                else
-                                    os.execute('xdg-open "' .. proj_dir .. '"')
-                                end
-                            else
-                                reaper.ShowMessageBox("저장되지 않은 새 프로젝트입니다. 먼저 프로젝트를 저장해주세요.", "알림", 0)
-                            end
+                        -- 문자열 형태의 Command ID를 정수형 ID로 변환
+                        local cmd_id = reaper.NamedCommandLookup("_S&M_OPEN_PRJ_PATH")
+
+                        -- ID를 정상적으로 찾았을 경우 실행
+                        if cmd_id ~= 0 then
+                          reaper.Main_OnCommand(cmd_id, 0)
                         else
-                            reaper.ShowMessageBox("열려 있는 프로젝트가 없습니다.", "오류", 0)
+                          reaper.ShowMessageBox("해당 커스텀/SWS 액션을 찾을 수 없습니다.", "오류", 0)
                         end
                     end
                     reaper.ImGui_EndTable(ctx)

@@ -132,35 +132,49 @@ local track_colors = {
         end
     -- Set Selected Tracks Volume
         local function Action_SetSelectedTracksVolume(vol_val)
-            reaper.Undo_BeginBlock()
             local selcnt = reaper.CountSelectedTracks(0)
             for i = 0, selcnt - 1 do
                 local tr = reaper.GetSelectedTrack(0, i)
                 reaper.SetMediaTrackInfo_Value(tr, "D_VOL", vol_val) 
             end
-            reaper.Undo_EndBlock("Set Selected Tracks Volume", -1)
+        end
+    -- Round Selected Tracks Volume to 0.5dB
+        local function Action_RoundSelectedTracksVolumeToHalfDB()
+            reaper.Undo_BeginBlock()
+            local selcnt = reaper.CountSelectedTracks(0)
+            for i = 0, selcnt - 1 do
+                local tr = reaper.GetSelectedTrack(0, i)
+                local current_vol = reaper.GetMediaTrackInfo_Value(tr, "D_VOL")
+                
+                if current_vol > 0 then
+                    local db = 20 * math.log(current_vol, 10)
+                    local rounded_db = math.floor(db * 2 + 0.5) / 2
+                    local new_vol = 10 ^ (rounded_db / 20.0)
+                    
+                    if math.abs(current_vol - new_vol) > 0.0001 then
+                        reaper.SetMediaTrackInfo_Value(tr, "D_VOL", new_vol)
+                    end
+                end
+            end
+            reaper.Undo_EndBlock("Round Volume to 0.5dB", -1)
         end
     -- Set Selected Tracks Pan
         local function Action_SetSelectedTracksPan(pan_val)
-            reaper.Undo_BeginBlock()
             local selcnt = reaper.CountSelectedTracks(0)
             for i = 0, selcnt - 1 do
                 local tr = reaper.GetSelectedTrack(0, i)
                 reaper.SetMediaTrackInfo_Value(tr, "D_PAN", pan_val)
             end
-            reaper.Undo_EndBlock("Set Selected Tracks Panning", -1)
         end
     -- Set Selected Tracks Width
         local width_val = 1.0
         local function Action_SetSelectedTracksWidth(width_val)
-            reaper.Undo_BeginBlock()
             local selcnt = reaper.CountSelectedTracks(0)
             for i = 0, selcnt - 1 do
                 local tr = reaper.GetSelectedTrack(0, i)
                 -- D_WIDTH: -1.0 (reverse stereo) to 1.0 (normal stereo)
                 reaper.SetMediaTrackInfo_Value(tr, "D_WIDTH", width_val)
             end
-            reaper.Undo_EndBlock("Set Selected Tracks Width", -1)
         end
     -- Constants & Static Functions
         local MAX_DB = 12.0
@@ -214,20 +228,31 @@ local track_colors = {
                 reaper.ImGui_SameLine(ctx)
 
                 local current_slider_pos = db_to_slider_pos(volume_db)
-                reaper.ImGui_SetNextItemWidth(ctx, 272)
+                reaper.ImGui_SetNextItemWidth(ctx, 224)
                 reaper.ImGui_SetCursorPosX(ctx, 494)
 
                 local changed_vol, new_slider_pos = reaper.ImGui_SliderDouble(ctx, '##VolumeSlider', current_slider_pos, 0.0, 1.0, vol_format)
-                local reset_vol = reaper.ImGui_IsItemClicked(ctx, 1)
 
-                -- 3. Volume Logic
-                if reset_vol then
-                    volume_db = 0.0
-                    Action_SetSelectedTracksVolume(1.0)
-                elseif changed_vol then
+                if reaper.ImGui_IsItemActivated(ctx) then reaper.Undo_BeginBlock() end
+                if changed_vol then
                     volume_db = slider_pos_to_db(new_slider_pos)
                     local linear_vol = 10 ^ (volume_db / 20.0)
                     Action_SetSelectedTracksVolume(math.min(linear_vol, 3.98)) -- Max +12dB
+                end
+                if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then reaper.Undo_EndBlock("Set Selected Tracks Volume", -1) end
+
+                -- 우클릭 초기화 (0.0으로 리셋)
+                if reaper.ImGui_IsItemClicked(ctx, 1) then
+                    reaper.Undo_BeginBlock()
+                    volume_db = 0.0
+                    Action_SetSelectedTracksVolume(1.0)
+                    reaper.Undo_EndBlock("Reset Volume", -1)
+                end
+                
+                -- 0.5dB 반올림 버튼 추가
+                reaper.ImGui_SameLine(ctx)
+                if reaper.ImGui_Button(ctx, "0.5dB", 44, 20) then
+                    Action_RoundSelectedTracksVolumeToHalfDB()
                 end
             -- 3. Pan Slider
                 reaper.ImGui_AlignTextToFramePadding(ctx)
@@ -245,14 +270,20 @@ local track_colors = {
                 reaper.ImGui_SetNextItemWidth(ctx, 272)
                 reaper.ImGui_SetCursorPosX(ctx, 494)
                 local changed_pan, new_pan = reaper.ImGui_SliderDouble(ctx, '##Pan', pan_val, -1.0, 1.0, pan_format)
-    
-                -- 우클릭 초기화 (0.0으로 리셋)
-                if reaper.ImGui_IsItemClicked(ctx, 1) then
-                    pan_val = 0.0
-                    Action_SetSelectedTracksPan(0.0)
-                elseif changed_pan then
+
+                if reaper.ImGui_IsItemActivated(ctx) then reaper.Undo_BeginBlock() end
+                if changed_pan then
                     pan_val = new_pan
                     Action_SetSelectedTracksPan(pan_val)
+                end
+                if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then reaper.Undo_EndBlock("Set Selected Tracks Panning", -1) end
+
+                -- 우클릭 초기화 (0.0으로 리셋)
+                if reaper.ImGui_IsItemClicked(ctx, 1) then
+                    reaper.Undo_BeginBlock()
+                    pan_val = 0.0
+                    Action_SetSelectedTracksPan(0.0)
+                    reaper.Undo_EndBlock("Reset Pan", -1)
                 end
             -- 4. Width Slider
                 local width_display = math.abs(width_val * 100)
@@ -273,13 +304,19 @@ local track_colors = {
 
                 local changed_width, new_width = reaper.ImGui_SliderDouble(ctx, '##WidthSlider', width_val, -1.0, 1.0, width_format)
 
-                -- 우클릭 시 기본 스테레오(1.0, 100%)로 초기화
-                if reaper.ImGui_IsItemClicked(ctx, 1) then
-                    width_val = 1.0
-                    Action_SetSelectedTracksWidth(1.0)
-                elseif changed_width then
+                if reaper.ImGui_IsItemActivated(ctx) then reaper.Undo_BeginBlock() end
+                if changed_width then
                     width_val = new_width
                     Action_SetSelectedTracksWidth(width_val)
+                end
+                if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then reaper.Undo_EndBlock("Set Selected Tracks Width", -1) end
+
+                -- 우클릭 시 기본 스테레오(1.0, 100%)로 초기화
+                if reaper.ImGui_IsItemClicked(ctx, 1) then
+                    reaper.Undo_BeginBlock()
+                    width_val = 1.0
+                    Action_SetSelectedTracksWidth(1.0)
+                    reaper.Undo_EndBlock("Reset Width", -1)
                 end
         end
 

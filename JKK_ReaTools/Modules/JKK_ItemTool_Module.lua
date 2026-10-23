@@ -33,7 +33,6 @@ math.randomseed(os.time())
         function ApplyBatchVolume()
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt == 0 then return end
-            reaper.Undo_BeginBlock()
 
             -- dB를 Linear 값으로 변환
             local linear_vol = 10^(adjust_vol / 20)
@@ -48,13 +47,10 @@ math.randomseed(os.time())
             end
             
             reaper.UpdateArrange()
-            reaper.Undo_EndBlock("Batch Take Volume Applied", -1)
         end
         function ApplyBatchPan()
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt == 0 then return end
-            
-            reaper.Undo_BeginBlock()
 
             for i = 0, cnt - 1 do
                 local item = reaper.GetSelectedMediaItem(0, i)
@@ -65,12 +61,10 @@ math.randomseed(os.time())
             end
 
             reaper.UpdateArrange()
-            reaper.Undo_EndBlock("Batch Pan Applied", -1)
         end
         function ApplyBatchPitch()
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt == 0 then return end
-            reaper.Undo_BeginBlock()
 
             for i = 0, cnt - 1 do
                 local item = reaper.GetSelectedMediaItem(0, i)
@@ -78,12 +72,10 @@ math.randomseed(os.time())
             end
             
             reaper.UpdateArrange()
-            reaper.Undo_EndBlock("Batch Pitch Applied", -1)
         end
         function ApplyBatchRate()
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt == 0 then return end
-            reaper.Undo_BeginBlock()
 
             for i = 0, cnt - 1 do
                 local item = reaper.GetSelectedMediaItem(0, i)
@@ -105,15 +97,12 @@ math.randomseed(os.time())
             end
             
             reaper.UpdateArrange()
-            reaper.Undo_EndBlock("Batch Playback Rate Applied", -1)
         end
         function ApplyGroupStretch(stretch_ratio)
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt < 2 then 
               return 
             end
-
-            reaper.Undo_BeginBlock()
 
             local min_pos = math.huge
             local items_data = {}
@@ -146,7 +135,6 @@ math.randomseed(os.time())
             end
             
             reaper.UpdateArrange()
-            reaper.Undo_EndBlock("Group Time Stretch Applied", -1)
         end
     -- Properties Variables
         local item_loop_src = false
@@ -156,13 +144,11 @@ math.randomseed(os.time())
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt == 0 then return end
 
-            reaper.Undo_BeginBlock()
             for i = 0, cnt - 1 do
                 local item = reaper.GetSelectedMediaItem(0, i)
                 reaper.SetMediaItemInfo_Value(item, key, val)
             end
             reaper.UpdateArrange()
-            reaper.Undo_EndBlock("Change Item Property: " .. key, -1)
         end
     -- Fader
         local drag_start_cur = 0.0
@@ -171,27 +157,22 @@ math.randomseed(os.time())
         function ApplyBatchFadeIn(cur)
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt == 0 then return end
-            
-            reaper.Undo_BeginBlock()
+
             for i = 0, cnt - 1 do
                 local item = reaper.GetSelectedMediaItem(0, i)
                 reaper.SetMediaItemInfo_Value(item, "D_FADEINDIR", -cur)
             end
             reaper.UpdateArrange()
-            reaper.Undo_EndBlock("Batch Fade In Curve", -1)
         end
         function ApplyBatchFadeOut(cur)
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt == 0 then return end
-            
-            reaper.Undo_BeginBlock()
             for i = 0, cnt - 1 do
                 local item = reaper.GetSelectedMediaItem(0, i)
                 reaper.SetMediaItemInfo_Value(item, "D_FADEOUTDIR", cur)
             end
             
             reaper.UpdateArrange()
-            reaper.Undo_EndBlock("Batch Fade Out Curve", -1)
         end
         function ApplyFadeShape(shape_idx, is_fade_in)
             local cnt = reaper.CountSelectedMediaItems(0)
@@ -1077,7 +1058,6 @@ math.randomseed(os.time())
             end
             local clusters = persistentClusters
 
-            reaper.Undo_BeginBlock()
             reaper.PreventUIRefresh(1)
 
             local track_counters = {}
@@ -1131,7 +1111,6 @@ math.randomseed(os.time())
             end
 
             reaper.PreventUIRefresh(-1)
-            reaper.Undo_EndBlock("Cluster Spacing Updated", -1)
             reaper.UpdateArrange()
             current_play_slot = 0
         end
@@ -1144,7 +1123,6 @@ math.randomseed(os.time())
             local start_pos = reaper.GetCursorPosition() -- 에디트 커서 고정
             local spacing = CalculateSpacingAmount(width)
 
-            reaper.Undo_BeginBlock()
             reaper.PreventUIRefresh(1)
 
             if not IsPersistentClustersValid() then
@@ -1251,7 +1229,6 @@ math.randomseed(os.time())
             end
 
             reaper.PreventUIRefresh(-1)
-            reaper.Undo_EndBlock("Variator (Cluster) Updated", -1)
             reaper.UpdateArrange()
             current_play_slot = 0
         end
@@ -2293,8 +2270,32 @@ math.randomseed(os.time())
 
                             reaper.ImGui_PushItemWidth(ctx, 200)
                             reaper.ImGui_SetCursorPosX(ctx, 494)
-                            changed_vol, adjust_vol = reaper.ImGui_SliderDouble(ctx, "##Volume", adjust_vol, -30.00, 30.00, "%.2f")
-                            if reaper.ImGui_IsItemClicked(ctx, 1) then adjust_vol = 0.0; ApplyBatchVolume() end
+                            -- adjust_vol 대신 임시 변수(new_vol)로 값을 먼저 받습니다.
+                            local changed_vol, new_vol = reaper.ImGui_SliderDouble(ctx, "##Volume", adjust_vol, -30.00, 30.00, "%.2f")
+                            
+                            -- 1. 슬라이더 클릭(드래그 시작) 시 실행 취소 블록 열기
+                            if reaper.ImGui_IsItemActivated(ctx) then
+                                reaper.Undo_BeginBlock()
+                            end
+
+                            -- 2. 드래그 중에만 값 갱신 및 액션 실행
+                            if changed_vol then 
+                                adjust_vol = new_vol
+                                ApplyBatchVolume() 
+                            end
+
+                            -- 3. 마우스 클릭을 떼는 순간 실행 취소 블록 닫기 (중간 단계가 하나로 병합됨)
+                            if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then
+                                reaper.Undo_EndBlock("Batch Take Volume Applied", -1)
+                            end
+
+                            -- 4. 우클릭 초기화 액션은 한 번의 클릭이므로 자체 블록으로 감싸기
+                            if reaper.ImGui_IsItemClicked(ctx, 1) then 
+                                reaper.Undo_BeginBlock()
+                                adjust_vol = 0.0
+                                ApplyBatchVolume()
+                                reaper.Undo_EndBlock("Reset Volume", -1)
+                            end
                         -- Pan Slider
                             reaper.ImGui_AlignTextToFramePadding(ctx)
                             reaper.ImGui_Text(ctx, "  Pan")
@@ -2308,31 +2309,71 @@ math.randomseed(os.time())
                             elseif adjust_pan > 0 then
                                 pan_format = string.format("%.0fR", pan_display_val)
                             end
-                            changed_pan, adjust_pan = reaper.ImGui_SliderDouble(ctx, "##Pan", adjust_pan, -1.00, 1.00, pan_format)
-                            if reaper.ImGui_IsItemClicked(ctx, 1) then adjust_pan = 0.0; ApplyBatchPan() end
+                            local changed_pan, new_pan = reaper.ImGui_SliderDouble(ctx, "##Pan", adjust_pan, -1.00, 1.00, pan_format)
+
+                            if reaper.ImGui_IsItemActivated(ctx) then reaper.Undo_BeginBlock() end
+                            if changed_pan then 
+                                adjust_pan = new_pan
+                                ApplyBatchPan() 
+                            end
+                            if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then reaper.Undo_EndBlock("Batch Pan Applied", -1) end
+
+                            if reaper.ImGui_IsItemClicked(ctx, 1) then 
+                                reaper.Undo_BeginBlock()
+                                adjust_pan = 0.0
+                                ApplyBatchPan()
+                                reaper.Undo_EndBlock("Reset Pan", -1) 
+                            end
                         -- Pitch Slider
                             reaper.ImGui_AlignTextToFramePadding(ctx)
                             reaper.ImGui_Text(ctx, "  Pitch")
                             reaper.ImGui_SameLine(ctx)
 
                             reaper.ImGui_SetCursorPosX(ctx, 494)
-                            changed_pitch, adjust_pitch = reaper.ImGui_SliderDouble(ctx, "##Pitch", adjust_pitch, -12, 12, "%.1f")
-                            if reaper.ImGui_IsItemClicked(ctx, 1) then adjust_pitch = 0.0; ApplyBatchPitch() end
+                            local changed_pitch, new_pitch = reaper.ImGui_SliderDouble(ctx, "##Pitch", adjust_pitch, -12, 12, "%.1f")
+
+                            if reaper.ImGui_IsItemActivated(ctx) then reaper.Undo_BeginBlock() end
+                            if changed_pitch then 
+                                adjust_pitch = new_pitch
+                                ApplyBatchPitch() 
+                            end
+                            if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then reaper.Undo_EndBlock("Batch Pitch Applied", -1) end
+
+                            if reaper.ImGui_IsItemClicked(ctx, 1) then 
+                                reaper.Undo_BeginBlock()
+                                adjust_pitch = 0.0
+                                ApplyBatchPitch()
+                                reaper.Undo_EndBlock("Reset Pitch", -1)
+                            end
                         -- Rate Slider
                             reaper.ImGui_AlignTextToFramePadding(ctx)
                             reaper.ImGui_Text(ctx, "  Play Rate")
                             reaper.ImGui_SameLine(ctx)
 
                             reaper.ImGui_SetCursorPosX(ctx, 494)
-                            changed_rate, adjust_rate = reaper.ImGui_SliderDouble(ctx, "##Playback Rate", adjust_rate, 0.25, 4.0, "%.2f", reaper.ImGui_SliderFlags_Logarithmic())
-                            if reaper.ImGui_IsItemClicked(ctx, 1) then adjust_rate = 1.0; ApplyBatchRate() end
+                            local changed_rate, new_rate = reaper.ImGui_SliderDouble(ctx, "##Playback Rate", adjust_rate, 0.25, 4.0, "%.2f", reaper.ImGui_SliderFlags_Logarithmic())
+
+                            if reaper.ImGui_IsItemActivated(ctx) then reaper.Undo_BeginBlock() end
+                            if changed_rate then 
+                                adjust_rate = new_rate
+                                ApplyBatchRate() 
+                            end
+                            if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then reaper.Undo_EndBlock("Batch Playback Rate Applied", -1) end
+
+                            if reaper.ImGui_IsItemClicked(ctx, 1) then 
+                                reaper.Undo_BeginBlock()
+                                adjust_rate = 1.0
+                                ApplyBatchRate()
+                                reaper.Undo_EndBlock("Reset Playback Rate", -1)
+                            end
                         -- Group Stretch Ratio Slider
                             reaper.ImGui_AlignTextToFramePadding(ctx)
                             reaper.ImGui_Text(ctx, "  Stretch")
                             reaper.ImGui_SameLine(ctx)
 
                             reaper.ImGui_SetCursorPosX(ctx, 494)
-                            changed_group_stretch, adjust_ratio = reaper.ImGui_SliderDouble(ctx, "##Group Stretch", group_stretch_ratio, 0.25, 4.0, "%.2f", reaper.ImGui_SliderFlags_Logarithmic())
+                            local changed_group_stretch, adjust_ratio = reaper.ImGui_SliderDouble(ctx, "##Group Stretch", group_stretch_ratio, 0.25, 4.0, "%.2f", reaper.ImGui_SliderFlags_Logarithmic())
+
                             local is_group_stretch_slider_active = reaper.ImGui_IsItemActive(ctx)
                             if current_project_state_count ~= prev_count and not is_group_stretch_slider_active then
                                 if group_stretch_ratio ~= 1.0 or prev_group_stretch_ratio ~= 1.0 then
@@ -2340,12 +2381,26 @@ math.randomseed(os.time())
                                     prev_group_stretch_ratio = 1.0
                                 end
                             end
+
+                            if reaper.ImGui_IsItemActivated(ctx) then reaper.Undo_BeginBlock() end
+                            if changed_group_stretch then
+                                group_stretch_ratio = adjust_ratio
+                                if group_stretch_ratio ~= prev_group_stretch_ratio then
+                                    ApplyGroupStretch(group_stretch_ratio)
+                                    prev_group_stretch_ratio = group_stretch_ratio
+                                    update_prev()
+                                end
+                            end
+                            if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then reaper.Undo_EndBlock("Group Time Stretch Applied", -1) end
+
                             if reaper.ImGui_IsItemClicked(ctx, 1) then 
+                                reaper.Undo_BeginBlock()
                                 adjust_ratio = 1.0
                                 group_stretch_ratio = 1.0
                                 ApplyGroupStretch(group_stretch_ratio)
                                 prev_group_stretch_ratio = 1.0
                                 update_prev()
+                                reaper.Undo_EndBlock("Reset Group Stretch", -1)
                             end
                         -- Call only the function corresponding to the changed slider
                             if changed_vol then ApplyBatchVolume() end
@@ -2606,9 +2661,10 @@ math.randomseed(os.time())
                             end
 
                             -- 슬라이더 그리기
-                            local changed, new_val = reaper.ImGui_SliderDouble(ctx, "##Width", width, cur_min, cur_max, format_str)
+                            local changed_width, new_val = reaper.ImGui_SliderDouble(ctx, "##Width", width, cur_min, cur_max, format_str)
 
-                            if changed then 
+                            if reaper.ImGui_IsItemActivated(ctx) then reaper.Undo_BeginBlock() end
+                            if changed_width then 
                                 if spacing_mode == 0 then
                                     width = math.floor(new_val + 0.5)
                                 else
@@ -2616,6 +2672,7 @@ math.randomseed(os.time())
                                 end
                                 apply_spacing_only()
                             end
+                            if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then reaper.Undo_EndBlock("Update Interval Width", -1) end
 
                             -- 우클릭 시 3가지 모드 순환 (0 -> 1 -> 2 -> 0)
                             if reaper.ImGui_IsItemClicked(ctx, 1) then
@@ -2656,8 +2713,21 @@ math.randomseed(os.time())
                             reaper.ImGui_SameLine(ctx)
                             reaper.ImGui_PushItemWidth(ctx, 200)
                             reaper.ImGui_SetCursorPosX(ctx, 930 + 413)
-                            changed, pos_range = reaper.ImGui_SliderDouble(ctx, '##Pos Range', pos_range, 0, 1.0, '%.3f')
-                            if reaper.ImGui_IsItemClicked(ctx, 1) then pos_range = 0.0 end
+                            local changed_pos_rng, new_pos_range = reaper.ImGui_SliderDouble(ctx, '##Pos Range', pos_range, 0, 1.0, '%.3f')
+
+                            if live_update and reaper.ImGui_IsItemActivated(ctx) then reaper.Undo_BeginBlock() end
+                            if changed_pos_rng then 
+                                pos_range = new_pos_range
+                                if live_update then arrange_items() end
+                            end
+                            if live_update and reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then reaper.Undo_EndBlock("Update Pos Range", -1) end
+
+                            if reaper.ImGui_IsItemClicked(ctx, 1) then 
+                                if live_update then reaper.Undo_BeginBlock() end
+                                pos_range = 0.0 
+                                if live_update then arrange_items() end
+                                if live_update then reaper.Undo_EndBlock("Reset Pos Range", -1) end
+                            end
                             reaper.ImGui_SameLine(ctx)
                             
                             local changed_pos, new_pos = reaper.ImGui_Checkbox(ctx, 'Rand##pos', random_pos)
@@ -2676,8 +2746,21 @@ math.randomseed(os.time())
                             reaper.ImGui_SameLine(ctx)
                             reaper.ImGui_PushItemWidth(ctx, 200)
                             reaper.ImGui_SetCursorPosX(ctx, 930 + 413)
-                            changed, pitch_range = reaper.ImGui_SliderDouble(ctx, '##Pitch Range', pitch_range, 0, 24, '%.3f')
-                            if reaper.ImGui_IsItemClicked(ctx, 1) then pitch_range = 0.0 end
+                            local changed_pitch_rng, new_pitch_rng = reaper.ImGui_SliderDouble(ctx, '##Pitch Range', pitch_range, 0, 24, '%.3f')
+
+                            if live_update and reaper.ImGui_IsItemActivated(ctx) then reaper.Undo_BeginBlock() end
+                            if changed_pitch_rng then 
+                                pitch_range = new_pitch_rng 
+                                if live_update then arrange_items() end
+                            end
+                            if live_update and reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then reaper.Undo_EndBlock("Update Pitch Range", -1) end
+
+                            if reaper.ImGui_IsItemClicked(ctx, 1) then 
+                                if live_update then reaper.Undo_BeginBlock() end
+                                pitch_range = 0.0 
+                                if live_update then arrange_items() end
+                                if live_update then reaper.Undo_EndBlock("Reset Pitch Range", -1) end
+                            end
                             reaper.ImGui_SameLine(ctx)
                             
                             local changed_pitch, new_pitch = reaper.ImGui_Checkbox(ctx, 'Rand##pitch', random_pitch)
@@ -2696,8 +2779,21 @@ math.randomseed(os.time())
                             reaper.ImGui_SameLine(ctx)
                             reaper.ImGui_PushItemWidth(ctx, 200)
                             reaper.ImGui_SetCursorPosX(ctx, 930 + 413)
-                            changed, playback_range = reaper.ImGui_SliderDouble(ctx, '##Playrate Range', playback_range, 0, 24, '%.3f')
-                            if reaper.ImGui_IsItemClicked(ctx, 1) then playback_range = 0.0 end
+                            local changed_play_rng, new_play_rng = reaper.ImGui_SliderDouble(ctx, '##Playrate Range', playback_range, 0, 24, '%.3f')
+
+                            if live_update and reaper.ImGui_IsItemActivated(ctx) then reaper.Undo_BeginBlock() end
+                            if changed_play_rng then 
+                                playback_range = new_play_rng 
+                                if live_update then arrange_items() end
+                            end
+                            if live_update and reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then reaper.Undo_EndBlock("Update Playrate Range", -1) end
+
+                            if reaper.ImGui_IsItemClicked(ctx, 1) then 
+                                if live_update then reaper.Undo_BeginBlock() end
+                                playback_range = 0.0 
+                                if live_update then arrange_items() end
+                                if live_update then reaper.Undo_EndBlock("Reset Playrate Range", -1) end
+                            end
                             reaper.ImGui_SameLine(ctx)
                             
                             local changed_play, new_play = reaper.ImGui_Checkbox(ctx, 'Rand##playback', random_play)
@@ -2716,8 +2812,21 @@ math.randomseed(os.time())
                             reaper.ImGui_SameLine(ctx)
                             reaper.ImGui_PushItemWidth(ctx, 200)
                             reaper.ImGui_SetCursorPosX(ctx, 930 + 413)
-                            changed, vol_range = reaper.ImGui_SliderDouble(ctx, '##Vol Range', vol_range, 0, 10, '%.02f')
-                            if reaper.ImGui_IsItemClicked(ctx, 1) then vol_range = 0.0 end
+                            local changed_vol_rng, new_vol_rng = reaper.ImGui_SliderDouble(ctx, '##Vol Range', vol_range, 0, 10, '%.02f')
+
+                            if live_update and reaper.ImGui_IsItemActivated(ctx) then reaper.Undo_BeginBlock() end
+                            if changed_vol_rng then 
+                                vol_range = new_vol_rng 
+                                if live_update then arrange_items() end
+                            end
+                            if live_update and reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then reaper.Undo_EndBlock("Update Vol Range", -1) end
+
+                            if reaper.ImGui_IsItemClicked(ctx, 1) then 
+                                if live_update then reaper.Undo_BeginBlock() end
+                                vol_range = 0.0 
+                                if live_update then arrange_items() end
+                                if live_update then reaper.Undo_EndBlock("Reset Vol Range", -1) end
+                            end
                             reaper.ImGui_SameLine(ctx)
                             
                             local changed_vol_rand, new_vol_rand = reaper.ImGui_Checkbox(ctx, 'Rand##vol', random_vol)
@@ -2915,9 +3024,9 @@ math.randomseed(os.time())
         local general_state_changed = has_changed()
         
         if general_state_changed then
-            if has_range_value_changed() and live_update then
-                arrange_items()
-            end
+            --if has_range_value_changed() and live_update then
+            --    arrange_items()
+            --end
             update_prev()
             SaveSettings()
         end
