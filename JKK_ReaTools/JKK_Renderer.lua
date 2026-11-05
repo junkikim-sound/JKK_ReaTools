@@ -1,9 +1,7 @@
 --========================================================
 -- @title JKK_Renderer
 -- @author Junki Kim
--- @version 1.0.0
--- @provides 
---     [nomain] Modules/JKK_Theme.lua
+-- @version 1.0.1
 --========================================================
 
 local r = reaper

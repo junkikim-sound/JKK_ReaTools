@@ -1,9 +1,7 @@
 --========================================================
 -- @title JKK_Renamer
 -- @author Junki Kim
--- @version 1.0.0
--- @provides 
---     [nomain] Modules/JKK_Theme.lua
+-- @version 1.0.1
 --     [nomain] Modules/JKK_Renamer_UCSList.lua
 --     [nomain] Modules/JKK_Renamer_WildcardList.lua
 --========================================================

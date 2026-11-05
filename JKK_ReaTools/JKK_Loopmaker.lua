@@ -1,9 +1,7 @@
 --========================================================
 -- @title JKK_Loopmaker
 -- @author Junki Kim
--- @version 1.0.0
--- @provides 
---     [nomain] Modules/JKK_Theme.lua
+-- @version 1.0.1
 --========================================================
 
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'
