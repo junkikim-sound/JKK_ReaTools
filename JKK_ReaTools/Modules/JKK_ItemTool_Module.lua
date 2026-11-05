@@ -1307,6 +1307,7 @@ math.randomseed(os.time())
         local minSilenceDuration = 0.2
         local showGuideBox = false
         local shouldKeepOriginal = true
+        local grid_slice_n = 5
 
         local lastSelectionSignature = ""
         local silenceItems = {}
@@ -2192,6 +2193,36 @@ math.randomseed(os.time())
                 reaper.defer(loop)
             end
         end
+    -- Grid Spliter
+        local function GridSplitMain(n_val)
+            local cnt = reaper.CountSelectedMediaItems(0)
+            if cnt == 0 then return end
+
+            local _, grid_sec = reaper.GetSetProjectGrid(0, false)
+            if grid_sec <= 0 then return end
+
+            -- 입력값의 2배 그리드 간격 적용
+            local slice_interval = grid_sec * (n_val * 2)
+
+            for i = cnt - 1, 0, -1 do
+                local item = reaper.GetSelectedMediaItem(0, i)
+                local item_start = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+                local item_len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+                local item_end = item_start + item_len
+
+                local split_pos = item_start + slice_interval
+
+                while split_pos < item_end - 0.0001 do
+                    local new_item = reaper.SplitMediaItem(item, split_pos)
+                    if new_item then
+                        item = new_item
+                    end
+                    split_pos = split_pos + slice_interval
+                end
+            end
+
+            reaper.UpdateArrange()
+        end
 
 ----------------------------------------------------------
 -- Function: Color Palette 
@@ -2878,11 +2909,12 @@ math.randomseed(os.time())
                     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF)
                     reaper.ImGui_SeparatorText(ctx, 'Item Spliter')
                     reaper.ImGui_PopStyleColor(ctx)
-                    -- Threshold 
+                    
+                    -- Row 1: Threshold | Split | Grid N Slider
                         reaper.ImGui_AlignTextToFramePadding(ctx)
                         reaper.ImGui_Text(ctx, "  Threshold")
                         reaper.ImGui_SameLine(ctx)
-                        reaper.ImGui_SetNextItemWidth(ctx, 200)
+                        reaper.ImGui_SetNextItemWidth(ctx, 126)
                         reaper.ImGui_SetCursorPosX(ctx, 1330 + 413)
                         local thres_changed, new_thres = reaper.ImGui_SliderDouble(ctx, '##Threshold', silenceThreshold, 0.001, 0.3, "%.3f")
                         if thres_changed then silenceThreshold = new_thres end
@@ -2890,8 +2922,8 @@ math.randomseed(os.time())
                             silenceThreshold = 0.01
                             thres_changed = true 
                         end
+                        
                         reaper.ImGui_SameLine(ctx)
-                    -- Split
                         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x233C4FFF)
                         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x435665FF)
                         reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x042239FF)
@@ -2913,20 +2945,35 @@ math.randomseed(os.time())
                             reaper.Undo_EndBlock("Split", -1)
                         end
                         reaper.ImGui_PopStyleColor(ctx, 3)
-                    -- Min Duration
+
+                        -- Grid N Slider (Split 버튼 우측, 폭 100px)
+                        reaper.ImGui_SameLine(ctx)
+                        reaper.ImGui_SetNextItemWidth(ctx, 100)
+                        local slider_n_changed, new_n = reaper.ImGui_SliderInt(ctx, '##GridNSlider', grid_slice_n, 1, 10, "%d grid")
+                        if slider_n_changed then
+                            grid_slice_n = new_n
+                        end
+                        if reaper.ImGui_IsItemClicked(ctx, 1) then
+                            grid_slice_n = 5 -- 우클릭 시 기본값 5로 초기화
+                        end
+                        if reaper.ImGui_IsItemHovered(ctx) then
+                            reaper.ImGui_SetTooltip(ctx, "Grid Slice count (1~10)\nRight-click to reset (5)")
+                        end
+
+                    -- Row 2: Min Length | Split & Takes | Grid Split
                         reaper.ImGui_AlignTextToFramePadding(ctx)
                         reaper.ImGui_Text(ctx, "  Min Length")
                         reaper.ImGui_SameLine(ctx)
-                        reaper.ImGui_SetNextItemWidth(ctx, 200)
+                        reaper.ImGui_SetNextItemWidth(ctx, 126)
                         reaper.ImGui_SetCursorPosX(ctx, 1330 + 413)
                         local dur_changed, new_dur = reaper.ImGui_SliderDouble(ctx, '##Min Duration', minSilenceDuration, 0.001, 2.0, "%.3f")
                         if dur_changed then minSilenceDuration = new_dur end
                         if reaper.ImGui_IsItemClicked(ctx, 1) then 
                             minSilenceDuration = 0.2
                             dur_changed = true
-                        end                         
+                        end
+                        
                         reaper.ImGui_SameLine(ctx)
-                    -- Split & Takes
                         if reaper.ImGui_Button(ctx, 'Split & Takes', 100, 22) then
                             cleanup()
                             reaper.Undo_BeginBlock()
@@ -2949,6 +2996,19 @@ math.randomseed(os.time())
                             end
                             reaper.Undo_EndBlock("Split & Takes", -1)
                         end
+
+                        -- Grid Split Button (Split & Takes 우측, 폭 100px)
+                        reaper.ImGui_SameLine(ctx)
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x233C4FFF)
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x435665FF)
+                        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x042239FF)
+                        if reaper.ImGui_Button(ctx, 'Grid Split', 100, 22) then
+                            reaper.Undo_BeginBlock()
+                            GridSplitMain(grid_slice_n)
+                            reaper.Undo_EndBlock("Grid Split Items", -1)
+                        end
+                        reaper.ImGui_PopStyleColor(ctx, 3)
+
                     -- 실시간 분석 및 가이드 박스 업데이트 로직
                         local currentSignature = GetSelectionHash()
                         if showGuideBox and (thres_changed or dur_changed or guide_changed or currentSignature ~= lastSelectionSignature) then
@@ -2965,7 +3025,8 @@ math.randomseed(os.time())
                             end
                             lastSelectionSignature = currentSignature
                         end
-                    -- Keep Original
+
+                    -- Keep Original & Guide Checkboxes
                         reaper.ImGui_Text(ctx, "")
                         reaper.ImGui_SameLine(ctx)
                         shouldKeepOriginalChanged, shouldKeepOriginal = reaper.ImGui_Checkbox(ctx, "Keep Origin When Rendering", shouldKeepOriginal)
@@ -2973,7 +3034,6 @@ math.randomseed(os.time())
                             reaper.SetExtState("PeaksAndValleys", "shouldKeepOriginal", tostring(shouldKeepOriginal), true)
                         end
                         reaper.ImGui_SameLine(ctx)
-                    -- Guide
                         local guide_changed, new_guide = reaper.ImGui_Checkbox(ctx, "Guide", showGuideBox)
                         if guide_changed then 
                             showGuideBox = new_guide 

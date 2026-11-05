@@ -45,7 +45,7 @@ function ApplyTheme(ctx)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(),                      0xedededFF) ---
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_TextDisabled(),              0x808080FF)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_WindowBg(),                  0x252525FF) ---
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ChildBg(),                   0x00000000)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ChildBg(),                   0x202020FF)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_PopupBg(),                   0x141414F0)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Border(),                    0x505050FF)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_BorderShadow(),              0x808080FF)
