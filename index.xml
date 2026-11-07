@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="JKK_ReaTools" commit="6dc29d7844891b640052d66232b388c7344e5302">
+<index version="1" name="JKK_ReaTools" commit="86d207cb1666c5f036f601cda435d91a4f85075d">
   <category name="Global Sampler (Origin by BirdBird)">
     <reapack name="BirdBird_Global Sampler (JKK_Edited).lua" type="script" desc="Global Sampler (Edited by JKK)">
       <version name="0.99.8.5" author="BirdBird" time="2026-05-08T13:57:22Z">
@@ -28,6 +28,9 @@
     <reapack name="JKK_Loopmaker.lua" type="script">
       <version name="1.0.1" author="Junki Kim" time="2026-11-05T17:14:23Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/2fa041d42b1d1c39bbc499a1a4083b9c52d95abf/JKK_ReaTools/JKK_Loopmaker.lua</source>
+      </version>
+      <version name="1.2.2" author="Junki Kim" time="2026-11-07T15:45:29Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/86d207cb1666c5f036f601cda435d91a4f85075d/JKK_ReaTools/JKK_Loopmaker.lua</source>
       </version>
     </reapack>
     <reapack name="JKK_ReaTools.lua" type="script">
@@ -115,20 +118,34 @@
         <source file="Modules/JKK_Renamer_UCSList.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/6dc29d7844891b640052d66232b388c7344e5302/JKK_ReaTools/Modules/JKK_Renamer_UCSList.lua</source>
         <source file="Modules/JKK_Renamer_WildcardList.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/6dc29d7844891b640052d66232b388c7344e5302/JKK_ReaTools/Modules/JKK_Renamer_WildcardList.lua</source>
       </version>
+      <version name="1.0.4" author="Junki Kim" time="2026-11-07T15:45:29Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/86d207cb1666c5f036f601cda435d91a4f85075d/JKK_ReaTools/JKK_Renamer.lua</source>
+        <source file="Modules/JKK_Renamer_UCSList.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/86d207cb1666c5f036f601cda435d91a4f85075d/JKK_ReaTools/Modules/JKK_Renamer_UCSList.lua</source>
+        <source file="Modules/JKK_Renamer_WildcardList.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/86d207cb1666c5f036f601cda435d91a4f85075d/JKK_ReaTools/Modules/JKK_Renamer_WildcardList.lua</source>
+      </version>
     </reapack>
     <reapack name="JKK_Renderer.lua" type="script">
       <version name="1.0.1" author="Junki Kim" time="2026-11-05T17:14:23Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/2fa041d42b1d1c39bbc499a1a4083b9c52d95abf/JKK_ReaTools/JKK_Renderer.lua</source>
+      </version>
+      <version name="1.1.0" author="Junki Kim" time="2026-11-07T15:45:29Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/86d207cb1666c5f036f601cda435d91a4f85075d/JKK_ReaTools/JKK_Renderer.lua</source>
       </version>
     </reapack>
     <reapack name="JKK_Track Visualizer FX Chain.lua" type="script">
       <version name="1.0.0" author="Junki Kim" time="2026-10-23T14:34:08Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/ec81ec8270ed229a7f611208d975ef250aec6b7b/JKK_ReaTools/JKK_Track%20Visualizer%20FX%20Chain.lua</source>
       </version>
+      <version name="1.0.03" author="Junki Kim" time="2026-11-07T15:45:29Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/86d207cb1666c5f036f601cda435d91a4f85075d/JKK_ReaTools/JKK_Track%20Visualizer%20FX%20Chain.lua</source>
+      </version>
     </reapack>
     <reapack name="JKK_Volume Rounder.lua" type="script">
       <version name="1.0.0" author="Junki Kim" time="2026-10-23T14:34:08Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/ec81ec8270ed229a7f611208d975ef250aec6b7b/JKK_ReaTools/JKK_Volume%20Rounder.lua</source>
+      </version>
+      <version name="1.0.03" author="Junki Kim" time="2026-11-07T15:45:29Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/86d207cb1666c5f036f601cda435d91a4f85075d/JKK_ReaTools/JKK_Volume%20Rounder.lua</source>
       </version>
     </reapack>
   </category>
