@@ -1,16 +1,55 @@
 --========================================================
 -- @title JKK_Renderer
 -- @author Junki Kim
--- @version 1.0.1
+-- @version 1.1.0
 --========================================================
 
 local r = reaper
+
+-- Renamer와 동일한 UCS / Wildcard 데이터 모듈을 사용한다.
+local script_info = debug.getinfo(1, 'S')
+local script_path = script_info.source:match([[^@?(.*[\/])]]) or ""
+local function LoadListModule(filename)
+  local ok, result = pcall(dofile, script_path .. "Modules/" .. filename)
+  if ok and type(result) == "table" then return result end
+  return {}
+end
+local w_list = LoadListModule("JKK_Renamer_WildcardList.lua")
+local ucs_list = LoadListModule("JKK_Renamer_UCSList.lua")
 
 local ctx = r.ImGui_CreateContext("JKK_Render")
 local font = r.ImGui_CreateFont('Arial', 14)
 local font_btn = r.ImGui_CreateFont('Arial', 18)
 r.ImGui_Attach(ctx, font)
 r.ImGui_Attach(ctx, font_btn)
+
+-- Renamer와 동일한 Tab 자동완성 / 위아래 화살표 선택 콜백
+local completion_callback = r.ImGui_CreateFunctionFromEEL([[
+EventFlag == InputTextFlags_CallbackCompletion ? (
+    tab_requested = 1;
+);
+EventFlag == InputTextFlags_CallbackHistory ? (
+    EventKey == Key_UpArrow ? (up_requested = 1;);
+    EventKey == Key_DownArrow ? (down_requested = 1;);
+);
+]])
+r.ImGui_Attach(ctx, completion_callback)
+r.ImGui_Function_SetValue(completion_callback, "InputTextFlags_CallbackCompletion",
+  r.ImGui_InputTextFlags_CallbackCompletion())
+r.ImGui_Function_SetValue(completion_callback, "InputTextFlags_CallbackHistory",
+  r.ImGui_InputTextFlags_CallbackHistory())
+r.ImGui_Function_SetValue(completion_callback, "Key_UpArrow", r.ImGui_Key_UpArrow())
+r.ImGui_Function_SetValue(completion_callback, "Key_DownArrow", r.ImGui_Key_DownArrow())
+r.ImGui_Function_SetValue(completion_callback, "tab_requested", 0)
+r.ImGui_Function_SetValue(completion_callback, "up_requested", 0)
+r.ImGui_Function_SetValue(completion_callback, "down_requested", 0)
+
+-- File name 입력창 자동완성 상태
+local file_input_set_focus = true
+local select_all_on_initial_file_focus = true
+local popup_dismissed = false
+local suppress_initial_autocomplete = true
+local popup_sel_idx = 1
 
 -- =======================================================
 -- Theme Module Integration
@@ -24,6 +63,57 @@ local bnd_list = " Entire project\0 Time selection\0"
 local sr_items = {"8000", "11025", "16000", "22050", "32000", "44100", "48000", "88200", "96000", "176400", "192000"}
 local sr_values = {8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000, 176400, 192000}
 local format_list = " WAV\0 AIFF\0 FLAC\0 MP3\0 OGG Opus\0 OGG Vorbis\0 Video (MP4)\0"
+
+-- # 단축어: 콤보박스 값 변경용. 설명(desc)도 검색 대상에 포함한다.
+local render_shortcuts = {
+  {insert="#srcmaster", cat="Source", sub="Source", name="Master mix", desc="Render the complete master mix"},
+  {insert="#srcstem", cat="Source", sub="Source", name="Selected tracks (stems)", desc="Render selected tracks as stems"},
+  {insert="#srcregionts", cat="Source", sub="Source", name="Selected Regions (Matrix)", desc="Render regions enabled in the Region Render Matrix"},
+  {insert="#srcregiontime", cat="Source", sub="Source", name="Selected Regions (Time Selection)", desc="Render regions overlapping the current time selection"},
+  {insert="#srcitemgrp", cat="Source", sub="Source", name="Selected media items (Grouped)", desc="Render selected media items as a group"},
+  {insert="#srcitemsp", cat="Source", sub="Source", name="Selected media items (Separately)", desc="Render selected media items separately"},
+
+  {insert="#bndwhole", cat="Bounds", sub="Bounds", name="Entire project", desc="Render the entire project"},
+  {insert="#bndtime", cat="Bounds", sub="Bounds", name="Time selection", desc="Render only the current time selection"},
+
+  {insert="#chauto", cat="Channels", sub="Channels", name="Auto (Follow Source)", desc="Automatically follow the source track channel count"},
+  {insert="#chmono", cat="Channels", sub="Channels", name="Mono", desc="Render one output channel"},
+  {insert="#chstereo", cat="Channels", sub="Channels", name="Stereo", desc="Render two output channels"},
+  {insert="#ch3", cat="Channels", sub="Channels", name="3 channels", desc="Render three output channels"},
+  {insert="#ch4", cat="Channels", sub="Channels", name="4 channels", desc="Render four output channels"},
+  {insert="#ch5", cat="Channels", sub="Channels", name="5 channels", desc="Render five output channels"},
+  {insert="#ch6", cat="Channels", sub="Channels", name="6 channels", desc="Render six output channels"},
+  {insert="#ch7", cat="Channels", sub="Channels", name="7 channels", desc="Render seven output channels"},
+  {insert="#ch8", cat="Channels", sub="Channels", name="8 channels", desc="Render eight output channels"},
+  {insert="#ch9", cat="Channels", sub="Channels", name="9 channels", desc="Render nine output channels"},
+
+  {insert="#rateauto", cat="Sample Rate", sub="Rate", name="Auto (Follow Source)", desc="Automatically follow the source item sample rate"},
+  {insert="#rate8000", cat="Sample Rate", sub="Rate", name="8000 Hz", desc="Set sample rate to 8000 Hz"},
+  {insert="#rate11025", cat="Sample Rate", sub="Rate", name="11025 Hz", desc="Set sample rate to 11025 Hz"},
+  {insert="#rate16000", cat="Sample Rate", sub="Rate", name="16000 Hz", desc="Set sample rate to 16000 Hz"},
+  {insert="#rate22050", cat="Sample Rate", sub="Rate", name="22050 Hz", desc="Set sample rate to 22050 Hz"},
+  {insert="#rate32000", cat="Sample Rate", sub="Rate", name="32000 Hz", desc="Set sample rate to 32000 Hz"},
+  {insert="#rate44100", cat="Sample Rate", sub="Rate", name="44100 Hz", desc="Set sample rate to 44100 Hz"},
+  {insert="#rate48000", cat="Sample Rate", sub="Rate", name="48000 Hz", desc="Set sample rate to 48000 Hz"},
+  {insert="#rate88200", cat="Sample Rate", sub="Rate", name="88200 Hz", desc="Set sample rate to 88200 Hz"},
+  {insert="#rate96000", cat="Sample Rate", sub="Rate", name="96000 Hz", desc="Set sample rate to 96000 Hz"},
+  {insert="#rate176400", cat="Sample Rate", sub="Rate", name="176400 Hz", desc="Set sample rate to 176400 Hz"},
+  {insert="#rate192000", cat="Sample Rate", sub="Rate", name="192000 Hz", desc="Set sample rate to 192000 Hz"},
+
+  {insert="#fwav", cat="Format", sub="Format", name="WAV", desc="Select WAV audio format"},
+  {insert="#fmp3", cat="Format", sub="Format", name="MP3", desc="Select MP3 audio format"},
+  {insert="#faiff", cat="Format", sub="Format", name="AIFF", desc="Select AIFF audio format"},
+  {insert="#fflac", cat="Format", sub="Format", name="FLAC", desc="Select FLAC audio format"},
+  {insert="#fogg", cat="Format", sub="Format", name="OGG Vorbis", desc="Select OGG Vorbis audio format"},
+  {insert="#fopus", cat="Format", sub="Format", name="OGG Opus", desc="Select OGG Opus audio format"},
+  {insert="#fmp4", cat="Format", sub="Format", name="Video (MP4)", desc="Select MP4 video format"},
+
+  {insert="#b8", cat="Bit Depth", sub="Bit depth", name="8-bit PCM", desc="Select 8-bit PCM bit depth; switches to WAV if needed"},
+  {insert="#b16", cat="Bit Depth", sub="Bit depth", name="16-bit PCM", desc="Select 16-bit PCM bit depth; switches to WAV if needed"},
+  {insert="#b32", cat="Bit Depth", sub="Bit depth", name="32-bit PCM", desc="Select 32-bit integer PCM bit depth; switches to WAV if needed"},
+  {insert="#b32f", cat="Bit Depth", sub="Bit depth", name="32-bit Float", desc="Select 32-bit floating-point bit depth; switches to WAV if needed"},
+  {insert="#b64f", cat="Bit Depth", sub="Bit depth", name="64-bit Float", desc="Select 64-bit floating-point bit depth; switches to WAV if needed"},
+}
 
 local vid_size_list = " UHD (3840 x 2160)\0 QHD (2560 x 1440)\0 FHD (1920 x 1080)\0 HD (1024 x 720)\0 SD (640 x 480)\0"
 local vid_sizes_w = {3840, 2560, 1920, 1024, 640}
@@ -61,6 +151,8 @@ local function CreateDefaultTabState(name)
     vid_fps_idx = 5,
     file_directory = r.GetProjectPath("") .. "/Rendered",
     file_pattern = "$item",
+    enable_pad_start = false,
+    pad_start_len = 0.000,
     enable_tail = false,
     tail_len = 1.000,
     enable_fadein = false,
@@ -94,6 +186,112 @@ local fav_name_buf = ""
 local open = true
 
 -- =======================================================
+-- File name shortcut helpers
+-- =======================================================
+local function ApplyRenderShortcut(tab, shortcut)
+  local source_map = {
+    srcmaster = 0, srcstem = 1, srcregionts = 2, srcregiontime = 3,
+    srcitemgrp = 4, srcitemsp = 5,
+  }
+  local rate_map = {
+    ["8000"] = 1, ["11025"] = 2, ["16000"] = 3, ["22050"] = 4,
+    ["32000"] = 5, ["44100"] = 6, ["48000"] = 7, ["88200"] = 8,
+    ["96000"] = 9, ["176400"] = 10, ["192000"] = 11,
+  }
+  local format_map = { fwav = 0, faiff = 1, fflac = 2, fmp3 = 3, fopus = 4, fogg = 5, fmp4 = 6 }
+
+  if source_map[shortcut] ~= nil then
+    tab.render_source = source_map[shortcut]
+  elseif shortcut == "bndwhole" then
+    tab.render_bounds = 0
+  elseif shortcut == "bndtime" then
+    tab.render_bounds = 1
+  elseif shortcut == "chauto" then
+    tab.channels = 0
+  elseif shortcut == "chmono" then
+    tab.channels = 1
+  elseif shortcut == "chstereo" then
+    tab.channels = 2
+  elseif shortcut:match("^ch[3-9]$") then
+    tab.channels = tonumber(shortcut:sub(3))
+  elseif shortcut == "rateauto" then
+    tab.sr_idx = 0
+  elseif shortcut:match("^rate%d+$") then
+    local sr = shortcut:sub(5)
+    if rate_map[sr] then tab.sr_idx = rate_map[sr] end
+  elseif format_map[shortcut] ~= nil then
+    tab.format_idx = format_map[shortcut]
+  elseif shortcut == "b8" then
+    if tab.format_idx == 2 or tab.format_idx >= 3 then tab.format_idx = 0 end
+    tab.bit_depth_idx = 0
+  elseif shortcut == "b16" then
+    if tab.format_idx == 2 then
+      tab.bit_depth_idx = 0
+    elseif tab.format_idx <= 1 then
+      tab.bit_depth_idx = 1
+    else
+      tab.format_idx = 0
+      tab.bit_depth_idx = 1
+    end
+  elseif shortcut == "b32" then
+    if tab.format_idx == 2 then
+      tab.bit_depth_idx = 2
+    elseif tab.format_idx <= 1 then
+      tab.bit_depth_idx = 3
+    else
+      tab.format_idx = 0
+      tab.bit_depth_idx = 3
+    end
+  elseif shortcut == "b32f" then
+    tab.format_idx = 0
+    tab.bit_depth_idx = 4
+  elseif shortcut == "b64f" then
+    tab.format_idx = 0
+    tab.bit_depth_idx = 5
+  end
+end
+
+local function ScoreShortcutMatch(item, search, trigger_char)
+  if search == "" then return 0 end
+  local insert_text = item.insert or ""
+  local command = (trigger_char == "!" and insert_text or insert_text:sub(2)):lower()
+  local category = (item.cat or ""):lower()
+  local subcategory = (item.sub or ""):lower()
+  local name = (item.name or ""):lower()
+  local description = (item.desc or ""):lower()
+
+  if command:sub(1, #search) == search then
+    return 1000 - #command
+  elseif category:sub(1, #search) == search then
+    return 900 - #category
+  elseif command:find(search, 1, true) then
+    return 800 - #command
+  elseif subcategory:sub(1, #search) == search then
+    return 700 - #subcategory
+  elseif name:find(search, 1, true) or description:find(search, 1, true) then
+    return 500 - #description
+  end
+  return -1
+end
+
+local function FilterShortcutList(source_list, search, trigger_char)
+  local matches = {}
+  search = (search or ""):lower()
+  for _, item in ipairs(source_list) do
+    local score = ScoreShortcutMatch(item, search, trigger_char)
+    if score >= 0 then
+      matches[#matches + 1] = { item = item, score = score }
+    end
+  end
+  if search ~= "" then
+    table.sort(matches, function(a, b) return a.score > b.score end)
+  end
+  local filtered = {}
+  for _, entry in ipairs(matches) do filtered[#filtered + 1] = entry.item end
+  return filtered
+end
+
+-- =======================================================
 -- SAVE / LOAD SYSTEM (REAPER ExtState)
 -- =======================================================
 local function SerializeTable(val)
@@ -117,7 +315,7 @@ end
 local function SaveAllExtState()
   r.SetExtState("JKK_CustomRender", "TabData", SerializeTable(tabs), true)
   r.SetExtState("JKK_CustomRender", "FavData", SerializeTable(favorites), true)
-  r.SetExtState("JKK_CustomRender", "DataVersion", "2", true)
+  r.SetExtState("JKK_CustomRender", "DataVersion", "3", true)
 end
 
 local function LoadAllExtState()
@@ -142,14 +340,25 @@ local function LoadAllExtState()
     end
   end
 
-  if r.GetExtState("JKK_CustomRender", "DataVersion") ~= "2" then
-    if r.HasExtState("JKK_CustomRender", "TabData") then
-      for _, tab in ipairs(tabs) do
-        if tab.render_source == 3 then
-          tab.render_source = 4
-        elseif tab.render_source == 4 then
-          tab.render_source = 5
-        end
+  local data_version = tonumber(r.GetExtState("JKK_CustomRender", "DataVersion")) or 1
+
+  -- v1 -> v2: 기존 저장 데이터의 Source 인덱스 이동 유지
+  if data_version < 2 then
+    for _, tab in ipairs(tabs) do
+      if tab.render_source == 3 then
+        tab.render_source = 4
+      elseif tab.render_source == 4 then
+        tab.render_source = 5
+      end
+    end
+  end
+
+  -- v2 -> v3: 채널 인덱스 방식(0~5)을 실제 출력 채널 수(0~9)로 변환
+  if data_version < 3 then
+    local old_channel_map = { [0]=0, [1]=1, [2]=2, [3]=4, [4]=6, [5]=8 }
+    for _, tab in ipairs(tabs) do
+      if tab.channels ~= nil then
+        tab.channels = old_channel_map[tab.channels] or 2
       end
     end
   end
@@ -427,10 +636,20 @@ local function ApplyRenderSettingsToProject(tab, p_item)
   if tab.channels == 0 then
     ch_val = (p_item and p_item.track) and GetTrackChannels(p_item.track) or 2
   else
-    local ch_map = {[1]=1, [2]=2, [3]=4, [4]=6, [5]=8}
-    ch_val = ch_map[tab.channels] or 2
+    ch_val = math.max(1, math.min(9, tonumber(tab.channels) or 2))
   end
   r.GetSetProjectInfo(proj, "RENDER_CHANNELS", ch_val, true)
+
+  -- Pad Start (Lead Silence) & Tail
+  local pad_start_flag = 0
+  if tab.enable_pad_start then
+    if tab.render_source == 4 or tab.render_source == 5 then pad_start_flag = 16
+    elseif tab.render_source == 2 or tab.render_source == 3 then pad_start_flag = 8
+    elseif tab.render_bounds == 0 then pad_start_flag = 2
+    elseif tab.render_bounds == 1 then pad_start_flag = 4 end
+  end
+  r.GetSetProjectInfo(proj, "RENDER_STARTTAILFLAG", pad_start_flag, true)
+  r.GetSetProjectInfo(proj, "RENDER_STARTTAILMS", (tab.pad_start_len or 0.0) * 1000, true)
   
   local tail_flag = 0
   if tab.enable_tail then
@@ -662,8 +881,7 @@ local function ParseWildcards(tab, pattern, sel_track, sel_item, sel_region, fil
   if tab.channels == 0 then
     ch_val = sel_track and GetTrackChannels(sel_track) or 2
   else
-    local ch_map = {[1]=1, [2]=2, [3]=4, [4]=6, [5]=8}
-    ch_val = ch_map[tab.channels] or 2
+    ch_val = math.max(1, math.min(9, tonumber(tab.channels) or 2))
   end
   local ch_str = tostring(math.floor(ch_val))
 
@@ -764,8 +982,10 @@ local function GetDisplayCH(tab, track)
     local ch = track and GetTrackChannels(track) or 2
     return string.format("%dch (Auto)", math.floor(ch))
   else
-    local ch_map = {"Mono", "Stereo", "4ch", "6ch", "8ch"}
-    return ch_map[tab.channels] or "Stereo"
+    local ch = math.max(1, math.min(9, tonumber(tab.channels) or 2))
+    if ch == 1 then return "Mono" end
+    if ch == 2 then return "Stereo" end
+    return tostring(ch) .. "ch"
   end
 end
 
@@ -987,24 +1207,22 @@ local function Main()
       r.ImGui_TextColored(ctx, 0xE3DB8EFF, "Format Settings")
       r.ImGui_Spacing(ctx)
 
-      local allow_ch_auto = (tab.render_source == 1 or tab.render_source == 4 or tab.render_source == 5)
-      local allow_sr_auto = (tab.render_source == 4 or tab.render_source == 5)
-      
-      if not allow_ch_auto and tab.channels == 0 then tab.channels = 2 end
-      if not allow_sr_auto and tab.sr_idx == 0 then tab.sr_idx = 7 end
-
       r.ImGui_SetNextItemWidth(ctx, 180)
-      local ch_names = {[1]=" Mono", [2]=" Stereo", [3]=" 4ch", [4]=" 6ch", [5]=" 8ch"}
-      local cur_ch_text = (tab.channels == 0) and " Auto (Follow Source)" or (ch_names[tab.channels] or " Stereo")
+      local ch_names = {}
+      for i = 1, 9 do
+        if i == 1 then ch_names[i] = " Mono"
+        elseif i == 2 then ch_names[i] = " Stereo"
+        else ch_names[i] = " " .. tostring(i) .. "ch" end
+      end
+      local cur_ch_text = (tab.channels == 0) and " Auto (Follow Source)"
+          or (ch_names[tab.channels] or " Stereo")
       
-      if r.ImGui_BeginCombo(ctx, '##ch', cur_ch_text) then
-        for i = 1, 5 do
+      if r.ImGui_BeginCombo(ctx, '##ch', cur_ch_text, r.ImGui_ComboFlags_HeightLargest()) then
+        for i = 1, 9 do
           if r.ImGui_Selectable(ctx, ch_names[i], tab.channels == i) then tab.channels = i end
         end
-        if allow_ch_auto then
-          r.ImGui_Separator(ctx)
-          if r.ImGui_Selectable(ctx, " Auto (Follow Source)", tab.channels == 0) then tab.channels = 0 end
-        end
+        r.ImGui_Separator(ctx)
+        if r.ImGui_Selectable(ctx, " Auto (Follow Source)", tab.channels == 0) then tab.channels = 0 end
         r.ImGui_EndCombo(ctx)
       end
       if r.ImGui_IsItemHovered(ctx) and tab.channels == 0 then
@@ -1025,10 +1243,8 @@ local function Main()
         end
         r.ImGui_Separator(ctx)
         if r.ImGui_Selectable(ctx, " Custom", tab.sr_idx == 12) then tab.sr_idx = 12 end
-        if allow_sr_auto then
-          r.ImGui_Separator(ctx)
-          if r.ImGui_Selectable(ctx, " Auto (Follow Source)", tab.sr_idx == 0) then tab.sr_idx = 0 end
-        end
+        r.ImGui_Separator(ctx)
+        if r.ImGui_Selectable(ctx, " Auto (Follow Source)", tab.sr_idx == 0) then tab.sr_idx = 0 end
         r.ImGui_EndCombo(ctx)
       end
       if r.ImGui_IsItemHovered(ctx) and tab.sr_idx == 0 then
@@ -1089,6 +1305,16 @@ local function Main()
       -- [Post Processing Section]
       r.ImGui_TextColored(ctx, 0xE3DB8EFF, "Post Processing")
       r.ImGui_Spacing(ctx)
+
+      -- 2. Pad Start (Pad start with silence) 기능 추가
+      local chk_ps_changed, new_ps_chk = r.ImGui_Checkbox(ctx, "##ps_chk", tab.enable_pad_start or false)
+      if chk_ps_changed then tab.enable_pad_start = new_ps_chk end
+      
+      r.ImGui_SameLine(ctx); r.ImGui_SetNextItemWidth(ctx, 160)
+      local ps_changed, new_ps_len = r.ImGui_DragDouble(ctx, '##ps_val', tab.pad_start_len or 0.000, 0.05, 0.0, 3.0, "%.3f sec")
+      if ps_changed then tab.pad_start_len = new_ps_len; tab.enable_pad_start = true end
+      if r.ImGui_IsItemClicked(ctx, 1) then tab.pad_start_len = 0.000; tab.enable_pad_start = true end
+      r.ImGui_SameLine(ctx); r.ImGui_Text(ctx, " Pad Start")
 
       local chk_t_changed, new_t_chk = r.ImGui_Checkbox(ctx, "##t_chk", tab.enable_tail)
       if chk_t_changed then tab.enable_tail = new_t_chk end
@@ -1192,19 +1418,16 @@ local function Main()
 
       _, tab.add_to_proj = r.ImGui_Checkbox(ctx, ' Add to project', tab.add_to_proj)
       _, tab.add_to_queue = r.ImGui_Checkbox(ctx, ' Add to render queue', tab.add_to_queue)
-      
-      -- 요구사항 2: Enter to render 우측에 Open 버튼 (Action: 40929) 추가
-      _, tab.enter_to_render = r.ImGui_Checkbox(ctx, ' Enter to render', tab.enter_to_render)
       r.ImGui_SameLine(ctx)
       PushAccentButtonStyle(ctx)
       if r.ImGui_Button(ctx, "Open##queue_open", 40, 20) then
-        r.Main_OnCommand(40929, 0) -- File: Render queue...
+        r.Main_OnCommand(40929, 0) 
       end
       PopAccentButtonStyle(ctx)
       if r.ImGui_IsItemHovered(ctx) then
-        r.ImGui_SetTooltip(ctx, "Open REAPER Render Queue Window (40929)")
+        r.ImGui_SetTooltip(ctx, "Open REAPER Render Queue Window")
       end
-
+      _, tab.enter_to_render = r.ImGui_Checkbox(ctx, ' Enter to render', tab.enter_to_render)
       _, tab.auto_close = r.ImGui_Checkbox(ctx, ' Auto-Close when finished', tab.auto_close)
       _, tab.open_folder = r.ImGui_Checkbox(ctx, ' Open folder after render', tab.open_folder)
       
@@ -1212,8 +1435,6 @@ local function Main()
       local avail_w, avail_h = r.ImGui_GetContentRegionAvail(ctx)
       local btn_h = 50
       if avail_h > btn_h then r.ImGui_SetCursorPosY(ctx, r.ImGui_GetCursorPosY(ctx) + avail_h - btn_h) end
-      
-      if not can_render then r.ImGui_BeginDisabled(ctx) end
       
       -- 메인 Render 버튼 너비 계산 (우측 서브버튼 공간 확보)
       local sub_btn_w = 55
@@ -1224,8 +1445,12 @@ local function Main()
       r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), 0x2A9A80FF)
       local render_btn_txt = tab.add_to_queue and "Add to Queue" or "Render"
       
-      -- 메인 Render 버튼
-      if r.ImGui_Button(ctx, render_btn_txt, main_btn_w, btn_h) or trigger_enter_render then
+      -- 메인 Render 버튼 (can_render가 false일 때만 비활성화)
+      if not can_render then r.ImGui_BeginDisabled(ctx) end
+      local render_btn_clicked = r.ImGui_Button(ctx, render_btn_txt, main_btn_w, btn_h)
+      if not can_render then r.ImGui_EndDisabled(ctx) end
+
+      if render_btn_clicked or trigger_enter_render then
         
         local need_sequential = (tab.channels == 0 or tab.sr_idx == 0) and (#items_to_process > 1) and (tab.render_source == 1 or tab.render_source == 4 or tab.render_source == 5)
 
@@ -1299,7 +1524,7 @@ local function Main()
       r.ImGui_PopStyleColor(ctx, 2)
       r.ImGui_PopFont(ctx)
 
-      -- 요구사항 1: Render 버튼 우측 서브버튼 (Open Origin Render - Action: 40015 & 스크립트 종료)
+      -- 1. Orig. Render 서브버튼 (항상 활성화 상태 유지)
       r.ImGui_SameLine(ctx)
       PushAccentButtonStyle(ctx)
       if r.ImGui_Button(ctx, "Orig.\nRender##orig_render", sub_btn_w, btn_h) then
@@ -1310,8 +1535,6 @@ local function Main()
       if r.ImGui_IsItemHovered(ctx) then
         r.ImGui_SetTooltip(ctx, "Open REAPER's original render dialog (40015) and exit script.")
       end
-
-      if not can_render then r.ImGui_EndDisabled(ctx) end
       
       -- =======================================================
       -- RIGHT PANE
@@ -1322,7 +1545,7 @@ local function Main()
       r.ImGui_AlignTextToFramePadding(ctx)
       r.ImGui_Indent(ctx, 16)
       r.ImGui_Text(ctx, "Directory:")
-      r.ImGui_SameLine(ctx, 90)
+      r.ImGui_SameLine(ctx, 95)
       r.ImGui_SetNextItemWidth(ctx, -131)
       _, tab.file_directory = r.ImGui_InputText(ctx, '##dir', tab.file_directory)
       
@@ -1381,18 +1604,120 @@ local function Main()
         r.ImGui_EndPopup(ctx)
       end
 
-      -- 2. File name
+      -- 2. File name + Renamer와 동일한 자동완성 입력
       r.ImGui_AlignTextToFramePadding(ctx)
       r.ImGui_Indent(ctx, 16)
       r.ImGui_Text(ctx, "File name:")
-      r.ImGui_SameLine(ctx, 90)
-      r.ImGui_SetNextItemWidth(ctx, -131)
-      _, tab.file_pattern = r.ImGui_InputText(ctx, '##fn', tab.file_pattern)
-      r.ImGui_SameLine(ctx)
+      r.ImGui_SameLine(ctx, 95)
+
+      local file_input_w = r.ImGui_GetContentRegionAvail(ctx) - 162
+      r.ImGui_SetNextItemWidth(ctx, file_input_w)
+      if file_input_set_focus then
+        r.ImGui_SetKeyboardFocusHere(ctx, 0)
+      end
+
+      r.ImGui_Function_SetValue(completion_callback, "tab_requested", 0)
+      r.ImGui_Function_SetValue(completion_callback, "up_requested", 0)
+      r.ImGui_Function_SetValue(completion_callback, "down_requested", 0)
+
+      local file_input_flags = r.ImGui_InputTextFlags_CallbackCompletion()
+                           | r.ImGui_InputTextFlags_CallbackHistory()
+      if file_input_set_focus and select_all_on_initial_file_focus then
+        file_input_flags = file_input_flags | r.ImGui_InputTextFlags_AutoSelectAll()
+        select_all_on_initial_file_focus = false
+      end
+
+      local file_input_min_x, file_input_min_y = r.ImGui_GetCursorScreenPos(ctx)
+      local file_name_changed, new_file_pattern = r.ImGui_InputText(
+        ctx, '##fn', tab.file_pattern, file_input_flags, completion_callback)
+      if file_name_changed then
+        tab.file_pattern = new_file_pattern
+        suppress_initial_autocomplete = false
+      end
+      local file_input_focused = r.ImGui_IsItemFocused(ctx)
+      local file_input_max_x, file_input_max_y = r.ImGui_GetItemRectMax(ctx)
+      if file_input_set_focus then file_input_set_focus = false end
+
+      local tab_requested = r.ImGui_Function_GetValue(completion_callback, "tab_requested") == 1
+      local up_requested = r.ImGui_Function_GetValue(completion_callback, "up_requested") == 1
+      local down_requested = r.ImGui_Function_GetValue(completion_callback, "down_requested") == 1
+      local keyboard_popup_event = tab_requested or up_requested or down_requested
+
+      if not file_input_focused and not keyboard_popup_event then
+        popup_dismissed = true
+      end
+
+      r.ImGui_SameLine(ctx, 0, 6)
+      if r.ImGui_Button(ctx, "?##filename_help", 24, 0) then end
+      if r.ImGui_IsItemHovered(ctx) then
+        r.ImGui_SetTooltip(ctx,
+          "Type ! to search UCS categories.\n" ..
+          "Type # to change render settings (Source, Bounds, Channels, Rate, Format and Bit Depth).\n" ..
+          "Type $ to search and insert filename wildcards.\n" ..
+          "Use Up/Down to navigate, Tab to select the first result, or Enter to select the highlighted result.")
+      end
+
+      r.ImGui_SameLine(ctx, 0, 8)
       PushAccentButtonStyle(ctx)
       if r.ImGui_Button(ctx, 'Wildcards', 123) then r.ImGui_OpenPopup(ctx, 'w_popup') end
       PopAccentButtonStyle(ctx)
       r.ImGui_Unindent(ctx, 16)
+
+      -- 입력 중인 마지막 ! / # / $ 토큰을 찾아 해당 보조 목록을 표시한다.
+      local clean_search_buf = (tab.file_pattern or ""):gsub("[%s\t]+$", "")
+      local trigger_char, filter_str = clean_search_buf:match(".*([!#$])([^%s!#$]*)$")
+      if trigger_char == nil then popup_dismissed = false end
+
+      local show_autocomplete = (file_input_focused or keyboard_popup_event)
+          and not popup_dismissed
+          and not suppress_initial_autocomplete
+          and trigger_char ~= nil
+          and not (tab.file_pattern or ""):match("%s$")
+
+      local filtered_shortcuts = {}
+      if show_autocomplete then
+        local source_list = trigger_char == "$" and w_list
+            or (trigger_char == "!" and ucs_list or render_shortcuts)
+        filtered_shortcuts = FilterShortcutList(source_list, filter_str, trigger_char)
+        if #filtered_shortcuts == 0 then show_autocomplete = false end
+      end
+
+      popup_sel_idx = math.max(1, math.min(popup_sel_idx,
+          #filtered_shortcuts > 0 and #filtered_shortcuts or 1))
+
+      if show_autocomplete then
+        if up_requested then
+          popup_sel_idx = math.max(1, popup_sel_idx - 1)
+        elseif down_requested then
+          popup_sel_idx = math.min(#filtered_shortcuts, popup_sel_idx + 1)
+        end
+      end
+
+      local function SelectAutocompleteItem(selected_item)
+        if not selected_item then return end
+        if trigger_char == "#" then
+          tab.file_pattern = clean_search_buf:gsub("#[^%s!#$]*$", "")
+          ApplyRenderShortcut(tab, (selected_item.insert or ""):sub(2))
+        elseif trigger_char == "$" then
+          tab.file_pattern = clean_search_buf:gsub("%$[^%s!#$]*$", selected_item.insert .. " ")
+        elseif trigger_char == "!" then
+          tab.file_pattern = clean_search_buf:gsub("![^%s!#$]*$", selected_item.insert .. " ")
+        end
+        popup_dismissed = true
+        file_input_set_focus = true
+        show_autocomplete = false
+      end
+
+      -- Tab: Renamer와 동일하게 첫 검색 결과를 선택한다.
+      if show_autocomplete and tab_requested then
+        SelectAutocompleteItem(filtered_shortcuts[1])
+      end
+
+      -- Enter: 현재 위아래 키로 강조된 결과를 선택한다.
+      if show_autocomplete and (r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_Enter())
+          or r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_KeypadEnter())) then
+        SelectAutocompleteItem(filtered_shortcuts[popup_sel_idx])
+      end
       
       if r.ImGui_BeginPopup(ctx, 'w_popup') then
         if r.ImGui_MenuItem(ctx, "Project Name ($project)") then tab.file_pattern = tab.file_pattern .. "$project" end
@@ -1425,6 +1750,86 @@ local function Main()
         end
         if r.ImGui_MenuItem(ctx, "Unique ID ($uniqueid[N])") then tab.file_pattern = tab.file_pattern .. "$uniqueid[N]" end
         r.ImGui_EndPopup(ctx)
+      end
+
+      -- Renamer와 동일한 별도 보조창: UCS / Wildcards / Render Settings
+      if show_autocomplete then
+        r.ImGui_SetNextWindowPos(ctx, file_input_min_x, file_input_max_y + 4)
+        r.ImGui_SetNextWindowSize(ctx, math.max(file_input_w, 440), 420)
+        local popup_flags = r.ImGui_WindowFlags_NoTitleBar()
+                         | r.ImGui_WindowFlags_NoResize()
+                         | r.ImGui_WindowFlags_NoMove()
+                         | r.ImGui_WindowFlags_NoSavedSettings()
+                         | r.ImGui_WindowFlags_NoFocusOnAppearing()
+
+        if r.ImGui_Begin(ctx, "RendererAutoCompletePopup", true, popup_flags) then
+          local popup_font_pushed = false
+          r.ImGui_PushFont(ctx, font, 14)
+          popup_font_pushed = true
+
+          local table_flags = r.ImGui_TableFlags_RowBg()
+                            | r.ImGui_TableFlags_BordersInnerV()
+                            | r.ImGui_TableFlags_ScrollX()
+                            | r.ImGui_TableFlags_ScrollY()
+          local column_count = (trigger_char == "!") and 4 or 3
+          if r.ImGui_BeginTable(ctx, "RendererPopupTable", column_count, table_flags) then
+            if trigger_char == "$" then
+              r.ImGui_TableSetupColumn(ctx, "Wildcard", r.ImGui_TableColumnFlags_WidthFixed(), 140)
+              r.ImGui_TableSetupColumn(ctx, "Name", r.ImGui_TableColumnFlags_WidthFixed(), 150)
+              r.ImGui_TableSetupColumn(ctx, "Description", r.ImGui_TableColumnFlags_WidthStretch())
+            elseif trigger_char == "!" then
+              r.ImGui_TableSetupColumn(ctx, "CatID", r.ImGui_TableColumnFlags_WidthFixed(), 100)
+              r.ImGui_TableSetupColumn(ctx, "Category", r.ImGui_TableColumnFlags_WidthFixed(), 140)
+              r.ImGui_TableSetupColumn(ctx, "SubCategory", r.ImGui_TableColumnFlags_WidthFixed(), 140)
+              r.ImGui_TableSetupColumn(ctx, "Description", r.ImGui_TableColumnFlags_WidthFixed(), 500)
+            else
+              r.ImGui_TableSetupColumn(ctx, "Shortcut", r.ImGui_TableColumnFlags_WidthFixed(), 145)
+              r.ImGui_TableSetupColumn(ctx, "Setting", r.ImGui_TableColumnFlags_WidthFixed(), 190)
+              r.ImGui_TableSetupColumn(ctx, "Description", r.ImGui_TableColumnFlags_WidthStretch())
+            end
+            r.ImGui_TableHeadersRow(ctx)
+
+            for i, item in ipairs(filtered_shortcuts) do
+              r.ImGui_TableNextRow(ctx)
+              if i == popup_sel_idx then
+                r.ImGui_TableSetBgColor(ctx, r.ImGui_TableBgTarget_RowBg0(), 0x335588FF)
+              end
+
+              r.ImGui_TableNextColumn(ctx)
+              r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xE3DB8EFF)
+              local item_clicked = r.ImGui_Selectable(ctx,
+                item.insert .. "##renderer_shortcut_" .. tostring(i), false,
+                r.ImGui_SelectableFlags_SpanAllColumns())
+              r.ImGui_PopStyleColor(ctx)
+              if r.ImGui_IsItemHovered(ctx) then popup_sel_idx = i end
+              if item_clicked then SelectAutocompleteItem(item) end
+
+              if trigger_char == "$" then
+                r.ImGui_TableNextColumn(ctx)
+                r.ImGui_Text(ctx, item.name or "")
+                r.ImGui_TableNextColumn(ctx)
+                r.ImGui_TextColored(ctx, 0x999999FF, item.desc or "")
+              elseif trigger_char == "!" then
+                r.ImGui_TableNextColumn(ctx)
+                r.ImGui_Text(ctx, item.cat or "")
+                r.ImGui_TableNextColumn(ctx)
+                r.ImGui_Text(ctx, item.sub or "")
+                r.ImGui_TableNextColumn(ctx)
+                r.ImGui_TextColored(ctx, 0x999999FF, item.desc or "")
+              else
+                r.ImGui_TableNextColumn(ctx)
+                r.ImGui_Text(ctx, item.name or "")
+                r.ImGui_TableNextColumn(ctx)
+                r.ImGui_TextColored(ctx, 0x999999FF, item.desc or "")
+              end
+            end
+            r.ImGui_EndTable(ctx)
+          end
+          if popup_font_pushed then r.ImGui_PopFont(ctx) end
+          r.ImGui_End(ctx)
+        end
+      else
+        popup_sel_idx = 1
       end
       
       r.ImGui_Spacing(ctx)

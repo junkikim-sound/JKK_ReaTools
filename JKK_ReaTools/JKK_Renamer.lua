@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Renamer
 -- @author Junki Kim
--- @version 1.0.3
+-- @version 1.0.4
 -- @provides 
 --     [nomain] Modules/JKK_Renamer_UCSList.lua
 --     [nomain] Modules/JKK_Renamer_WildcardList.lua
@@ -107,8 +107,11 @@ local function SaveState()
     r.SetExtState(ext_section, "active_tab", active_tab, true)
 end
 local set_focus = true
+local select_all_on_initial_focus = true
+local initial_name_initialized = false
 local open = true
 local popup_dismissed = false
+local suppress_initial_autocomplete = true
 
 local popup_sel_idx = 1
 local trigger_char = nil
@@ -691,12 +694,32 @@ local function Main()
         
         local targets = GetTargets()
         local target_count = #targets
+
+        -- 첫 화면에서는 현재 선택된 첫 번째 항목의 이름을 입력값으로 사용한다.
+        -- 입력창은 최초 포커스 시 전체 선택되어 바로 새 이름을 입력할 수 있다.
+        if not initial_name_initialized then
+            if target_count > 0 then
+                input_buf = targets[1].original_name or ""
+            end
+            initial_name_initialized = true
+            set_focus = true
+            select_all_on_initial_focus = true
+        end
         
         local hierarchy_indices = nil
         if use_number and not top_level_only then
             hierarchy_indices = BuildHierarchyIndices(targets)
         end
 
+        r.ImGui_PushFont(ctx, font_small, 14)
+        local target_type_text = (current_mode == "Region/Marker" or current_mode == "Region" or current_mode == "Marker") and "regions/markers" or (current_mode:lower() .. "s")
+        if target_count == 0 then
+            r.ImGui_TextColored(ctx, 0xE3DB8EFF, string.format("0 %s selected", target_type_text))
+        else
+            r.ImGui_TextColored(ctx, 0xE3DB8EFF, string.format("Rename %d %s", target_count, target_type_text))
+        end
+        r.ImGui_Spacing(ctx)
+        
         if r.ImGui_BeginTabBar(ctx, "RenamerTabs") then
         local rename_tab_flags = (restore_saved_tab and active_tab == "Rename")
             and r.ImGui_TabItemFlags_SetSelected() or 0
@@ -705,20 +728,19 @@ local function Main()
             active_tab = "Rename"
             SaveState()
         end
-        local target_type_text = (current_mode == "Region/Marker" or current_mode == "Region" or current_mode == "Marker") and "regions/markers" or (current_mode:lower() .. "s")
-        if target_count == 0 then
-            r.ImGui_TextColored(ctx, 0xE3DB8EFF, string.format("0 %s selected", target_type_text))
-        else
-            r.ImGui_TextColored(ctx, 0xE3DB8EFF, string.format("Rename %d %s", target_count, target_type_text))
-        end
         r.ImGui_Spacing(ctx)
 
         local apply_btn_w = 90
         local input_w = r.ImGui_GetContentRegionAvail(ctx) - apply_btn_w - 8
         
+        local initial_select_all_flag = 0
         if set_focus then
             r.ImGui_SetKeyboardFocusHere(ctx, 0)
             set_focus = false
+            if select_all_on_initial_focus then
+                initial_select_all_flag = r.ImGui_InputTextFlags_AutoSelectAll()
+                select_all_on_initial_focus = false
+            end
         end
 
         r.ImGui_PushStyleVar(ctx, r.ImGui_StyleVar_FramePadding(), 6, 8)
@@ -737,6 +759,7 @@ local function Main()
         -- Tab / 위아래 화살표를 InputText 내부 콜백에서 처리
         local input_flags = r.ImGui_InputTextFlags_CallbackCompletion()
                         | r.ImGui_InputTextFlags_CallbackHistory()
+                        | initial_select_all_flag
 
         local changed, new_buf = r.ImGui_InputTextWithHint(
             ctx,
@@ -752,6 +775,7 @@ local function Main()
         if changed then
             local old_buf = input_buf
             input_buf = new_buf
+            suppress_initial_autocomplete = false
 
             if new_buf:sub(-1) == "$" or new_buf:sub(-1) == "!"
                 or (new_buf:len() > old_buf:len()
@@ -802,6 +826,7 @@ local function Main()
         -- 포커스 유효 및 차단 해제 상태에서만 팝업 표시
         local show_popup = (is_focused or keyboard_popup_event)
             and not popup_dismissed
+            and not suppress_initial_autocomplete
             and (trg_char ~= nil)
             and not input_buf:match("%s$")
         trigger_char, filter_str = trg_char, flt_str
@@ -1072,19 +1097,13 @@ local function Main()
                 active_tab = "FindReplace"
                 SaveState()
             end
-            local target_type_text = (current_mode == "Region/Marker" or current_mode == "Region" or current_mode == "Marker") and "regions/markers" or (current_mode:lower() .. "s")
-            if target_count == 0 then
-                r.ImGui_TextColored(ctx, 0xE3DB8EFF, string.format("0 %s selected", target_type_text))
-            else
-                r.ImGui_TextColored(ctx, 0xE3DB8EFF, string.format("Rename %d %s", target_count, target_type_text))
-            end
-            r.ImGui_Spacing(ctx)
 
             -- Find / Replace: 왼쪽 라벨, 오른쪽 동일 너비 입력창, 우측 세로형 Apply 버튼
             local fr_width = r.ImGui_GetContentRegionAvail(ctx)
             local apply_width = 90
             local label_width = 68
             local input_width = math.max(140, fr_width - apply_width - label_width - 8)
+            r.ImGui_Spacing(ctx)
 
             r.ImGui_BeginGroup(ctx)
             r.ImGui_Text(ctx, "Find")
@@ -1117,7 +1136,6 @@ local function Main()
             r.ImGui_PopFont(ctx)
             r.ImGui_PopStyleColor(ctx, 2)
 
-            r.ImGui_Spacing(ctx)
             r.ImGui_PushFont(ctx, font_small, 14)
 
             local nth_changed, nth_value = r.ImGui_Checkbox(ctx, "Nth only", replace_nth_only)
@@ -1241,6 +1259,7 @@ local function Main()
         restore_saved_tab = false
         r.ImGui_EndTabBar(ctx)
         end
+        r.ImGui_PopFont(ctx)
     end
     
     r.ImGui_PopFont(ctx)

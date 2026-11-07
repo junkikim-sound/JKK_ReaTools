@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Track Visualizer FX Chain
 -- @author Junki Kim
--- @version 1.0.0
+-- @version 1.0.03
 --========================================================
 
 local r = reaper
