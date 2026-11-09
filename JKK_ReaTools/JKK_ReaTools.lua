@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.9.81
+-- @version 0.9.82
 -- @provides
 --     [nomain] Modules/JKK_ReaTools_NEW_ItemTool.lua
 --     [nomain] Modules/JKK_ReaTools_NEW_TrackTool.lua
@@ -147,7 +147,13 @@ local last_track_selection_signature = ""
 local last_region_marker_signature = ""
 local last_left_mouse_down = false
 local mouse_down_context = nil
-local mouse_down_context_frames = 0
+local mouse_down_track = nil
+local mouse_down_item = nil
+
+-- Mouse state shared with the delayed selection-status display.
+local focus_mouse_down = false
+local focus_mouse_released = false
+local latest_selection_signature = nil
 
 local function GetItemSelectionSignature()
     local parts = {}
@@ -215,18 +221,20 @@ local function GetMouseAreaContext()
 end
 
 local function GetLeftMouseState()
-    -- JS_ReaScriptAPI is used to distinguish a real click from merely moving
-    -- the pointer over an item or TCP. Hovering must never change the mode.
+    -- Poll the actual left-button state and expose all three transitions.
+    -- Selection/mode updates are intentionally handled on RELEASE, not PRESS.
     if not RPR.JS_Mouse_GetState then
         last_left_mouse_down = false
-        return false, false
+        return false, false, false
     end
 
-    local state = RPR.JS_Mouse_GetState(1) or 0 -- bit 1 = left mouse button
+    local state = RPR.JS_Mouse_GetState(1) or 0
     local is_down = (state & 1) ~= 0
     local pressed = is_down and not last_left_mouse_down
+    local released = not is_down and last_left_mouse_down
+
     last_left_mouse_down = is_down
-    return pressed, is_down
+    return pressed, is_down, released
 end
 
 local function HasSelectionForMode(mode)
@@ -247,9 +255,12 @@ local function IsCurrentModeActive()
 end
 
 local function UpdateFocusMode()
+    -----------------------------------------------------
+    -- Read the current REAPER selection state.
+    -----------------------------------------------------
     local ts_start, ts_end = RPR.GetSet_LoopTimeRange(false, false, 0, 0, false)
-    local time_selection_changed = ts_start ~= last_ts_start or ts_end ~= last_ts_end
-    last_ts_start, last_ts_end = ts_start, ts_end
+    local time_selection_changed =
+        ts_start ~= last_ts_start or ts_end ~= last_ts_end
 
     local current_item_ptr = RPR.GetSelectedMediaItem(0, 0)
     local current_track_ptr = RPR.GetSelectedTrack(0, 0)
@@ -257,93 +268,151 @@ local function UpdateFocusMode()
     local track_signature = GetTrackSelectionSignature()
     local region_signature = GetRegionMarkerSelectionSignature()
 
-    local item_selection_changed = item_signature ~= last_item_selection_signature
-    local track_selection_changed = track_signature ~= last_track_selection_signature
-    local region_selection_changed = region_signature ~= last_region_marker_signature
+    local item_selection_changed =
+        item_signature ~= last_item_selection_signature
+    local track_selection_changed =
+        track_signature ~= last_track_selection_signature
+    local region_selection_changed =
+        region_signature ~= last_region_marker_signature
 
     local cursor_ctx = RPR.GetCursorContext and RPR.GetCursorContext() or -1
-    local left_click, left_down = GetLeftMouseState()
+
+    -----------------------------------------------------
+    -- Mouse edge detection.
+    -----------------------------------------------------
+    local left_pressed, left_down, left_released = GetLeftMouseState()
     local hit_context, hit_track, hit_item = GetMouseAreaContext()
 
-    -- Remember where the current mouse gesture began. This also lets a drag
-    -- marquee that starts on empty Arrange space activate Item mode once its
-    -- selected-item set actually changes.
-    if left_click then
-        mouse_down_context = hit_context
-        mouse_down_context_frames = 2 -- keep context briefly for selection updates on mouse-up
+    -- Expose the sampled mouse state to the selection-status cache.
+    focus_mouse_down = left_down
+    focus_mouse_released = left_released
 
-        if hit_context == "Track" and hit_track then
-            -- Track mode is entered only by clicking the TCP, never by hovering
-            -- over it or moving the pointer across an Arrange lane.
-            current_mode = "Track"
-            mode_focus_active = true
-        elseif hit_context == "Arrange" then
-            if hit_item then
+    -- This signature is sampled every frame. The display cache below decides
+    -- when the newly observed state is allowed to become visible.
+    latest_selection_signature = table.concat({
+        item_signature,
+        track_signature,
+        region_signature,
+        tostring(ts_start),
+        tostring(ts_end)
+    }, "\30")
+
+    -----------------------------------------------------
+    -- MOUSE DOWN: remember the gesture origin ONLY.
+    -- Do not change current_mode or mode_focus_active here.
+    -----------------------------------------------------
+    if left_pressed then
+        mouse_down_context = hit_context
+        mouse_down_track = hit_track
+        mouse_down_item = hit_item
+    end
+
+    -----------------------------------------------------
+    -- MOUSE UP: commit the final selection and change mode.
+    -----------------------------------------------------
+    if left_released then
+        if mouse_down_context == "Track" then
+            -- A TCP click selects the Track tool group, including when
+            -- the clicked track was already selected.
+            if mouse_down_track or track_selection_changed
+                or RPR.CountSelectedTracks(0) > 0 then
+                current_mode = "Track"
+                mode_focus_active = true
+            end
+
+        elseif mouse_down_context == "Arrange" then
+            -- A direct item click or a marquee selection both activate Item.
+            if mouse_down_item
+                or (item_selection_changed
+                    and RPR.CountSelectedMediaItems(0) > 0) then
                 current_mode = "Item"
                 mode_focus_active = true
             else
-                -- Keep the previous mode but deactivate its controls when the
-                -- user clicks empty Arrange space.
+                -- Clicking empty Arrange space deactivates the current tools.
                 mode_focus_active = false
             end
-        elseif hit_context == "Timeline" then
+
+        elseif mouse_down_context == "Timeline" then
             current_mode = "Region/Marker"
             mode_focus_active = true
         end
-        -- Clicks inside JKK_ReaTools or unrelated windows do not alter the
-        -- remembered tool context. Only an explicit empty-Arrange click
-        -- deactivates it.
+
+        -- Region/marker and time-selection changes are committed on release.
+        if time_selection_changed then
+            current_mode = "Region/Marker"
+            mode_focus_active = true
+        elseif region_selection_changed and HasSelectedRegionOrMarker() then
+            current_mode = "Region/Marker"
+            mode_focus_active = true
+        end
+
+        -- Clear the captured gesture only after processing the release.
+        mouse_down_context = nil
+        mouse_down_track = nil
+        mouse_down_item = nil
+
+    -----------------------------------------------------
+    -- NO MOUSE GESTURE: allow keyboard-driven selection
+    -- changes to update the mode immediately.
+    -----------------------------------------------------
+    elseif not left_down and not left_pressed then
+        if item_selection_changed
+            and RPR.CountSelectedMediaItems(0) > 0 then
+            current_mode = "Item"
+            mode_focus_active = true
+        end
+
+        if track_selection_changed
+            and RPR.CountSelectedTracks(0) > 0 then
+            current_mode = "Track"
+            mode_focus_active = true
+        end
+
+        if time_selection_changed then
+            current_mode = "Region/Marker"
+            mode_focus_active = true
+        elseif region_selection_changed and HasSelectedRegionOrMarker() then
+            current_mode = "Region/Marker"
+            mode_focus_active = true
+        end
     end
 
-    -- A selection change during an Arrange mouse gesture is the marquee/item
-    -- selection case. It is never triggered by hover alone.
-    if item_selection_changed and RPR.CountSelectedMediaItems(0) > 0
-        and mouse_down_context == "Arrange" then
-        current_mode = "Item"
-        mode_focus_active = true
-    end
-    if track_selection_changed and RPR.CountSelectedTracks(0) > 0
-        and (mouse_down_context == "Track" or (not RPR.JS_Mouse_GetState and hit_context == "Track")) then
-        current_mode = "Track"
-        mode_focus_active = true
-    end
-
-    -- Timeline selection/range edits are explicit state changes, not pointer
-    -- position changes, so they may activate Timeline mode directly.
-    if time_selection_changed then
-        current_mode = "Region/Marker"
-        mode_focus_active = true
-    elseif region_selection_changed and HasSelectedRegionOrMarker() then
-        current_mode = "Region/Marker"
-        mode_focus_active = true
+    -----------------------------------------------------
+    -- Without JS_ReaScriptAPI, mouse down/up cannot be
+    -- detected. Keep the previous selection-change fallback.
+    -----------------------------------------------------
+    if not RPR.JS_Mouse_GetState then
+        if item_selection_changed
+            and RPR.CountSelectedMediaItems(0) > 0 then
+            current_mode = "Item"
+            mode_focus_active = true
+        end
     end
 
-    -- Without JS_ReaScriptAPI we cannot observe mouse-down edges. A genuine
-    -- item-selection change is still safe as a fallback because it cannot be
-    -- caused by hover. TCP activation remains click-only and needs JS support.
-    if not RPR.JS_Mouse_GetState and item_selection_changed
-        and RPR.CountSelectedMediaItems(0) > 0 then
-        current_mode = "Item"
-        mode_focus_active = true
+    -----------------------------------------------------
+    -- IMPORTANT: do not update snapshots while the mouse
+    -- is held. This preserves the before-click state until
+    -- the release frame, where the final state is compared.
+    -----------------------------------------------------
+    if not left_down then
+        last_ts_start = ts_start
+        last_ts_end = ts_end
+
+        last_item_ptr = current_item_ptr
+        last_track_ptr = current_track_ptr
+        last_cursor_ctx = cursor_ctx
+
+        last_item_selection_signature = item_signature
+        last_track_selection_signature = track_signature
+        last_region_marker_signature = region_signature
     end
 
-    -- If the active selection for the remembered mode has disappeared, keep
-    -- the layout visible but disable its controls. Do not erase current_mode.
+    -- If the active selection for the remembered mode has disappeared,
+    -- keep the layout visible but disable its controls.
     if not HasSelectionForMode(current_mode) then
         mode_focus_active = false
     end
 
-    last_item_ptr = current_item_ptr
-    last_track_ptr = current_track_ptr
-    last_cursor_ctx = cursor_ctx
-    last_item_selection_signature = item_signature
-    last_track_selection_signature = track_signature
-    last_region_marker_signature = region_signature
-
-    if not left_down and mouse_down_context_frames > 0 then
-        mouse_down_context_frames = mouse_down_context_frames - 1
-        if mouse_down_context_frames == 0 then mouse_down_context = nil end
-    end
     return current_mode
 end
 
@@ -425,7 +494,10 @@ local function FitTextToWidth(text, max_width)
     return ellipsis
 end
 
-local function BuildSelectionStatus()
+-- Read the live REAPER selection. This function is intentionally separate
+-- from BuildSelectionStatus so the UI can display a committed snapshot instead
+-- of following REAPER's mouse-down selection immediately.
+local function CaptureSelectionStatus()
     local item_count = RPR.CountSelectedMediaItems(0)
     local track_count = RPR.CountSelectedTracks(0)
 
@@ -455,6 +527,58 @@ local function BuildSelectionStatus()
     end
 
     return "No Selection"
+end
+
+-- Cache the selection-status line and only refresh it after mouse release.
+-- A short fallback delay handles fast clicks that begin and end between two
+-- defer cycles, which JS_Mouse_GetState polling can otherwise miss.
+local selection_status_cache = nil
+local committed_status_signature = nil
+local pending_status_since = nil
+local STATUS_RELEASE_FALLBACK_DELAY = 0.12
+
+local function UpdateSelectionStatusCache()
+    local live_prefix, live_name, live_suffix = CaptureSelectionStatus()
+    local live_signature = table.concat({
+        latest_selection_signature or "",
+        current_mode or "",
+        tostring(mode_focus_active),
+        live_prefix or "",
+        live_name or "",
+        live_suffix or ""
+    }, "\30")
+
+    local now = RPR.time_precise and RPR.time_precise() or os.clock()
+
+    if selection_status_cache == nil then
+        selection_status_cache = { live_prefix, live_name, live_suffix }
+        committed_status_signature = live_signature
+        pending_status_since = nil
+        return
+    end
+
+    if live_signature ~= committed_status_signature and not pending_status_since then
+        pending_status_since = now
+    end
+
+    if pending_status_since then
+        local release_confirmed = focus_mouse_released
+        local click_was_missed = not focus_mouse_down
+            and (now - pending_status_since) >= STATUS_RELEASE_FALLBACK_DELAY
+
+        if release_confirmed or click_was_missed then
+            selection_status_cache = { live_prefix, live_name, live_suffix }
+            committed_status_signature = live_signature
+            pending_status_since = nil
+        end
+    end
+end
+
+local function BuildSelectionStatus()
+    if selection_status_cache then
+        return selection_status_cache[1], selection_status_cache[2], selection_status_cache[3]
+    end
+    return CaptureSelectionStatus()
 end
 
 local function DrawSelectionStatus()
@@ -838,6 +962,7 @@ local function Main()
     end
 
     UpdateFocusMode()
+    UpdateSelectionStatusCache()
 
     RPR.ImGui_SetNextWindowSize(ctx, 1900, 440, RPR.ImGui_Cond_Once())
     RPR.ImGui_SetNextWindowSizeConstraints(
@@ -906,7 +1031,7 @@ local function Main()
             -------------------------------------------------
             -- INNER PANEL TABLE (A-F)
             -------------------------------------------------
-            RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_CellPadding(), 14, 7)
+            RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_CellPadding(), 14, 0)
 
             if RPR.ImGui_BeginTable(
                 ctx,

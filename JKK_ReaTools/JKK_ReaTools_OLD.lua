@@ -6,7 +6,6 @@
 --     [nomain] Modules/JKK_ReaTools_OLD_ItemTools.lua
 --     [nomain] Modules/JKK_ReaTools_OLD_TrackTools.lua
 --     [nomain] Modules/JKK_ReaTools_OLD_TimelineTools.lua
---     [nomain] Modules/JKK_Theme.lua
 --========================================================
 
 local RPR = reaper

@@ -252,13 +252,14 @@ end
 local function GetLeftMouseState()
     if not r.JS_Mouse_GetState then
         last_left_mouse_down = false
-        return false, false
+        return false, false, false
     end
     local state = r.JS_Mouse_GetState(1) or 0
     local is_down = (state & 1) ~= 0
     local pressed = is_down and not last_left_mouse_down
+    local released = not is_down and last_left_mouse_down
     last_left_mouse_down = is_down
-    return pressed, is_down
+    return pressed, released, is_down
 end
 
 local function HasSelectionForMode(mode)
@@ -289,7 +290,7 @@ local function UpdateFocusMode()
     local track_selection_changed = track_signature ~= last_track_selection_signature
     local region_selection_changed = region_signature ~= last_region_marker_signature
 
-    local left_click, left_down = GetLeftMouseState()
+    local left_press, left_release, left_down = GetLeftMouseState()
     local hit_context, hit_track, hit_item = GetMouseAreaContext()
     local cursor_context = -1
     if r.GetCursorContext2 then
@@ -299,7 +300,8 @@ local function UpdateFocusMode()
         cursor_context = r.GetCursorContext()
     end
 
-    if left_click then
+    -- 마우스를 클릭할 때(left_press) 대신 떼었을 때(left_release) 반응하도록 변경
+    if left_release then
         mouse_down_context = hit_context
         mouse_down_context_frames = 2
 
