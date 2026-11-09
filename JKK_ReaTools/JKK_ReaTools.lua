@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.9.82
+-- @version 0.9.83
 -- @provides
 --     [nomain] Modules/JKK_ReaTools_NEW_ItemTool.lua
 --     [nomain] Modules/JKK_ReaTools_NEW_TrackTool.lua
@@ -1031,7 +1031,7 @@ local function Main()
             -------------------------------------------------
             -- INNER PANEL TABLE (A-F)
             -------------------------------------------------
-            RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_CellPadding(), 14, 0)
+            RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_CellPadding(), 14, 6)
 
             if RPR.ImGui_BeginTable(
                 ctx,
