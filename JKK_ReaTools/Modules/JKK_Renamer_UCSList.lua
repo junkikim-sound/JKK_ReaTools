@@ -1,5 +1,5 @@
 --========================================================
--- @title JKK_Renamer UCS List Module
+-- @title JKK_Renamer_UCSList
 -- @author Junki Kim
 -- @noindex
 --========================================================

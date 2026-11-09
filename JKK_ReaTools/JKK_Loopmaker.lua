@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Loopmaker
 -- @author Junki Kim
--- @version 1.2.2
+-- @version 1.2.3
 --========================================================
 
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'
@@ -848,8 +848,8 @@ function Loop()
     ImGui.PushStyleVar(ctx, ImGui.StyleVar_ItemSpacing, 10, 5)
     ImGui.PushStyleVar(ctx, ImGui.StyleVar_GrabMinSize, 14)
 
-    ImGui.SetNextWindowSizeConstraints(ctx, 500, 240, 9999, 9999)
-    ImGui.SetNextWindowSize(ctx, 550, 420, ImGui.Cond_FirstUseEver)
+    ImGui.SetNextWindowSizeConstraints(ctx, 500, 500, 9999, 9999)
+    ImGui.SetNextWindowSize(ctx, 540, 540, ImGui.Cond_FirstUseEver)
     
     -- [수정] 창 제목 'JKK_Loopmaker v2.5' -> 'JKK_Loopmaker' 깔끔하게 수정
     local visible, open = ImGui.Begin(ctx, 'JKK_Loopmaker', true, ImGui.WindowFlags_NoCollapse)

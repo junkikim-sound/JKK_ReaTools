@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Renderer
 -- @author Junki Kim
--- @version 1.1.0
+-- @version 1.1.3
 --========================================================
 
 local r = reaper
@@ -44,11 +44,13 @@ r.ImGui_Function_SetValue(completion_callback, "tab_requested", 0)
 r.ImGui_Function_SetValue(completion_callback, "up_requested", 0)
 r.ImGui_Function_SetValue(completion_callback, "down_requested", 0)
 
--- File name 입력창 자동완성 상태
+-- File name 입력창 자동완성 상태 및 팝업 유지 관련 변수
 local file_input_set_focus = true
 local select_all_on_initial_file_focus = true
 local popup_dismissed = false
 local suppress_initial_autocomplete = true
+local popup_was_open = false
+local popup_rect = nil
 local popup_sel_idx = 1
 
 -- =======================================================
@@ -342,7 +344,6 @@ local function LoadAllExtState()
 
   local data_version = tonumber(r.GetExtState("JKK_CustomRender", "DataVersion")) or 1
 
-  -- v1 -> v2: 기존 저장 데이터의 Source 인덱스 이동 유지
   if data_version < 2 then
     for _, tab in ipairs(tabs) do
       if tab.render_source == 3 then
@@ -353,7 +354,6 @@ local function LoadAllExtState()
     end
   end
 
-  -- v2 -> v3: 채널 인덱스 방식(0~5)을 실제 출력 채널 수(0~9)로 변환
   if data_version < 3 then
     local old_channel_map = { [0]=0, [1]=1, [2]=2, [3]=4, [4]=6, [5]=8 }
     for _, tab in ipairs(tabs) do
@@ -1036,15 +1036,14 @@ end
 
 local function Main()
   r.ImGui_PushFont(ctx, font, 14)
-  r.ImGui_SetNextWindowSize(ctx, 960, 700, r.ImGui_Cond_FirstUseEver())
-  r.ImGui_SetNextWindowSizeConstraints(ctx, 880, 640, 3840, 2160)
+  r.ImGui_SetNextWindowSize(ctx, 960, 900, r.ImGui_Cond_FirstUseEver())
+  r.ImGui_SetNextWindowSizeConstraints(ctx, 880, 850, 3840, 2160)
   
   local style_pop_count, color_pop_count = ApplyTheme(ctx)
   
   local visible, open_flag = r.ImGui_Begin(ctx, 'JKK_Renderer', open, r.ImGui_WindowFlags_NoCollapse())
   open = open_flag
 
-  -- ESC 키 입력 시 스크립트 닫기
   if r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_Escape()) then
     open = false
   end
@@ -1057,18 +1056,16 @@ local function Main()
     -- GLOBAL KEYBOARD SHORTCUTS
     -- =======================================================
     if is_focused and not is_any_item_active then
-      -- 1. Space: Play / Pause transport in REAPER
       if r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_Space(), false) then
-        r.Main_OnCommand(40044, 0) -- Transport: Play/pause
+        r.Main_OnCommand(40044, 0)
       end
 
-      -- 2. Ctrl+Z / Cmd+Z: Trigger REAPER Undo
       local ctrl_down = r.ImGui_IsKeyDown(ctx, r.ImGui_Key_LeftCtrl()) or 
                         r.ImGui_IsKeyDown(ctx, r.ImGui_Key_RightCtrl()) or 
                         r.ImGui_IsKeyDown(ctx, r.ImGui_Key_LeftSuper()) or 
                         r.ImGui_IsKeyDown(ctx, r.ImGui_Key_RightSuper())
       if ctrl_down and r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_Z(), false) then
-        r.Main_OnCommand(40029, 0) -- Edit: Undo
+        r.Main_OnCommand(40029, 0)
       end
     end
 
@@ -1203,7 +1200,6 @@ local function Main()
       r.ImGui_Separator(ctx)
       r.ImGui_Spacing(ctx)
 
-      -- [Format Settings Section]
       r.ImGui_TextColored(ctx, 0xE3DB8EFF, "Format Settings")
       r.ImGui_Spacing(ctx)
 
@@ -1302,11 +1298,9 @@ local function Main()
       r.ImGui_Separator(ctx)
       r.ImGui_Spacing(ctx)
       
-      -- [Post Processing Section]
       r.ImGui_TextColored(ctx, 0xE3DB8EFF, "Post Processing")
       r.ImGui_Spacing(ctx)
 
-      -- 2. Pad Start (Pad start with silence) 기능 추가
       local chk_ps_changed, new_ps_chk = r.ImGui_Checkbox(ctx, "##ps_chk", tab.enable_pad_start or false)
       if chk_ps_changed then tab.enable_pad_start = new_ps_chk end
       
@@ -1379,7 +1373,6 @@ local function Main()
       r.ImGui_Separator(ctx)
       r.ImGui_Spacing(ctx)
       
-      -- [File Settings Section]
       r.ImGui_TextColored(ctx, 0xE3DB8EFF, "File Settings")
       r.ImGui_Spacing(ctx)
 
@@ -1412,7 +1405,6 @@ local function Main()
       r.ImGui_Separator(ctx)
       r.ImGui_Spacing(ctx)
       
-      -- [Output Actions Section]
       r.ImGui_TextColored(ctx, 0xE3DB8EFF, "Output Actions")
       r.ImGui_Spacing(ctx)
 
@@ -1431,12 +1423,10 @@ local function Main()
       _, tab.auto_close = r.ImGui_Checkbox(ctx, ' Auto-Close when finished', tab.auto_close)
       _, tab.open_folder = r.ImGui_Checkbox(ctx, ' Open folder after render', tab.open_folder)
       
-      -- Render Button Section
       local avail_w, avail_h = r.ImGui_GetContentRegionAvail(ctx)
       local btn_h = 50
       if avail_h > btn_h then r.ImGui_SetCursorPosY(ctx, r.ImGui_GetCursorPosY(ctx) + avail_h - btn_h) end
       
-      -- 메인 Render 버튼 너비 계산 (우측 서브버튼 공간 확보)
       local sub_btn_w = 55
       local main_btn_w = math.max(120, avail_w - sub_btn_w - 18)
 
@@ -1445,7 +1435,6 @@ local function Main()
       r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), 0x2A9A80FF)
       local render_btn_txt = tab.add_to_queue and "Add to Queue" or "Render"
       
-      -- 메인 Render 버튼 (can_render가 false일 때만 비활성화)
       if not can_render then r.ImGui_BeginDisabled(ctx) end
       local render_btn_clicked = r.ImGui_Button(ctx, render_btn_txt, main_btn_w, btn_h)
       if not can_render then r.ImGui_EndDisabled(ctx) end
@@ -1524,12 +1513,11 @@ local function Main()
       r.ImGui_PopStyleColor(ctx, 2)
       r.ImGui_PopFont(ctx)
 
-      -- 1. Orig. Render 서브버튼 (항상 활성화 상태 유지)
       r.ImGui_SameLine(ctx)
       PushAccentButtonStyle(ctx)
       if r.ImGui_Button(ctx, "Orig.\nRender##orig_render", sub_btn_w, btn_h) then
-        r.Main_OnCommand(40015, 0) -- File: Render project to disk...
-        open = false               -- 스크립트 종료
+        r.Main_OnCommand(40015, 0) 
+        open = false               
       end
       PopAccentButtonStyle(ctx)
       if r.ImGui_IsItemHovered(ctx) then
@@ -1634,7 +1622,9 @@ local function Main()
         tab.file_pattern = new_file_pattern
         suppress_initial_autocomplete = false
       end
+      
       local file_input_focused = r.ImGui_IsItemFocused(ctx)
+      local is_input_hovered = r.ImGui_IsItemHovered(ctx)
       local file_input_max_x, file_input_max_y = r.ImGui_GetItemRectMax(ctx)
       if file_input_set_focus then file_input_set_focus = false end
 
@@ -1643,8 +1633,18 @@ local function Main()
       local down_requested = r.ImGui_Function_GetValue(completion_callback, "down_requested") == 1
       local keyboard_popup_event = tab_requested or up_requested or down_requested
 
-      if not file_input_focused and not keyboard_popup_event then
-        popup_dismissed = true
+      local mouse_clicked = r.ImGui_IsMouseClicked(ctx, 0)
+      if popup_was_open and mouse_clicked then
+          local mx, my = r.ImGui_GetMousePos(ctx)
+          local in_popup = false
+          if popup_rect then
+              if mx >= popup_rect.min_x and mx <= popup_rect.max_x and my >= popup_rect.min_y and my <= popup_rect.max_y then
+                  in_popup = true
+              end
+          end
+          if not is_input_hovered and not in_popup then
+              popup_dismissed = true
+          end
       end
 
       r.ImGui_SameLine(ctx, 0, 6)
@@ -1663,12 +1663,11 @@ local function Main()
       PopAccentButtonStyle(ctx)
       r.ImGui_Unindent(ctx, 16)
 
-      -- 입력 중인 마지막 ! / # / $ 토큰을 찾아 해당 보조 목록을 표시한다.
       local clean_search_buf = (tab.file_pattern or ""):gsub("[%s\t]+$", "")
       local trigger_char, filter_str = clean_search_buf:match(".*([!#$])([^%s!#$]*)$")
       if trigger_char == nil then popup_dismissed = false end
 
-      local show_autocomplete = (file_input_focused or keyboard_popup_event)
+      local show_autocomplete = (file_input_focused or keyboard_popup_event or popup_was_open)
           and not popup_dismissed
           and not suppress_initial_autocomplete
           and trigger_char ~= nil
@@ -1708,12 +1707,10 @@ local function Main()
         show_autocomplete = false
       end
 
-      -- Tab: Renamer와 동일하게 첫 검색 결과를 선택한다.
       if show_autocomplete and tab_requested then
         SelectAutocompleteItem(filtered_shortcuts[1])
       end
 
-      -- Enter: 현재 위아래 키로 강조된 결과를 선택한다.
       if show_autocomplete and (r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_Enter())
           or r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_KeypadEnter())) then
         SelectAutocompleteItem(filtered_shortcuts[popup_sel_idx])
@@ -1752,10 +1749,12 @@ local function Main()
         r.ImGui_EndPopup(ctx)
       end
 
-      -- Renamer와 동일한 별도 보조창: UCS / Wildcards / Render Settings
+      -- 자동완성 팝업 창
       if show_autocomplete then
         r.ImGui_SetNextWindowPos(ctx, file_input_min_x, file_input_max_y + 4)
-        r.ImGui_SetNextWindowSize(ctx, math.max(file_input_w, 440), 420)
+        
+        -- 팝업 창의 전체 높이는 600px로 길게 유지
+        r.ImGui_SetNextWindowSize(ctx, math.max(file_input_w, 440), 600)
         local popup_flags = r.ImGui_WindowFlags_NoTitleBar()
                          | r.ImGui_WindowFlags_NoResize()
                          | r.ImGui_WindowFlags_NoMove()
@@ -1763,6 +1762,8 @@ local function Main()
                          | r.ImGui_WindowFlags_NoFocusOnAppearing()
 
         if r.ImGui_Begin(ctx, "RendererAutoCompletePopup", true, popup_flags) then
+          popup_was_open = true
+
           local popup_font_pushed = false
           r.ImGui_PushFont(ctx, font, 14)
           popup_font_pushed = true
@@ -1773,6 +1774,9 @@ local function Main()
                             | r.ImGui_TableFlags_ScrollY()
           local column_count = (trigger_char == "!") and 4 or 3
           if r.ImGui_BeginTable(ctx, "RendererPopupTable", column_count, table_flags) then
+            -- 최상단 헤더 행 틀고정 (Freeze 1 Row)
+            r.ImGui_TableSetupScrollFreeze(ctx, 0, 1)
+
             if trigger_char == "$" then
               r.ImGui_TableSetupColumn(ctx, "Wildcard", r.ImGui_TableColumnFlags_WidthFixed(), 140)
               r.ImGui_TableSetupColumn(ctx, "Name", r.ImGui_TableColumnFlags_WidthFixed(), 150)
@@ -1825,11 +1829,19 @@ local function Main()
             end
             r.ImGui_EndTable(ctx)
           end
+
           if popup_font_pushed then r.ImGui_PopFont(ctx) end
+          
+          local px, py = r.ImGui_GetWindowPos(ctx)
+          local pw, ph = r.ImGui_GetWindowSize(ctx)
+          popup_rect = { min_x = px, min_y = py, max_x = px + pw, max_y = py + ph }
+
           r.ImGui_End(ctx)
         end
       else
         popup_sel_idx = 1
+        popup_was_open = false
+        popup_rect = nil
       end
       
       r.ImGui_Spacing(ctx)

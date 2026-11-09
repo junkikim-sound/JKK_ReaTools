@@ -1,5 +1,5 @@
 --========================================================
--- @title JKK_Renamer Wildcard List Module
+-- @title JKK_Renamer_WildcardList
 -- @author Junki Kim
 -- @noindex
 --========================================================
