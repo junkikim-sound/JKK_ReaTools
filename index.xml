@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="JKK_ReaTools" commit="53fc6bedc351ae0e0657289a9a804c5e18c763a3">
+<index version="1" name="JKK_ReaTools" commit="cf2412b7191d2654a4c1b9f2fbb2c538700a31af">
   <category name="Global Sampler (Origin by BirdBird)">
     <reapack name="BirdBird_Global Sampler (JKK_Edited).lua" type="script" desc="Global Sampler (Edited by JKK)">
       <version name="0.99.8.5" author="BirdBird" time="2026-05-08T13:57:22Z">
@@ -126,6 +126,30 @@
         <source file="Modules/JKK_ReaTools_NEW_RenamerLite.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/53fc6bedc351ae0e0657289a9a804c5e18c763a3/JKK_ReaTools/Modules/JKK_ReaTools_NEW_RenamerLite.lua</source>
         <source file="Modules/JKK_ReaTools_NEW_ColorPaletteLite.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/53fc6bedc351ae0e0657289a9a804c5e18c763a3/JKK_ReaTools/Modules/JKK_ReaTools_NEW_ColorPaletteLite.lua</source>
         <source file="Modules/JKK_Theme.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/53fc6bedc351ae0e0657289a9a804c5e18c763a3/JKK_ReaTools/Modules/JKK_Theme.lua</source>
+      </version>
+      <version name="0.9.82" author="Junki Kim" time="2026-11-09T16:49:59Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/4f7052f43abd0622c378dc5713427a7d1009a6bc/JKK_ReaTools/JKK_ReaTools.lua</source>
+        <source file="Modules/JKK_ReaTools_NEW_ItemTool.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/4f7052f43abd0622c378dc5713427a7d1009a6bc/JKK_ReaTools/Modules/JKK_ReaTools_NEW_ItemTool.lua</source>
+        <source file="Modules/JKK_ReaTools_NEW_TrackTool.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/4f7052f43abd0622c378dc5713427a7d1009a6bc/JKK_ReaTools/Modules/JKK_ReaTools_NEW_TrackTool.lua</source>
+        <source file="Modules/JKK_ReaTools_NEW_RenamerLite.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/4f7052f43abd0622c378dc5713427a7d1009a6bc/JKK_ReaTools/Modules/JKK_ReaTools_NEW_RenamerLite.lua</source>
+        <source file="Modules/JKK_ReaTools_NEW_ColorPaletteLite.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/4f7052f43abd0622c378dc5713427a7d1009a6bc/JKK_ReaTools/Modules/JKK_ReaTools_NEW_ColorPaletteLite.lua</source>
+        <source file="Modules/JKK_Theme.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/4f7052f43abd0622c378dc5713427a7d1009a6bc/JKK_ReaTools/Modules/JKK_Theme.lua</source>
+      </version>
+      <version name="0.9.83" author="Junki Kim" time="2026-11-09T16:51:50Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/cf2412b7191d2654a4c1b9f2fbb2c538700a31af/JKK_ReaTools/JKK_ReaTools.lua</source>
+        <source file="Modules/JKK_ReaTools_NEW_ItemTool.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/cf2412b7191d2654a4c1b9f2fbb2c538700a31af/JKK_ReaTools/Modules/JKK_ReaTools_NEW_ItemTool.lua</source>
+        <source file="Modules/JKK_ReaTools_NEW_TrackTool.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/cf2412b7191d2654a4c1b9f2fbb2c538700a31af/JKK_ReaTools/Modules/JKK_ReaTools_NEW_TrackTool.lua</source>
+        <source file="Modules/JKK_ReaTools_NEW_RenamerLite.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/cf2412b7191d2654a4c1b9f2fbb2c538700a31af/JKK_ReaTools/Modules/JKK_ReaTools_NEW_RenamerLite.lua</source>
+        <source file="Modules/JKK_ReaTools_NEW_ColorPaletteLite.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/cf2412b7191d2654a4c1b9f2fbb2c538700a31af/JKK_ReaTools/Modules/JKK_ReaTools_NEW_ColorPaletteLite.lua</source>
+        <source file="Modules/JKK_Theme.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/cf2412b7191d2654a4c1b9f2fbb2c538700a31af/JKK_ReaTools/Modules/JKK_Theme.lua</source>
+      </version>
+    </reapack>
+    <reapack name="JKK_ReaTools_OLD.lua" type="script">
+      <version name="0.9.65" author="Junki Kim" time="2026-11-09T16:49:59Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/4f7052f43abd0622c378dc5713427a7d1009a6bc/JKK_ReaTools/JKK_ReaTools_OLD.lua</source>
+        <source file="Modules/JKK_ReaTools_OLD_ItemTools.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/4f7052f43abd0622c378dc5713427a7d1009a6bc/JKK_ReaTools/Modules/JKK_ReaTools_OLD_ItemTools.lua</source>
+        <source file="Modules/JKK_ReaTools_OLD_TrackTools.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/4f7052f43abd0622c378dc5713427a7d1009a6bc/JKK_ReaTools/Modules/JKK_ReaTools_OLD_TrackTools.lua</source>
+        <source file="Modules/JKK_ReaTools_OLD_TimelineTools.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/4f7052f43abd0622c378dc5713427a7d1009a6bc/JKK_ReaTools/Modules/JKK_ReaTools_OLD_TimelineTools.lua</source>
       </version>
     </reapack>
     <reapack name="JKK_Renamer.lua" type="script">
