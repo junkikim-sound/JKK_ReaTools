@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.9.85
+-- @version 0.9.86
 -- @provides
 --     [nomain] Modules/JKK_ReaTools_NEW_ItemTool.lua
 --     [nomain] Modules/JKK_ReaTools_NEW_TrackTool.lua
@@ -1144,7 +1144,22 @@ end
 -- Status line with the Settings button on its right end.
 local function DrawTopBar()
     -- Buttons sit at the left end of the status line so they can never be
-    -- pushed out of view: [Memo] [Settings]  status text...
+    -- pushed out of view: [Home] [Memo] [Settings]  status text...
+    local home_cmd_id = RPR.NamedCommandLookup("_RS7df81f4a0eea01208f22396bdf933be8c6a3fa28")
+    if home_cmd_id ~= 0 then
+        RPR.ImGui_SameLine(ctx, 0, S(4))
+        RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Button(), 0xFFEA70FF)
+        RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_ButtonHovered(), 0xFFE048FF)
+        RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_ButtonActive(), 0xE5CB3BFF)
+        RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Text(), 0x053359FF)
+
+        if RPR.ImGui_SmallButton(ctx, "Home##JKK_HomeButton") then
+            RPR.Main_OnCommand(home_cmd_id, 0)
+        end
+
+        RPR.ImGui_PopStyleColor(ctx, 4)
+    end
+    RPR.ImGui_SameLine(ctx, 0, S(4))
     local memo_on = panel_visible.A
     if memo_on then
         RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Button(), 0x24866FFF)
