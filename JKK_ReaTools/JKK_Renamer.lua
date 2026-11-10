@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Renamer
 -- @author Junki Kim
--- @version 1.1.0
+-- @version 1.1.1
 -- @provides 
 --     [nomain] Modules/JKK_Renamer_UCSList.lua
 --     [nomain] Modules/JKK_Renamer_WildcardList.lua
@@ -257,6 +257,7 @@ local function UpdateFocusMode()
             current_mode = "Region/Marker"
             mode_focus_active = true
         elseif hit_context == "Track" then
+            -- 유저가 TCP(트랙 패널)를 직접 클릭했을 때만 Track 모드로 진입
             if cur_track_cnt > 0 then
                 current_mode = "Track"
                 mode_focus_active = true
@@ -264,20 +265,16 @@ local function UpdateFocusMode()
                 current_mode = "None"
                 mode_focus_active = false
             end
-        elseif hit_context == "Arrange" then
-            if hit_item then
-                current_mode = "Item"
-                mode_focus_active = true
-            elseif item_sel_changed and cur_item_cnt > 0 then
+        else
+            -- 어레인지 영역 및 트랙 아래 빈 공간:
+            -- 아이템이 1개 이상 선택되어 있으면 Item, 0개면 무조건 None(No Selection)
+            if cur_item_cnt > 0 then
                 current_mode = "Item"
                 mode_focus_active = true
             else
                 current_mode = "None"
                 mode_focus_active = false
             end
-        else
-            current_mode = "None"
-            mode_focus_active = false
         end
     else
         if cur_ts_start ~= cur_ts_end and time_sel_changed then
@@ -286,7 +283,7 @@ local function UpdateFocusMode()
         elseif item_sel_changed and cur_item_cnt > 0 then
             current_mode = "Item"
             mode_focus_active = true
-        elseif track_sel_changed and cur_track_cnt > 0 then
+        elseif track_sel_changed and cur_track_cnt > 0 and hit_context == "Track" then
             current_mode = "Track"
             mode_focus_active = true
         end

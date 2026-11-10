@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.9.84
+-- @version 0.9.85
 -- @provides
 --     [nomain] Modules/JKK_ReaTools_NEW_ItemTool.lua
 --     [nomain] Modules/JKK_ReaTools_NEW_TrackTool.lua
@@ -482,29 +482,23 @@ local function UpdateFocusMode()
     -----------------------------------------------------
     if left_released then
         if mouse_down_context == "Track" then
-            -- A TCP click selects the Track tool group, including when
-            -- the clicked track was already selected.
-            if mouse_down_track or track_selection_changed
-                or RPR.CountSelectedTracks(0) > 0 then
+            -- TCP(트랙 패널)를 직접 클릭한 경우에만 Track 모드 진입
+            if mouse_down_track or track_selection_changed or RPR.CountSelectedTracks(0) > 0 then
                 current_mode = "Track"
                 mode_focus_active = true
             end
-
-        elseif mouse_down_context == "Arrange" then
-            -- A direct item click or a marquee selection both activate Item.
-            if mouse_down_item
-                or (item_selection_changed
-                    and RPR.CountSelectedMediaItems(0) > 0) then
-                current_mode = "Item"
-                mode_focus_active = true
-            else
-                -- Clicking empty Arrange space deactivates the current tools.
-                mode_focus_active = false
-            end
-
         elseif mouse_down_context == "Timeline" then
             current_mode = "Region/Marker"
             mode_focus_active = true
+        else
+            -- Arrange 영역 및 트랙 아래 빈 공간:
+            -- 아이템이 1개 이상 선택되어 있으면 Item, 없으면 무조건 No Selection (mode_focus_active = false)
+            if RPR.CountSelectedMediaItems(0) > 0 then
+                current_mode = "Item"
+                mode_focus_active = true
+            else
+                mode_focus_active = false
+            end
         end
 
         -- Region/marker and time-selection changes are committed on release.
