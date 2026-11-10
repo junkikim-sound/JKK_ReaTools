@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.9.83
+-- @version 0.9.84
 -- @provides
 --     [nomain] Modules/JKK_ReaTools_NEW_ItemTool.lua
 --     [nomain] Modules/JKK_ReaTools_NEW_TrackTool.lua
@@ -21,46 +21,178 @@ RPR.ImGui_Attach(ctx, renamer_input_font)
 ---------------------------------------------------------
 -- USER CONFIG: PANEL WIDTHS
 ---------------------------------------------------------
--- Default widths are relative stretch weights. User-adjusted widths are
--- stored in ExtState and restored when the script is reopened.
+-- Default panel widths in pixels at 100% zoom. User-adjusted widths are stored
+-- in ExtState. When the window is wider than all panels together, the extra
+-- space is shared proportionally; when it is narrower, the strip scrolls.
 local PANEL_DEFAULT_WIDTHS = {
-    A = 0.90, -- Project Memo
-    B = 1.00, -- Controller
-    C = 0.95, -- Renamer / Take Settings
-    D = 1.25, -- Item Tools
-    E = 0.55, -- Color Palette
-    F = 0.45  -- Empty Workspace
+    A = 220, -- Project Memo
+    B = 330, -- Controller
+    C = 420, -- Rename / Take
+    D = 430, -- Item Tools (items only)
+    E = 240  -- Color
 }
 
--- Minimum widths are pixel-based lower limits enforced by invisible anchors.
--- Increase these values when a panel should not be shrinkable below a size.
+-- Minimum widths (pixels at 100% zoom). A panel is never drawn narrower than
+-- this, so its controls cannot overlap; when the window is too narrow for all
+-- visible panels, a horizontal scrollbar appears instead.
 local PANEL_MIN_WIDTHS = {
-    A = 280, -- Project Memo
-    B = 360, -- Controller
-    C = 430, -- Renamer + Take Channel / Item Info
-    D = 560, -- Item Editing Utilities
-    E = 250, -- Color Palette
-    F = 200  -- Empty Workspace
+    A = 160, -- Project Memo
+    B = 280, -- Controller
+    C = 390, -- Rename / Take
+    D = 380, -- Item Tools
+    E = 150  -- Color
 }
+
+-- Width of the draggable divider between panels (pixels at 100% zoom).
+local SPLITTER_WIDTH = 9
 
 -- Main window minimum size (pixels). These values can be adjusted independently
 -- from the individual panel minimum widths above.
-local WINDOW_MIN_WIDTH = 2200
-local WINDOW_MIN_HEIGHT = 360
+local WINDOW_MIN_WIDTH = 200
+local WINDOW_MIN_HEIGHT = 150
+
+---------------------------------------------------------
+-- USER CONFIG: UI ZOOM
+---------------------------------------------------------
+-- The whole UI (fonts, buttons, paddings) is zoomed uniformly so the layout
+-- keeps the same proportions at any window size. The window size below is the
+-- reference at which the zoom factor is exactly 1.0 (the original design size).
+local DESIGN_WINDOW_WIDTH = 1900
+local DESIGN_WINDOW_HEIGHT = 440
+local BASE_FONT_SIZE = 13
+-- Hard limits of the final zoom factor. Below ~0.6 text becomes unreadable.
+local UI_SCALE_MIN = 0.2
+local UI_SCALE_MAX = 2.0
+local UI_SCALE_AUTO_MIN = 0.2
+
+-- Defaults for the zoom settings shown in the Settings popup. The user's choices are
+-- saved in ExtState and override these values.
+local UI_ZOOM_DEFAULTS = {
+    auto = true,          -- follow the window width
+    follow_height = true, -- also shrink when the window is too short for the rows
+    size = 1.0            -- personal size multiplier (1.0 = 100%)
+}
+
+local zoom_state_section = "JKK_ReaTools_Zoom"
+local function LoadZoomSetting(key, default)
+    local value = RPR.GetExtState(zoom_state_section, key)
+    if value == "" then return default end
+    if type(default) == "boolean" then return value == "1" end
+    return tonumber(value) or default
+end
+
+local ui_zoom = {
+    auto = LoadZoomSetting("auto", UI_ZOOM_DEFAULTS.auto),
+    follow_height = LoadZoomSetting("fit_height", UI_ZOOM_DEFAULTS.follow_height),
+    size = LoadZoomSetting("size", UI_ZOOM_DEFAULTS.size)
+}
+
+local function SaveZoomSettings()
+    RPR.SetExtState(zoom_state_section, "auto", ui_zoom.auto and "1" or "0", true)
+    RPR.SetExtState(zoom_state_section, "fit_height", ui_zoom.follow_height and "1" or "0", true)
+    RPR.SetExtState(zoom_state_section, "size", string.format("%.2f", ui_zoom.size), true)
+end
+
+-- Published as a global so the modules loaded with dofile() share the factor.
+JKK_UI_SCALE = 1.0
+local ui_font_size = BASE_FONT_SIZE
+local function S(value) return value * JKK_UI_SCALE end
+
+---------------------------------------------------------
+-- Shared bottom block
+---------------------------------------------------------
+-- Panels pin a block of controls to the bottom of their cell, below a
+-- separator line. Each block is measured when it is drawn, and every separator
+-- is placed at the height of the tallest block, so the lines and the last rows
+-- of all panels share one baseline. Published as a global for the modules.
+local lower_block_heights = {}
+
+function JKK_DrawLowerBlock(draw_ctx, id, draw_fn)
+    -- FIX (screen shaking): every position here is a whole pixel. With
+    -- fractional positions ImGui snapped the widgets to the pixel grid, the
+    -- measured height then differed by a fraction each frame, and the block
+    -- kept jumping up and down by one pixel.
+    local _, gap = RPR.ImGui_GetStyleVar(draw_ctx, RPR.ImGui_StyleVar_ItemSpacing())
+    gap = gap or S(6)
+    local line_gap = math.ceil(gap)
+    local start_y = math.ceil(RPR.ImGui_GetCursorPosY(draw_ctx))
+    local _, avail_h = RPR.ImGui_GetContentRegionAvail(draw_ctx)
+    local bottom_y = math.floor(RPR.ImGui_GetCursorPosY(draw_ctx) + avail_h)
+
+    local own_h = lower_block_heights[id] or 0
+    local zone_h = own_h
+    for _, h in pairs(lower_block_heights) do zone_h = math.max(zone_h, h) end
+
+    -- Separator: aligned across panels, but never above the content above it.
+    local sep_y = math.max(start_y, bottom_y - zone_h - line_gap - 1)
+    RPR.ImGui_SetCursorPosY(draw_ctx, sep_y)
+    RPR.ImGui_Separator(draw_ctx)
+
+    -- Block: bottom-aligned; a shorter block leaves its gap under the line.
+    local block_y = math.max(sep_y + 1 + line_gap, bottom_y - own_h)
+    RPR.ImGui_SetCursorPosY(draw_ctx, block_y)
+    local result = draw_fn()
+
+    local measured = RPR.ImGui_GetCursorPosY(draw_ctx) - gap - block_y
+    lower_block_heights[id] = math.max(0, math.ceil(measured - 0.05))
+    return result
+end
+
+-- Height (pixels at 100% zoom) the tallest panel needs: status line, panel
+-- title and the eight control rows of the Controller.
+local DESIGN_CONTENT_HEIGHT = 260
+
+local function UpdateUIScale(window_width, window_height, needed_width)
+    if not window_width or not window_height
+        or window_width <= 0 or window_height <= 0 then return end
+
+    -- Uniform zoom: the factor is chosen so that all enabled panels fit the
+    -- window exactly. Resizing the window (corner drag or docker size) scales
+    -- the whole UI and keeps every proportion; panels do not stretch apart.
+    local auto_factor = 1.0
+    if ui_zoom.auto then
+        auto_factor = window_width / math.max(1, needed_width or DESIGN_WINDOW_WIDTH)
+        if ui_zoom.follow_height then
+            auto_factor = math.min(auto_factor, window_height / DESIGN_CONTENT_HEIGHT)
+        end
+        auto_factor = math.max(UI_SCALE_AUTO_MIN, auto_factor)
+    end
+
+    local raw = auto_factor * ui_zoom.size
+    raw = math.max(UI_SCALE_MIN, math.min(UI_SCALE_MAX, raw))
+
+    -- Snap to half-pixel font sizes: text stays crisp and the font atlas is
+    -- not asked for a new size on every pixel of a window drag.
+    ui_font_size = math.max(6, math.floor(BASE_FONT_SIZE * raw * 2 + 0.5) / 2)
+    JKK_UI_SCALE = ui_font_size / BASE_FONT_SIZE
+end
 
 local open = true
 local prev_project_state_count = RPR.GetProjectStateChangeCount(0)
 local current_project_state_count = prev_project_state_count
 
-local theme_path = RPR.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme.lua"
+-- Modules are loaded from the folder next to this script first, so a copy of
+-- the tool can run side by side with the installed one. The installed
+-- location is kept as a fallback.
+local script_dir = (debug.getinfo(1, "S").source or ""):match("^@(.+[\\/])") or ""
+local installed_dir = RPR.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/"
+
+local function ResolveModulePath(file_name)
+    local local_path = script_dir .. "Modules/" .. file_name
+    if script_dir ~= "" and RPR.file_exists(local_path) then return local_path end
+    return installed_dir .. "Modules/" .. file_name
+end
+
+local theme_path = ResolveModulePath("JKK_Theme.lua")
 local ApplyTheme = (RPR.file_exists(theme_path) and dofile(theme_path).ApplyTheme)
     or function() return 0, 0 end
 
 ---------------------------------------------------------
 -- Module Loading
 ---------------------------------------------------------
-local function load_module(path)
-    local full_path = RPR.GetResourcePath() .. path
+local function load_module(file_name)
+    local path = file_name
+    local full_path = ResolveModulePath(file_name)
     if not RPR.file_exists(full_path) then
         RPR.MB("Error: Module file not found at " .. full_path, "Module Load Error: File Not Found", 0)
         return nil
@@ -78,10 +210,10 @@ local function load_module(path)
     return result
 end
 
-local item_module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_ReaTools_NEW_ItemTool.lua")
-local track_module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_ReaTools_NEW_TrackTool.lua")
-local renamer_lite_module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_ReaTools_NEW_RenamerLite.lua")
-local color_palette_module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_ReaTools_NEW_ColorPaletteLite.lua")
+local item_module = load_module("JKK_ReaTools_NEW_ItemTool.lua")
+local track_module = load_module("JKK_ReaTools_NEW_TrackTool.lua")
+local renamer_lite_module = load_module("JKK_ReaTools_NEW_RenamerLite.lua")
+local color_palette_module = load_module("JKK_ReaTools_NEW_ColorPaletteLite.lua")
 
 ---------------------------------------------------------
 -- Project Memo
@@ -103,7 +235,14 @@ LoadProjectNote()
 -- Selection Context
 -- Mirrors JKK_Renamer's UpdateFocusMode / GetTargetTypeStr logic.
 ---------------------------------------------------------
-local function GetSelectedRegionMarkerData()
+-- FIX: the scan below walks every marker/region in the project and used to
+-- run up to ~10 times per frame (signature, mode checks, status line, panels).
+-- It is now executed once per defer frame and the result is shared.
+local frame_counter = 0
+local region_marker_cache_frame = -1
+local region_marker_cache_regions, region_marker_cache_markers = {}, {}
+
+local function ScanSelectedRegionMarkerData()
     local regions, markers = {}, {}
     if not (RPR.GetNumRegionsOrMarkers and RPR.GetRegionOrMarker and RPR.GetRegionOrMarkerInfo_Value) then
         return regions, markers
@@ -111,6 +250,8 @@ local function GetSelectedRegionMarkerData()
 
     local marker_count, region_count = RPR.GetNumRegionsOrMarkers(0)
     local total = (marker_count or 0) + (region_count or 0)
+
+    -- 1순위: 직접 클릭된(선택된) 마커/리전 감지
     for idx = 0, total - 1 do
         local pointer = RPR.GetRegionOrMarker(0, idx, "")
         if pointer and RPR.GetRegionOrMarkerInfo_Value(0, pointer, "B_UISEL") > 0 then
@@ -124,7 +265,36 @@ local function GetSelectedRegionMarkerData()
             end
         end
     end
+
+    -- 2순위: 선택된 게 없다면 타임셀렉션 영역 안의 마커/리전 감지
+    if #regions == 0 and #markers == 0 then
+        local ts_start, ts_end = RPR.GetSet_LoopTimeRange(false, false, 0, 0, false)
+        if ts_end > ts_start then
+            local idx = 0
+            while true do
+                local retval, is_region, pos, region_end, name = RPR.EnumProjectMarkers3(0, idx)
+                if retval == 0 then break end
+                if is_region then
+                    if pos < ts_end and region_end > ts_start then
+                        regions[#regions + 1] = { pointer = nil, name = name or "" }
+                    end
+                elseif pos >= ts_start and pos <= ts_end then
+                    markers[#markers + 1] = { pointer = nil, name = name or "" }
+                end
+                idx = idx + 1
+            end
+        end
+    end
+
     return regions, markers
+end
+
+local function GetSelectedRegionMarkerData()
+    if region_marker_cache_frame ~= frame_counter then
+        region_marker_cache_regions, region_marker_cache_markers = ScanSelectedRegionMarkerData()
+        region_marker_cache_frame = frame_counter
+    end
+    return region_marker_cache_regions, region_marker_cache_markers
 end
 
 local function HasSelectedRegionOrMarker()
@@ -463,6 +633,35 @@ local function GetFirstTrackName(track)
     return "Unnamed Track"
 end
 
+-- FIX: the status line can only show a few hundred characters, so stop
+-- collecting names once the text is far longer than any window can display.
+-- Previously every selected item/track name was fetched on every frame.
+local STATUS_NAMES_MAX_BYTES = 2000
+
+local function GetTargetNamesStr(mode)
+    local names, total_bytes, truncated = {}, 0, false
+    local count, get_name = 0, nil
+    if mode == "Item" then
+        count = RPR.CountSelectedMediaItems(0)
+        get_name = function(i) return GetFirstItemName(RPR.GetSelectedMediaItem(0, i)) end
+    elseif mode == "Track" then
+        count = RPR.CountSelectedTracks(0)
+        get_name = function(i) return GetFirstTrackName(RPR.GetSelectedTrack(0, i)) end
+    end
+    for i = 0, count - 1 do
+        local name = get_name(i)
+        names[#names + 1] = name
+        total_bytes = total_bytes + #name + 2
+        if total_bytes > STATUS_NAMES_MAX_BYTES and i < count - 1 then
+            truncated = true
+            break
+        end
+    end
+    local text = table.concat(names, ", ")
+    if truncated then text = text .. ", ..." end
+    return text
+end
+
 local function FitTextToWidth(text, max_width)
     max_width = math.max(1, max_width or 1)
     local text_width = select(1, RPR.ImGui_CalcTextSize(ctx, text))
@@ -484,14 +683,22 @@ local function FitTextToWidth(text, max_width)
         return ellipsis
     end
 
-    for count = char_count - 1, 0, -1 do
+    -- FIX: the rendered width grows with the number of characters, so the
+    -- longest prefix that fits is found by binary search. The previous linear
+    -- scan measured the whole string once per character on every frame.
+    local low, high, best = 0, char_count - 1, ellipsis
+    while low <= high do
+        local count = (low + high) // 2
         local byte_end = (count == 0) and 0 or (utf8.offset(text, count + 1) or (#text + 1)) - 1
         local candidate = text:sub(1, byte_end) .. ellipsis
         if select(1, RPR.ImGui_CalcTextSize(ctx, candidate)) <= max_width then
-            return candidate
+            best = candidate
+            low = count + 1
+        else
+            high = count - 1
         end
     end
-    return ellipsis
+    return best
 end
 
 -- Read the live REAPER selection. This function is intentionally separate
@@ -504,22 +711,26 @@ local function CaptureSelectionStatus()
     if current_mode == "Item" and IsCurrentModeActive() and item_count > 0 then
         local item = RPR.GetSelectedMediaItem(0, 0)
         local item_type = GetTargetTypeStr("Item", item)
-        return string.format("Selected %02d Items (%s: ", item_count, item_type),
-            GetFirstItemName(item), ")"
+        local names_str = GetTargetNamesStr("Item")
+        return string.format("Selected %02d Items (%s: ", item_count, item_type), names_str, ")"
     elseif current_mode == "Track" and IsCurrentModeActive() and track_count > 0 then
         local track = RPR.GetSelectedTrack(0, 0)
         local track_type = GetTargetTypeStr("Track", track)
-        return string.format("Selected %02d Tracks (%s: ", track_count, track_type),
-            GetFirstTrackName(track), ")"
+        local names_str = GetTargetNamesStr("Track")
+        return string.format("Selected %02d Tracks (%s: ", track_count, track_type), names_str, ")"
     elseif current_mode == "Region/Marker" and IsCurrentModeActive() then
         local regions, markers = GetSelectedRegionMarkerData()
         local total = #regions + #markers
         if total > 0 then
-            local first = regions[1] or markers[1]
             local kind = (#regions > 0 and #markers > 0) and "Regions/Markers"
                 or ((#regions > 0) and "Regions" or "Markers")
-            return string.format("Selected %02d %s (", total, kind),
-                first.name ~= "" and first.name or "Unnamed", ")"
+
+            local names = {}
+            for _, r in ipairs(regions) do names[#names + 1] = (r.name ~= "" and r.name or "Unnamed") end
+            for _, m in ipairs(markers) do names[#names + 1] = (m.name ~= "" and m.name or "Unnamed") end
+            local names_str = table.concat(names, ", ")
+
+            return string.format("Selected %02d %s (", total, kind), names_str, ")"
         end
         local ts_start, ts_end = RPR.GetSet_LoopTimeRange(false, false, 0, 0, false)
         if ts_end > ts_start then return "Timeline (Time Selection)" end
@@ -585,18 +796,23 @@ local function DrawSelectionStatus()
     local prefix, selected_name, suffix = BuildSelectionStatus()
     local available_width = select(1, RPR.ImGui_GetContentRegionAvail(ctx))
 
+    -- 우측 200px 여백 확보 (원하는 여백 수치로 조절 가능)
+    local safe_width = math.max(1, available_width - S(200))
+
     RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Text(), 0xBFC5CCFF)
     if selected_name == nil then
         RPR.ImGui_Text(ctx, FitTextToWidth(prefix, available_width))
     else
         local prefix_width = select(1, RPR.ImGui_CalcTextSize(ctx, prefix))
         local suffix_width = select(1, RPR.ImGui_CalcTextSize(ctx, suffix))
-        local name_width = available_width - prefix_width - suffix_width
 
-        if name_width <= 1 then
+        -- 이름이 그려질 수 있는 최대 픽셀 너비
+        local name_max_width = safe_width - prefix_width - suffix_width
+
+        if name_max_width <= 1 then
             RPR.ImGui_Text(ctx, FitTextToWidth(prefix .. selected_name .. suffix, available_width))
         else
-            selected_name = FitTextToWidth(selected_name, name_width)
+            selected_name = FitTextToWidth(selected_name, name_max_width)
             RPR.ImGui_Text(ctx, prefix)
             RPR.ImGui_SameLine(ctx, 0, 0)
             RPR.ImGui_Text(ctx, selected_name)
@@ -608,66 +824,72 @@ local function DrawSelectionStatus()
 end
 
 ---------------------------------------------------------
--- Panel Order Persistence / Drag Reordering
+-- Panels: visibility, order, widths
 ---------------------------------------------------------
+-- Panels are drawn side by side as child windows with draggable splitters in
+-- between. Each panel always gets at least its minimum width, so controls can
+-- never overlap; when the window is too narrow for all visible panels, a
+-- horizontal scrollbar appears instead.
 local panel_state_section = "JKK_ReaTools_Panels"
 local panel_width_state_section = "JKK_ReaTools_PanelWidths"
-local panel_ids = { "A", "B", "C", "D", "E", "F" }
+local panel_ids = { "A", "B", "C", "D", "E" }
 
-local function LoadPanelWidthWeights()
-    local weights, total = {}, 0
-    for _, id in ipairs(panel_ids) do
-        local value = tonumber(RPR.GetExtState(panel_width_state_section, "width_" .. id))
-        if value and value > 0 then
-            weights[id] = value
-            total = total + value
-        end
-    end
-
-    -- If any panel has no saved value, keep the complete default layout.
-    if total <= 0 then
-        for id, value in pairs(PANEL_DEFAULT_WIDTHS) do weights[id] = value end
-        return weights
-    end
-
-    for _, id in ipairs(panel_ids) do
-        if not weights[id] then
-            for default_id, value in pairs(PANEL_DEFAULT_WIDTHS) do
-                weights[default_id] = value
-            end
-            return weights
-        end
-    end
-    return weights
-end
-
-local panel_width_weights = LoadPanelWidthWeights()
-local last_panel_widths = nil
-local panel_widths_dirty = false
-
-local function SavePanelWidthWeights(widths)
-    local total = 0
-    for _, id in ipairs(panel_ids) do total = total + (widths[id] or 0) end
-    if total <= 0 then return end
-
-    for _, id in ipairs(panel_ids) do
-        local weight = (widths[id] or 0) / total * #panel_ids
-        panel_width_weights[id] = weight
-        RPR.SetExtState(panel_width_state_section, "width_" .. id, string.format("%.6f", weight), true)
-    end
-end
 local panel_titles = {
     A = "Project Memo",
     B = "Controller",
-    C = "Renamer / Take Settings",
+    C = "Rename / Take",
     D = "Item Tools",
-    E = "Color Palette",
-    F = ""
+    E = "Color"
 }
+
+-- Panels shown by default. Hidden panels can be turned on in Settings.
+local PANEL_DEFAULT_VISIBLE = { A = true, B = true, C = true, D = true, E = true }
+
+local function LoadPanelVisibility()
+    local visible = {}
+    for _, id in ipairs(panel_ids) do
+        local saved = RPR.GetExtState(panel_state_section, "visible_" .. id)
+        if saved == "" then
+            visible[id] = PANEL_DEFAULT_VISIBLE[id]
+        else
+            visible[id] = saved == "1"
+        end
+    end
+    return visible
+end
+
+local panel_visible = LoadPanelVisibility()
+
+local function SavePanelVisibility()
+    for _, id in ipairs(panel_ids) do
+        RPR.SetExtState(panel_state_section, "visible_" .. id, panel_visible[id] and "1" or "0", true)
+    end
+end
+
+-- Panel widths in pixels at 100% zoom (new "px_" keys; the old weight-based
+-- keys are ignored).
+local function LoadPanelBaseWidths()
+    local base = {}
+    for _, id in ipairs(panel_ids) do
+        local value = tonumber(RPR.GetExtState(panel_width_state_section, "px_" .. id))
+        base[id] = (value and value > 0) and value or PANEL_DEFAULT_WIDTHS[id]
+    end
+    return base
+end
+
+local panel_base_widths = LoadPanelBaseWidths()
+
+local function SavePanelBaseWidths()
+    for _, id in ipairs(panel_ids) do
+        RPR.SetExtState(panel_width_state_section, "px_" .. id,
+            string.format("%.1f", panel_base_widths[id]), true)
+    end
+end
+
 local function LoadPanelOrder()
     local saved = RPR.GetExtState(panel_state_section, "order")
     local order, seen = {}, {}
-    for id in (saved or ""):gmatch("[ABCDEF]") do
+    for id in (saved or ""):gmatch("[ABCDE]") do
         if not seen[id] then
             order[#order + 1] = id
             seen[id] = true
@@ -680,6 +902,7 @@ local function LoadPanelOrder()
 end
 
 local panel_order = LoadPanelOrder()
+
 local function SavePanelOrder()
     RPR.SetExtState(panel_state_section, "order", table.concat(panel_order, ","), true)
 end
@@ -697,36 +920,96 @@ local function SwapPanelOrder(source_id, target_id)
     end
 end
 
+local function ResetLayout()
+    panel_order = {}
+    for i, id in ipairs(panel_ids) do panel_order[i] = id end
+    SavePanelOrder()
+    for _, id in ipairs(panel_ids) do
+        panel_base_widths[id] = PANEL_DEFAULT_WIDTHS[id]
+        panel_visible[id] = PANEL_DEFAULT_VISIBLE[id]
+    end
+    SavePanelBaseWidths()
+    SavePanelVisibility()
+end
+
+-- Only the panels that make sense for the current selection are shown:
+-- Item Tools appears for items only.
+local function GetVisiblePanelIds()
+    local ids = {}
+    for _, id in ipairs(panel_order) do
+        if panel_visible[id] then
+            ids[#ids + 1] = id
+        end
+    end
+    return ids
+end
+
+-- Every panel has its own width (never below its minimum). If the window is
+-- wider than all panels together, the spare room is shared proportionally
+-- ("fill" > 1). If it is narrower, the widths are kept and the strip scrolls.
+local function ComputePanelWidths(ids, total_width)
+    -- Every panel, Color included, keeps the same share of the window: spare
+    -- room is handed out in proportion to the panel widths.
+    local widths, sum = {}, 0
+    for _, id in ipairs(ids) do
+        widths[id] = math.max(PANEL_MIN_WIDTHS[id], panel_base_widths[id]) * JKK_UI_SCALE
+        sum = sum + widths[id]
+    end
+    local fill = (sum > 0) and (total_width / sum) or 1
+    for _, id in ipairs(ids) do widths[id] = math.floor(widths[id] * fill) end
+    return widths, fill
+end
+
+-- Width (pixels at 100% zoom) that all enabled panels need side by side. Item
+-- Tools is counted even while hidden, so the zoom does not jump when the
+-- selection changes between items and tracks.
+local design_width_cache = nil
+local splitter_dragging = false
+
+local function GetDesignWidth()
+    if design_width_cache and splitter_dragging then return design_width_cache end
+    local sum, count = 0, 0
+    for _, id in ipairs(panel_ids) do
+        if panel_visible[id] then
+            sum = sum + math.max(PANEL_MIN_WIDTHS[id], panel_base_widths[id])
+            count = count + 1
+        end
+    end
+    if count == 0 then return DESIGN_WINDOW_WIDTH end
+    design_width_cache = sum + SPLITTER_WIDTH * (count - 1) + 20
+    return design_width_cache
+end
+
 local pending_panel_swap = nil
 
 local function DrawPanelHeader(panel_id)
     local available_width = select(1, RPR.ImGui_GetContentRegionAvail(ctx))
     -- Keep the visible label clean; the panel letter is only used internally
     -- for drag/drop identity and the ImGui ID.
-    local label = " " .. panel_titles[panel_id] .. "##PanelHeader_" .. panel_id
+    local label = panel_titles[panel_id] .. "##PanelHeader_" .. panel_id
 
-    -- Flat, compact header: transparent in normal/hover/active states, with
-    -- the same gold text color as the global Selected status line.
+    -- Flat, compact header that doubles as the drag handle for reordering.
     RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Button(), 0x00000000)
     RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_ButtonHovered(), 0x00000000)
     RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_ButtonActive(), 0x00000000)
     RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Text(), 0xE3DB8EFF)
-    RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_FramePadding(), 4, 0)
+    RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_FramePadding(), 0, 0)
     RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_ButtonTextAlign(), 0, 0.5)
     RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_FrameBorderSize(), 0)
-    RPR.ImGui_Button(ctx, label, math.max(56, available_width), 15)
+    RPR.ImGui_Button(ctx, label, math.max(1, available_width), S(15))
     RPR.ImGui_PopStyleVar(ctx, 3)
     RPR.ImGui_PopStyleColor(ctx, 4)
+    if RPR.ImGui_IsItemHovered(ctx) then
+        RPR.ImGui_SetTooltip(ctx, "Drag onto another panel title to swap their places.")
+    end
 
-    if RPR.ImGui_BeginDragDropSource and RPR.ImGui_SetDragDropPayload and RPR.ImGui_EndDragDropSource
-        and RPR.ImGui_BeginDragDropSource(ctx) then
+    if RPR.ImGui_BeginDragDropSource(ctx) then
         RPR.ImGui_SetDragDropPayload(ctx, "JKK_REATOOLS_PANEL", panel_id)
-        RPR.ImGui_Text(ctx, "Move Panel " .. panel_id)
+        RPR.ImGui_Text(ctx, "Move " .. panel_titles[panel_id])
         RPR.ImGui_EndDragDropSource(ctx)
     end
 
-    if RPR.ImGui_BeginDragDropTarget and RPR.ImGui_AcceptDragDropPayload and RPR.ImGui_EndDragDropTarget
-        and RPR.ImGui_BeginDragDropTarget(ctx) then
+    if RPR.ImGui_BeginDragDropTarget(ctx) then
         local accepted, payload = RPR.ImGui_AcceptDragDropPayload(ctx, "JKK_REATOOLS_PANEL", nil)
         if accepted and payload and payload ~= panel_id then
             pending_panel_swap = { payload, panel_id }
@@ -735,43 +1018,124 @@ local function DrawPanelHeader(panel_id)
     end
 end
 
----------------------------------------------------------
--- Panel A: Project Memo
----------------------------------------------------------
-local function DrawPanelA()
-    -- Keep the panel wide enough for both footer shortcuts, using an anchor
-    -- before the flexible memo field so no invisible item is placed below them.
-    local peaks_width = select(1, RPR.ImGui_CalcTextSize(ctx, "Peaks Display Settings"))
-    local directory_width = select(1, RPR.ImGui_CalcTextSize(ctx, "Open Project Directory"))
-    local memo_min_width = math.max(
-        PANEL_MIN_WIDTHS.A,
-        math.max(peaks_width, directory_width) + 26
-    )
-    RPR.ImGui_Dummy(ctx, memo_min_width, 1)
-    local available_width, available_height = RPR.ImGui_GetContentRegionAvail(ctx)
-    available_width = math.max(1, available_width)
-
-    -- The note pad consumes the flexible space; the two shortcut buttons reserve
-    -- a fixed footer and therefore remain attached to the bottom of the window.
-    local button_height = 22
-    local vertical_spacing = 6 -- matches the main window ItemSpacing Y
-    local shortcut_footer_height = button_height * 2 + vertical_spacing * 2
-    local note_height = math.max(60, available_height - shortcut_footer_height)
-
-    local changed_note, new_note = RPR.ImGui_InputTextMultiline(
-        ctx, "##proj_note", project_note, available_width, note_height
-    )
-    if changed_note then project_note = new_note end
-    if RPR.ImGui_IsItemDeactivatedAfterEdit(ctx) then
-        RPR.SetProjExtState(0, "JKK_ReaTools_Note", "project_note", project_note)
-        RPR.SetProjExtState(0, "JKK_ReaTools_Note", "Project_note", project_note)
+-- Draggable divider between two panels. Moving it trades width between the
+-- two neighbours only; neither can go below its minimum.
+local function DrawSplitter(index, left_id, right_id, fill, height, splitter_width)
+    RPR.ImGui_InvisibleButton(ctx, "##JKK_Splitter_" .. index, splitter_width, height)
+    local hovered = RPR.ImGui_IsItemHovered(ctx)
+    local active = RPR.ImGui_IsItemActive(ctx)
+    if hovered or active then
+        RPR.ImGui_SetMouseCursor(ctx, RPR.ImGui_MouseCursor_ResizeEW())
     end
 
-    local shortcut_width = math.max(1, select(1, RPR.ImGui_GetContentRegionAvail(ctx)))
-    if RPR.ImGui_Button(ctx, "Peaks Display Settings", shortcut_width, 22) then
+    local min_x, min_y = RPR.ImGui_GetItemRectMin(ctx)
+    local max_x, max_y = RPR.ImGui_GetItemRectMax(ctx)
+    local line_x = math.floor((min_x + max_x) / 2) + 0.5
+    local color = active and 0x068FC3FF or (hovered and 0x6A6A6AFF or 0x3C3C3CFF)
+    RPR.ImGui_DrawList_AddLine(RPR.ImGui_GetWindowDrawList(ctx),
+        line_x, min_y + S(4), line_x, max_y - S(4), color, active and 2 or 1)
+
+    if active then
+        local delta_x = RPR.ImGui_GetMouseDelta(ctx)
+        if delta_x and delta_x ~= 0 then
+            -- FIX: the divider always responds. The left panel grows or shrinks
+            -- with the mouse; the right panel gives up the same amount until it
+            -- reaches its minimum, after which the strip simply gets wider.
+            local delta = delta_x / (JKK_UI_SCALE * fill)
+            local old_left = math.max(PANEL_MIN_WIDTHS[left_id], panel_base_widths[left_id])
+            local new_left = math.max(PANEL_MIN_WIDTHS[left_id], old_left + delta)
+            local applied = new_left - old_left
+            local old_right = math.max(PANEL_MIN_WIDTHS[right_id], panel_base_widths[right_id])
+            panel_base_widths[left_id] = new_left
+            panel_base_widths[right_id] = math.max(PANEL_MIN_WIDTHS[right_id], old_right - applied)
+        end
+    end
+    if RPR.ImGui_IsItemActivated(ctx) then splitter_dragging = true end
+    if RPR.ImGui_IsItemDeactivated(ctx) then
+        splitter_dragging = false
+        SavePanelBaseWidths()
+    end
+    if hovered and not active then
+        RPR.ImGui_SetTooltip(ctx, "Drag to resize")
+    end
+end
+
+---------------------------------------------------------
+-- Settings popup (zoom, panels, layout, project shortcuts)
+---------------------------------------------------------
+local SETTINGS_POPUP_ID = "##JKK_ReaTools_Settings"
+
+local function DrawSettingsPopup()
+    if not RPR.ImGui_BeginPopup(ctx, SETTINGS_POPUP_ID) then return end
+
+    RPR.ImGui_TextDisabled(ctx, "Panels")
+    local panels_changed = false
+    for _, id in ipairs(panel_ids) do
+        local changed, value = RPR.ImGui_Checkbox(ctx, panel_titles[id] .. "##Show_" .. id, panel_visible[id])
+        if changed then panel_visible[id] = value; panels_changed = true end
+        if id == "D" and RPR.ImGui_IsItemHovered(ctx) then
+            RPR.ImGui_SetTooltip(ctx, "Shown only while items are the active selection.")
+        end
+    end
+    if panels_changed then SavePanelVisibility() end
+    if RPR.ImGui_Button(ctx, "Reset Layout##JKK_ResetLayout") then ResetLayout() end
+    if RPR.ImGui_IsItemHovered(ctx) then
+        RPR.ImGui_SetTooltip(ctx, "Default panels, order and widths.")
+    end
+
+    RPR.ImGui_Separator(ctx)
+    RPR.ImGui_TextDisabled(ctx, "UI Zoom")
+    local zoom_changed = false
+    local value_changed, new_value
+
+    value_changed, new_value = RPR.ImGui_Checkbox(ctx, "Auto", ui_zoom.auto)
+    if value_changed then ui_zoom.auto = new_value; zoom_changed = true end
+    if RPR.ImGui_IsItemHovered(ctx) then
+        RPR.ImGui_SetTooltip(ctx, "Zoom the whole UI so all panels fit the window.\nOff: fixed size, set by the slider.")
+    end
+    RPR.ImGui_SameLine(ctx)
+    RPR.ImGui_BeginDisabled(ctx, not ui_zoom.auto)
+    value_changed, new_value = RPR.ImGui_Checkbox(ctx, "Fit height", ui_zoom.follow_height)
+    if value_changed then ui_zoom.follow_height = new_value; zoom_changed = true end
+    if RPR.ImGui_IsItemHovered(ctx, RPR.ImGui_HoveredFlags_AllowWhenDisabled()) then
+        RPR.ImGui_SetTooltip(ctx, "Also shrink when the window is too short for the rows.")
+    end
+    RPR.ImGui_EndDisabled(ctx)
+
+    -- Applied on release so the popup does not resize under the mouse.
+    RPR.ImGui_SetNextItemWidth(ctx, S(140))
+    local percent = math.floor((ui_zoom.pending_size or ui_zoom.size) * 100 + 0.5)
+    value_changed, new_value = RPR.ImGui_SliderInt(ctx, "##JKK_UIZoomSize", percent, 60, 200, "Size %d%%")
+    if value_changed then ui_zoom.pending_size = new_value / 100 end
+    if RPR.ImGui_IsItemDeactivated(ctx) and ui_zoom.pending_size then
+        ui_zoom.size = ui_zoom.pending_size
+        ui_zoom.pending_size = nil
+        zoom_changed = true
+    end
+    if RPR.ImGui_IsItemClicked(ctx, 1) then
+        ui_zoom.size = UI_ZOOM_DEFAULTS.size
+        ui_zoom.pending_size = nil
+        zoom_changed = true
+    end
+    if RPR.ImGui_IsItemHovered(ctx) then
+        RPR.ImGui_SetTooltip(ctx, "Personal size on top of the automatic zoom.\nRight-click: 100%")
+    end
+    RPR.ImGui_SameLine(ctx)
+    RPR.ImGui_TextDisabled(ctx, string.format("%.1fpx", ui_font_size))
+    if RPR.ImGui_Button(ctx, "Reset Zoom##JKK_ResetZoom") then
+        ui_zoom.auto = UI_ZOOM_DEFAULTS.auto
+        ui_zoom.follow_height = UI_ZOOM_DEFAULTS.follow_height
+        ui_zoom.size = UI_ZOOM_DEFAULTS.size
+        ui_zoom.pending_size = nil
+        zoom_changed = true
+    end
+    if zoom_changed then SaveZoomSettings() end
+
+    RPR.ImGui_Separator(ctx)
+    if RPR.ImGui_MenuItem(ctx, "Peaks Display Settings") then
         RPR.Main_OnCommand(42074, 0)
     end
-    if RPR.ImGui_Button(ctx, "Open Project Directory", shortcut_width, 22) then
+    if RPR.ImGui_MenuItem(ctx, "Open Project Directory") then
         local command_id = RPR.NamedCommandLookup("_S&M_OPEN_PRJ_PATH")
         if command_id ~= 0 then
             RPR.Main_OnCommand(command_id, 0)
@@ -780,112 +1144,124 @@ local function DrawPanelA()
         end
     end
 
+    RPR.ImGui_EndPopup(ctx)
+end
+
+-- Status line with the Settings button on its right end.
+local function DrawTopBar()
+    -- Buttons sit at the left end of the status line so they can never be
+    -- pushed out of view: [Memo] [Settings]  status text...
+    local memo_on = panel_visible.A
+    if memo_on then
+        RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Button(), 0x24866FFF)
+        RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_ButtonHovered(), 0x2A9A80FF)
+        RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_ButtonActive(), 0x1F735FFF)
+    end
+    local memo_clicked = RPR.ImGui_SmallButton(ctx, "Memo##JKK_MemoToggle")
+    if memo_on then RPR.ImGui_PopStyleColor(ctx, 3) end
+    if memo_clicked then
+        panel_visible.A = not panel_visible.A
+        SavePanelVisibility()
+    end
+    if RPR.ImGui_IsItemHovered(ctx) then
+        RPR.ImGui_SetTooltip(ctx, memo_on and "Hide the Project Memo panel" or "Show the Project Memo panel")
+    end
+
+    RPR.ImGui_SameLine(ctx, 0, S(4))
+    if RPR.ImGui_SmallButton(ctx, "Settings##JKK_SettingsButton") then
+        RPR.ImGui_OpenPopup(ctx, SETTINGS_POPUP_ID)
+    end
+    DrawSettingsPopup()
+
+    RPR.ImGui_SameLine(ctx, 0, S(10))
+    DrawSelectionStatus()
+end
+
+---------------------------------------------------------
+-- Panel A: Project Memo
+---------------------------------------------------------
+local function DrawPanelA()
+    local available_width, available_height = RPR.ImGui_GetContentRegionAvail(ctx)
+    local changed_note, new_note = RPR.ImGui_InputTextMultiline(
+        ctx, "##proj_note", project_note,
+        math.max(1, available_width), math.max(S(40), available_height)
+    )
+    if changed_note then project_note = new_note end
+    if RPR.ImGui_IsItemDeactivatedAfterEdit(ctx) then
+        RPR.SetProjExtState(0, "JKK_ReaTools_Note", "project_note", project_note)
+        RPR.SetProjExtState(0, "JKK_ReaTools_Note", "Project_note", project_note)
+        -- FIX: project ext state lives in the .rpp file, but writing it does not
+        -- flag the project as modified, so the memo was silently lost when the
+        -- project was closed without another change.
+        if RPR.MarkProjectDirty then RPR.MarkProjectDirty(0) end
+    end
 end
 
 ---------------------------------------------------------
 -- Panel B: Context Controller / Actions
 ---------------------------------------------------------
 local function DrawPanelB()
-    -- Enforce the minimum width before drawing; avoid a trailing dummy under
-    -- the bottom-anchored action buttons.
-    RPR.ImGui_Dummy(ctx, PANEL_MIN_WIDTHS.B, 1)
-    if current_mode == "None" then
-        RPR.ImGui_Text(ctx, "Select an item, track, or timeline area to show its tools.")
-    else
-        RPR.ImGui_BeginDisabled(ctx, not IsCurrentModeActive())
+    RPR.ImGui_BeginDisabled(ctx, not IsCurrentModeActive())
 
-        if current_mode == "Item" then
-            if item_module and item_module.JKK_ItemTool_Draw then
-                item_module.JKK_ItemTool_Draw(
-                    ctx,
-                    prev_project_state_count,
-                    current_project_state_count,
-                    "item",
-                    track_module
-                )
-            else
-                RPR.ImGui_Text(ctx, "Item tools module is unavailable.")
-            end
-        elseif current_mode == "Track" then
-            if track_module and track_module.JKK_TrackTool_Draw then
-                track_module.JKK_TrackTool_Draw(ctx, "track")
-            else
-                RPR.ImGui_Text(ctx, "Track tools module is unavailable.")
-            end
-        elseif current_mode == "Region/Marker" then
-            if track_module and track_module.JKK_TrackTool_DrawTimelineActions then
-                track_module.JKK_TrackTool_DrawTimelineActions(ctx)
-            else
-                RPR.ImGui_Text(ctx, "Timeline tools module is unavailable.")
-            end
+    if current_mode == "Item" then
+        if item_module and item_module.JKK_ItemTool_Draw then
+            item_module.JKK_ItemTool_Draw(
+                ctx,
+                prev_project_state_count,
+                current_project_state_count,
+                "item",
+                track_module
+            )
+        else
+            RPR.ImGui_Text(ctx, "Item tools module is unavailable.")
         end
-
-        RPR.ImGui_EndDisabled(ctx)
+    elseif current_mode == "Track" then
+        if track_module and track_module.JKK_TrackTool_Draw then
+            track_module.JKK_TrackTool_Draw(ctx, "track")
+        else
+            RPR.ImGui_Text(ctx, "Track tools module is unavailable.")
+        end
+    elseif current_mode == "Region/Marker" then
+        if track_module and track_module.JKK_TrackTool_DrawTimelineActions then
+            track_module.JKK_TrackTool_DrawTimelineActions(ctx)
+        else
+            RPR.ImGui_Text(ctx, "Timeline tools module is unavailable.")
+        end
     end
+
+    RPR.ImGui_EndDisabled(ctx)
 end
 
 ---------------------------------------------------------
--- Panel C: Renamer + Take Channel / Item Info
+-- Panel C: Rename (all modes) + Take settings (items only)
 ---------------------------------------------------------
-local renamer_properties_button_width = 0
-
 local function DrawPanelC()
-    RPR.ImGui_Dummy(ctx, PANEL_MIN_WIDTHS.C, 1)
     local mode_active = IsCurrentModeActive()
-    local panel_width = select(1, RPR.ImGui_GetContentRegionAvail(ctx))
-
-    -- A 2:1 metadata table gives the Properties button one third of the panel.
-    -- The metadata renderer returns its exact cell width after the first frame;
-    -- that value is then reused by Open Renamer so their right-side buttons match.
-    local estimated_properties_width = math.max(70, panel_width / 3 - 16)
-    local open_button_width = (renamer_properties_button_width > 0)
-        and renamer_properties_button_width or estimated_properties_width
 
     if renamer_lite_module and renamer_lite_module.JKK_RenamerLite_Draw then
         renamer_lite_module.JKK_RenamerLite_Draw(
-            ctx, current_mode, mode_active, renamer_input_font, open_button_width
+            ctx, current_mode, mode_active, renamer_input_font
         )
     else
         RPR.ImGui_Text(ctx, "Renamer Lite module is unavailable.")
     end
 
-    if item_module and item_module.JKK_ItemTool_DrawMetadata then
-        -- Reserve the lower part of Panel C for Take Channel / Pitch Mode and
-        -- Item Info. The Renamer remains at the top while metadata follows the
-        -- window bottom as the user resizes the script vertically.
-        local cursor_y = RPR.ImGui_GetCursorPosY(ctx)
-        local _, available_height = RPR.ImGui_GetContentRegionAvail(ctx)
-        local frame_height = RPR.ImGui_GetFrameHeight(ctx)
-        local text_height = RPR.ImGui_GetTextLineHeight(ctx)
-        local spacing_y = 6
-        local metadata_height = math.max(
-            frame_height * 3 + spacing_y * 2,
-            text_height * 3 + spacing_y * 3 + 22
-        ) + 6 -- reserves the visible bottom margin below Properties
-        local divider_height = spacing_y * 2 + 1
-        local flexible_gap = math.max(0, available_height - metadata_height - divider_height)
-        RPR.ImGui_SetCursorPosY(ctx, cursor_y + flexible_gap)
-
-        RPR.ImGui_Spacing(ctx)
-        RPR.ImGui_Separator(ctx)
-        RPR.ImGui_Spacing(ctx)
-
-        local item_active = current_mode == "Item" and mode_active
-        RPR.ImGui_BeginDisabled(ctx, not item_active)
-        local actual_properties_width = item_module.JKK_ItemTool_DrawMetadata(ctx)
-        RPR.ImGui_EndDisabled(ctx)
-        if actual_properties_width and actual_properties_width > 0 then
-            renamer_properties_button_width = actual_properties_width
-        end
+    -- Take Channel / Pitch Mode / Item Info only apply to items, so they are
+    -- only shown in Item mode. They sit in the shared bottom block, so their
+    -- separator and last row line up with Item Tools.
+    if current_mode == "Item" and item_module and item_module.JKK_ItemTool_DrawMetadata then
+        JKK_DrawLowerBlock(ctx, "C", function()
+            RPR.ImGui_BeginDisabled(ctx, not mode_active)
+            item_module.JKK_ItemTool_DrawMetadata(ctx)
+            RPR.ImGui_EndDisabled(ctx)
+        end)
     end
-
 end
 
 ---------------------------------------------------------
--- Panel D: Item Editing Utilities
+-- Panel D: Item Editing Utilities (items only)
 ---------------------------------------------------------
 local function DrawPanelD()
-    RPR.ImGui_Dummy(ctx, PANEL_MIN_WIDTHS.D, 1)
     if item_module and item_module.JKK_ItemTool_DrawEditingUtilities then
         local item_active = current_mode == "Item" and IsCurrentModeActive()
         RPR.ImGui_BeginDisabled(ctx, not item_active)
@@ -897,47 +1273,14 @@ local function DrawPanelD()
 end
 
 ---------------------------------------------------------
--- Panel E: Additional Resizable Workspace
+-- Panel E: Color (wheel + recent colors)
 ---------------------------------------------------------
 local function DrawPanelE()
-    RPR.ImGui_Dummy(ctx, PANEL_MIN_WIDTHS.E, 1)
     if color_palette_module and color_palette_module.JKK_ColorPalette_Draw then
-        color_palette_module.JKK_ColorPalette_Draw(
-            ctx,
-            current_mode,
-            IsCurrentModeActive()
-        )
+        color_palette_module.JKK_ColorPalette_Draw(ctx, current_mode, IsCurrentModeActive())
     else
-        RPR.ImGui_Text(ctx, "Color Palette module is unavailable.")
+        RPR.ImGui_Text(ctx, "Color module is unavailable.")
     end
-end
-
----------------------------------------------------------
--- Panel F: Empty Resizable Workspace (no header)
----------------------------------------------------------
-local function DrawPanelF()
-    -- Keep the invisible width anchor at the top so the column retains its
-    -- minimum width. The footer button is positioned at the very bottom of
-    -- the full-height table cell, with no extra Dummy spacing.
-    RPR.ImGui_Dummy(ctx, PANEL_MIN_WIDTHS.F, 1)
-
-    local footer_cursor_y = RPR.ImGui_GetCursorPosY(ctx)
-    local _, footer_available_y = RPR.ImGui_GetContentRegionAvail(ctx)
-    local footer_button_height = 1
-    RPR.ImGui_SetCursorPosY(
-        ctx,
-        footer_cursor_y + math.max(0, footer_available_y - footer_button_height)
-    )
-
-    -- A 1x1 button with transparent normal/hover/active colors and an
-    -- ID-only label: it creates an actual ImGui item without visible content.
-    RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Button(), 0x00000000)
-    RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_ButtonHovered(), 0x00000000)
-    RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_ButtonActive(), 0x00000000)
-    RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_FramePadding(), 0, 0)
-    RPR.ImGui_Button(ctx, "##JKK_Panel_Footer_Anchor", 1, footer_button_height)
-    RPR.ImGui_PopStyleVar(ctx, 1)
-    RPR.ImGui_PopStyleColor(ctx, 3)
 end
 
 local panel_drawers = {
@@ -945,14 +1288,83 @@ local panel_drawers = {
     B = DrawPanelB,
     C = DrawPanelC,
     D = DrawPanelD,
-    E = DrawPanelE,
-    F = DrawPanelF
+    E = DrawPanelE
 }
+
+local function DrawPanels()
+    -- FIX (screen shaking): every size is a whole pixel. Fractional sizes made
+    -- the content overflow by less than a pixel, so scrollbars kept appearing
+    -- and disappearing and the panels jumped.
+    local dock_bottom_safety = math.floor(S(6))
+    local available_width, available_height = RPR.ImGui_GetContentRegionAvail(ctx)
+    available_width = math.floor(available_width)
+    local strip_height = math.max(1, math.floor(available_height) - dock_bottom_safety)
+
+    local ids = GetVisiblePanelIds()
+    if #ids == 0 then
+        RPR.ImGui_TextDisabled(ctx, "All panels are hidden. Turn them on in Settings.")
+        return
+    end
+
+    local splitter_width = math.max(5, math.floor(S(SPLITTER_WIDTH)))
+    local splitters_total = splitter_width * (#ids - 1)
+    local widths, fill = ComputePanelWidths(ids, available_width - splitters_total)
+    local content_width = splitters_total
+    for _, id in ipairs(ids) do content_width = content_width + widths[id] end
+
+    -- Leave room for the horizontal scrollbar only when it is needed.
+    local needs_scroll = false
+    local panel_height = strip_height
+    local strip_flags = RPR.ImGui_WindowFlags_NoScrollbar() | RPR.ImGui_WindowFlags_NoScrollWithMouse()
+
+    -- Scrollbars are disabled entirely unless the panels really do not fit.
+    local strip_flags = needs_scroll
+        and RPR.ImGui_WindowFlags_HorizontalScrollbar()
+        or (RPR.ImGui_WindowFlags_NoScrollbar() | RPR.ImGui_WindowFlags_NoScrollWithMouse())
+    -- FIX (crash while dragging): in ReaImGui, BeginChild returns false when the
+    -- child is not visible (e.g. scrolled out of view) and EndChild must then
+    -- NOT be called. Contents and EndChild are now inside the "if".
+    if not RPR.ImGui_BeginChild(ctx, "##JKK_PanelStrip", available_width, strip_height,
+        RPR.ImGui_ChildFlags_None(), strip_flags) then
+        return
+    end
+
+    for index, id in ipairs(ids) do
+        RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_WindowPadding(), S(8), S(4))
+        local panel_open = RPR.ImGui_BeginChild(ctx, "##JKK_Panel_" .. id, widths[id], panel_height,
+            RPR.ImGui_ChildFlags_AlwaysUseWindowPadding(),
+            RPR.ImGui_WindowFlags_NoScrollbar() | RPR.ImGui_WindowFlags_NoScrollWithMouse())
+        RPR.ImGui_PopStyleVar(ctx, 1)
+        if panel_open then
+            DrawPanelHeader(id)
+            panel_drawers[id]()
+            RPR.ImGui_EndChild(ctx)
+        end
+
+        if index < #ids then
+            RPR.ImGui_SameLine(ctx, 0, 0)
+            DrawSplitter(index, id, ids[index + 1], fill, panel_height, splitter_width)
+            RPR.ImGui_SameLine(ctx, 0, 0)
+        end
+    end
+
+    RPR.ImGui_EndChild(ctx)
+
+    if pending_panel_swap then
+        SwapPanelOrder(pending_panel_swap[1], pending_panel_swap[2])
+        pending_panel_swap = nil
+    end
+end
 
 ---------------------------------------------------------
 -- Main UI
 ---------------------------------------------------------
 local function Main()
+    frame_counter = frame_counter + 1
+    -- FIX: keep the previous frame's count. It was only set once at startup, so
+    -- Item Tools treated every frame as a project change and the Stretch slider
+    -- snapped back to 1.0 whenever it was released.
+    prev_project_state_count = current_project_state_count
     current_project_state_count = RPR.GetProjectStateChangeCount(0)
 
     local current_project_ptr = RPR.EnumProjects(-1)
@@ -964,11 +1376,13 @@ local function Main()
     UpdateFocusMode()
     UpdateSelectionStatusCache()
 
-    RPR.ImGui_SetNextWindowSize(ctx, 1900, 440, RPR.ImGui_Cond_Once())
+    RPR.ImGui_SetNextWindowSize(
+        ctx, DESIGN_WINDOW_WIDTH, DESIGN_WINDOW_HEIGHT, RPR.ImGui_Cond_Once()
+    )
     RPR.ImGui_SetNextWindowSizeConstraints(
         ctx, WINDOW_MIN_WIDTH, WINDOW_MIN_HEIGHT, 16384, 16384
     )
-    local style_pop_count, color_pop_count = ApplyTheme(ctx)
+    local style_pop_count, color_pop_count = ApplyTheme(ctx, JKK_UI_SCALE)
 
     local visible, open_flag = RPR.ImGui_Begin(
         ctx,
@@ -980,133 +1394,19 @@ local function Main()
     )
 
     if visible then
-        RPR.ImGui_PushFont(ctx, font, 13)
-        RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_CellPadding(), 14, 0)
-        RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_ItemSpacing(), 8, 6)
+        -- Derive the zoom factor from the real window size (floating or docked)
+        -- before anything is drawn, so every size below uses the same factor.
+        local window_width, window_height = RPR.ImGui_GetWindowSize(ctx)
+        UpdateUIScale(window_width, window_height, GetDesignWidth())
 
-        -- The selection summary is global: it is not a child of any A/B/C/D/E panel.
-        DrawSelectionStatus()
+        RPR.ImGui_PushFont(ctx, font, ui_font_size)
+        RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_ItemSpacing(), S(8), S(6))
+
+        DrawTopBar()
         RPR.ImGui_Separator(ctx)
+        DrawPanels()
 
-        local panel_table_flags = RPR.ImGui_TableFlags_Resizable()
-            | RPR.ImGui_TableFlags_BordersInnerV()
-            | RPR.ImGui_TableFlags_SizingStretchProp()
-
-        -- Outer table: wraps the complete A-F panel table.
-        -- No border flags are used, so the outer table has no visible borders
-        -- without changing the border colors used by the inner panel table.
-        local outer_table_flags = RPR.ImGui_TableFlags_SizingStretchProp()
-
-        -- The outer cell has no padding. The inner panel table restores its own padding.
-        RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_CellPadding(), 0, 0)
-
-        local dock_bottom_safety = 8
-        local panel_table_height = math.max(
-            1,
-            select(2, RPR.ImGui_GetContentRegionAvail(ctx)) - dock_bottom_safety
-        )
-
-        local current_panel_widths = {}
-
-        -----------------------------------------------------
-        -- OUTER TABLE
-        -----------------------------------------------------
-        if RPR.ImGui_BeginTable(
-            ctx,
-            "JKK_ReaTools_OuterTable",
-            1,
-            outer_table_flags,
-            0,
-            panel_table_height
-        ) then
-            RPR.ImGui_TableSetupColumn(
-                ctx,
-                "##JKK_OuterColumn",
-                RPR.ImGui_TableColumnFlags_WidthStretch()
-            )
-
-            RPR.ImGui_TableNextRow(ctx)
-            RPR.ImGui_TableNextColumn(ctx)
-
-            -------------------------------------------------
-            -- INNER PANEL TABLE (A-F)
-            -------------------------------------------------
-            RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_CellPadding(), 14, 6)
-
-            if RPR.ImGui_BeginTable(
-                ctx,
-                "JKK_ReaTools_PanelTable_v0980",
-                6,
-                panel_table_flags,
-                0,
-                panel_table_height
-            ) then
-                for _, panel_id in ipairs(panel_order) do
-                    RPR.ImGui_TableSetupColumn(
-                        ctx,
-                        panel_titles[panel_id] .. "##Panel_" .. panel_id,
-                        RPR.ImGui_TableColumnFlags_WidthStretch(),
-                        panel_width_weights[panel_id] or PANEL_DEFAULT_WIDTHS[panel_id]
-                    )
-                end
-
-                for _, panel_id in ipairs(panel_order) do
-                    RPR.ImGui_TableNextColumn(ctx)
-
-                    local cell_width = select(1, RPR.ImGui_GetContentRegionAvail(ctx))
-                    current_panel_widths[panel_id] = cell_width
-
-                    if panel_id ~= "F" then
-                        DrawPanelHeader(panel_id)
-                    end
-
-                    panel_drawers[panel_id]()
-                end
-
-                RPR.ImGui_EndTable(ctx)
-
-                ---------------------------------------------
-                -- PANEL WIDTH CHANGE DETECTION
-                ---------------------------------------------
-                if last_panel_widths then
-                    for _, id in ipairs(panel_ids) do
-                        if math.abs(
-                            (current_panel_widths[id] or 0)
-                            - (last_panel_widths[id] or 0)
-                        ) > 1.5 then
-                            panel_widths_dirty = true
-                            break
-                        end
-                    end
-                end
-
-                last_panel_widths = current_panel_widths
-
-                ---------------------------------------------
-                -- SAVE PANEL WIDTHS
-                ---------------------------------------------
-                -- Wait until the mouse is released before saving the final divider positions.
-                if panel_widths_dirty and not RPR.ImGui_IsMouseDown(ctx, 0) then
-                    SavePanelWidthWeights(current_panel_widths)
-                    panel_widths_dirty = false
-                end
-            end -- Inner Panel Table
-
-            -- Restore the inner table's cell padding before ending the outer table.
-            RPR.ImGui_PopStyleVar(ctx, 1)
-
-            RPR.ImGui_EndTable(ctx)
-        end -- Outer Table
-
-        -- Restore the outer table's cell padding.
         RPR.ImGui_PopStyleVar(ctx, 1)
-
-        if pending_panel_swap then
-            SwapPanelOrder(pending_panel_swap[1], pending_panel_swap[2])
-            pending_panel_swap = nil
-        end
-
-        RPR.ImGui_PopStyleVar(ctx, 2)
         RPR.ImGui_PopFont(ctx)
     end
 
@@ -1121,14 +1421,12 @@ local function Main()
             if RPR.ImGui_IsKeyPressed(ctx, RPR.ImGui_Key_Space()) then
                 RPR.Main_OnCommand(40044, 0)
             end
+            -- FIX: Ctrl+Shift+Z used to match both branches and ran Undo and
+            -- Redo in the same frame, which cancelled out. Only one runs now.
             if RPR.ImGui_IsKeyDown(ctx, RPR.ImGui_Mod_Ctrl())
                 and RPR.ImGui_IsKeyPressed(ctx, RPR.ImGui_Key_Z()) then
-                RPR.Main_OnCommand(40029, 0)
-            end
-            if RPR.ImGui_IsKeyDown(ctx, RPR.ImGui_Mod_Ctrl())
-                and RPR.ImGui_IsKeyDown(ctx, RPR.ImGui_Mod_Shift())
-                and RPR.ImGui_IsKeyPressed(ctx, RPR.ImGui_Key_Z()) then
-                RPR.Main_OnCommand(40030, 0)
+                local redo = RPR.ImGui_IsKeyDown(ctx, RPR.ImGui_Mod_Shift())
+                RPR.Main_OnCommand(redo and 40030 or 40029, 0)
             end
         end
         RPR.defer(Main)
@@ -1139,5 +1437,13 @@ local function Main()
         return
     end
 end
+
+-- FIX: remove the red Guide preview items of Item Tools when the script stops;
+-- they used to stay in the project.
+RPR.atexit(function()
+    if item_module and item_module.JKK_ItemTool_Cleanup then
+        pcall(item_module.JKK_ItemTool_Cleanup)
+    end
+end)
 
 RPR.defer(Main)

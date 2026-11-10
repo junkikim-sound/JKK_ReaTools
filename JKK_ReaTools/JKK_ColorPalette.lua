@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ColorPalette
 -- @author Junki Kim
--- @version 1.0.5
+-- @version 1.0.6
 --========================================================
 
 local reaper = reaper
@@ -43,10 +43,6 @@ local theme_module = load_module("JKK_Theme.lua")
 local ApplyTheme = theme_module and theme_module.ApplyTheme or function(c) return 0, 0 end
 
 local ui_module = load_module("JKK_ColorPalette_UI.lua")
-if not ui_module then
-    reaper.MB("Modules/JKK_ColorPalette_UI.lua 모듈을 찾을 수 없습니다.\n경로를 확인해주세요.", "Module Load Error", 0)
-    return
-end
 
 local is_open = true
 

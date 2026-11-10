@@ -6,6 +6,9 @@
 
 local reaper = reaper
 
+-- UI zoom factor published by JKK_ReaTools (1.0 = original design size).
+local function S(v) return v * (JKK_UI_SCALE or 1) end
+
 local ext_section = "JKK_SmartBatchRenamer"
 local use_number = reaper.GetExtState(ext_section, "use_number") == "1"
 local top_level_only = reaper.GetExtState(ext_section, "top_level_only") == "1"
@@ -309,15 +312,22 @@ local function SetTargetName(target, new_name)
     end
 end
 
+-- FIX: names are inserted as gsub replacement strings, where "%" is special.
+-- A name such as "Vox 50%" raised "invalid use of '%' in replacement string".
+local function Plain(text)
+    return (tostring(text or ""):gsub("%%", "%%%%"))
+end
+
 local function EvaluateName(pattern, target, index, hierarchy_indices)
     local out = pattern
     if out == "" then return "" end
 
     local project_name = reaper.GetProjectName(0, ""):gsub("%.%w+$", "")
-    out = out:gsub("%$project", project_name)
+    out = out:gsub("%$project", Plain(project_name))
+    -- FIX: $datetime must be expanded before $date, otherwise $date consumes its prefix.
+    out = out:gsub("%$datetime", os.date("%Y-%m-%d %H_%M_%S"))
     out = out:gsub("%$date", os.date("%Y-%m-%d"))
     out = out:gsub("%$time", os.date("%H_%M_%S"))
-    out = out:gsub("%$datetime", os.date("%Y-%m-%d %H_%M_%S"))
     out = out:gsub("%$year2", os.date("%y"))
     out = out:gsub("%$year", os.date("%Y"))
     out = out:gsub("%$monthname", os.date("%B"))
@@ -333,18 +343,18 @@ local function EvaluateName(pattern, target, index, hierarchy_indices)
 
     if target.type == "Item" then
         local _, track_name = reaper.GetTrackName(target.track)
-        out = out:gsub("%$track", track_name or "")
-        out = out:gsub("%$item", target.original_name or "")
+        out = out:gsub("%$track", Plain(track_name))
+        out = out:gsub("%$item", Plain(target.original_name))
         out = out:gsub("%$region", "")
         out = out:gsub("%$marker", "")
     elseif target.type == "Track" then
-        out = out:gsub("%$track", target.original_name or "")
+        out = out:gsub("%$track", Plain(target.original_name))
         out = out:gsub("%$item", "")
         out = out:gsub("%$region", "")
         out = out:gsub("%$marker", "")
     elseif target.type == "Region" or target.type == "Marker" then
-        out = out:gsub("%$region", target.original_name or "")
-        out = out:gsub("%$marker", target.original_name or "")
+        out = out:gsub("%$region", Plain(target.original_name))
+        out = out:gsub("%$marker", Plain(target.original_name))
         out = out:gsub("%$track", "")
         out = out:gsub("%$item", "")
     end
@@ -365,6 +375,49 @@ local function EvaluateName(pattern, target, index, hierarchy_indices)
         out = out .. "_" .. number
     end
     return out
+end
+
+local function CreateRegionsFromItems(per_item, base_name)
+    local count = reaper.CountSelectedMediaItems(0)
+    if count == 0 then return end
+
+    local spans = {}
+    for i = 0, count - 1 do
+        local item = reaper.GetSelectedMediaItem(0, i)
+        local start_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+        local end_pos = start_pos + reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+        spans[#spans + 1] = { start_pos = start_pos, end_pos = end_pos, name = GetItemName(item) }
+    end
+    table.sort(spans, function(a, b) return a.start_pos < b.start_pos end)
+
+    local regions = {}
+    if per_item then
+        regions = spans
+    else
+        for _, span in ipairs(spans) do
+            local last = regions[#regions]
+            if last and span.start_pos <= last.end_pos then
+                last.end_pos = math.max(last.end_pos, span.end_pos)
+            else
+                regions[#regions + 1] = { start_pos = span.start_pos, end_pos = span.end_pos, first_name = span.name }
+            end
+        end
+        for i, region in ipairs(regions) do
+            if base_name and base_name ~= "" then
+                region.name = (#regions > 1)
+                    and string.format("%s_%02d", base_name, (number_start - 1) + i) or base_name
+            else
+                region.name = region.first_name
+            end
+        end
+    end
+
+    reaper.Undo_BeginBlock()
+    for _, region in ipairs(regions) do
+        reaper.AddProjectMarker(0, true, region.start_pos, region.end_pos, region.name or "", -1)
+    end
+    reaper.UpdateArrange()
+    reaper.Undo_EndBlock("Create Regions from Items", -1)
 end
 
 local function ApplyRename(mode, targets, name_pattern)
@@ -390,7 +443,9 @@ local function DrawRenamerLite(ctx, mode, active, input_font, properties_button_
     local target_signature = GetTargetSignature(mode, targets)
     local first_name = (#targets > 0) and (targets[1].original_name or "") or ""
 
-    if active and #targets > 0 then
+    local is_mouse_down = reaper.JS_Mouse_GetState and (reaper.JS_Mouse_GetState(1) & 1) == 1
+
+    if active and #targets > 0 and not is_mouse_down then
         if not was_active or target_signature ~= last_target_signature or mode ~= last_mode then
             if input_was_focused then
                 pending_default_name = first_name
@@ -405,20 +460,15 @@ local function DrawRenamerLite(ctx, mode, active, input_font, properties_button_
     end
 
     local available_width = select(1, reaper.ImGui_GetContentRegionAvail(ctx))
-    -- Capture the left edge before drawing the first row so the lower button
-    -- can share the exact same right boundary as Apply.
     local row_start_x = reaper.ImGui_GetCursorPosX(ctx)
-    local apply_width = 82
-    local gap = 6
+    local apply_width = S(82)
+    local gap = S(6)
     local input_width = math.max(1, available_width - apply_width - gap)
 
-    -- Use the font attached by the main script before the first UI frame.
-    -- This keeps font atlas changes out of the active ImGui draw cycle.
-    if input_font then reaper.ImGui_PushFont(ctx, input_font, 13) end
-    reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FramePadding(), 8, 3)
+    if input_font then reaper.ImGui_PushFont(ctx, input_font, S(13)) end
+    reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FramePadding(), S(8), S(4.5))
     local input_height = reaper.ImGui_GetFrameHeight(ctx)
 
-    reaper.ImGui_BeginDisabled(ctx, not active or #targets == 0)
     reaper.ImGui_SetNextItemWidth(ctx, input_width)
     local hint = (#targets > 0) and first_name or "Select an item, track, or timeline target"
     local changed, new_buf = reaper.ImGui_InputTextWithHint(ctx, "##WorkspaceRenameInput", hint, input_buf)
@@ -426,6 +476,7 @@ local function DrawRenamerLite(ctx, mode, active, input_font, properties_button_
     local input_focused = reaper.ImGui_IsItemFocused(ctx)
 
     reaper.ImGui_SameLine(ctx, 0, gap)
+    reaper.ImGui_BeginDisabled(ctx, not active or #targets == 0)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x24866FFF)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x2A9A80FF)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x2A9A80FF)
@@ -444,11 +495,11 @@ local function DrawRenamerLite(ctx, mode, active, input_font, properties_button_
     reaper.ImGui_PopStyleVar(ctx, 1)
     if input_font then reaper.ImGui_PopFont(ctx) end
 
-    -- Compact options row. Number (_nn) exposes a start-index input when enabled;
-    -- the two checkboxes retain a small gap and Open Renamer shares the row.
+    -- Options row (Number, Top-Level Only, Create Regions, Renamer button)
     local options_row_y = reaper.ImGui_GetCursorPosY(ctx)
     local checkbox_height = reaper.ImGui_GetFrameHeight(ctx)
-    reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_ItemSpacing(), 8, 0)
+    reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_ItemSpacing(), S(8), 0)
+    
     local number_changed, new_number = reaper.ImGui_Checkbox(ctx, "Number (_nn)", use_number)
     if number_changed then
         use_number = new_number
@@ -456,15 +507,13 @@ local function DrawRenamerLite(ctx, mode, active, input_font, properties_button_
     end
 
     if use_number then
-        reaper.ImGui_SameLine(ctx, 0, 4)
-        reaper.ImGui_SetNextItemWidth(ctx, 64)
+        reaper.ImGui_SameLine(ctx, 0, S(4))
+        reaper.ImGui_SetNextItemWidth(ctx, S(64))
         local start_changed, new_start = reaper.ImGui_InputText(
             ctx, "##RenamerLiteNumberStart", number_start_text
         )
         if start_changed then
             number_start_text = new_start
-            -- Plain text input: no +/- stepper buttons. Keep the edit buffer
-            -- as text so multi-digit values can be typed naturally.
             local parsed = tonumber(number_start_text)
             if parsed and parsed >= 1 then
                 number_start = math.floor(parsed)
@@ -483,18 +532,38 @@ local function DrawRenamerLite(ctx, mode, active, input_font, properties_button_
         end
     end
 
-    reaper.ImGui_SameLine(ctx, 0, 8)
+    reaper.ImGui_SameLine(ctx, 0, S(8))
     local top_changed, new_top = reaper.ImGui_Checkbox(ctx, "Top-Level Only", top_level_only)
     if top_changed then
         top_level_only = new_top
         SaveSettings()
     end
 
-    local open_button_width = 83 --math.max(70, properties_button_width or 112)
+    -- Create Regions 버튼 배치 (Top-Level Only와 Renamer 버튼 사이)
+    local item_ready = active and mode == "Item" and reaper.CountSelectedMediaItems(0) > 0
+    reaper.ImGui_SameLine(ctx, 0, S(8))
+    reaper.ImGui_BeginDisabled(ctx, not item_ready)
+    local region_btn_width = S(92)
+    local region_clicked = reaper.ImGui_Button(ctx, "Create Regions##Inline", region_btn_width + 25, checkbox_height)
+    reaper.ImGui_EndDisabled(ctx)
+    if region_clicked then
+        if reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Shift()) then
+            CreateRegionsFromItems(true)
+        else
+            CreateRegionsFromItems(false, input_buf)
+        end
+    end
+    if reaper.ImGui_IsItemHovered(ctx, reaper.ImGui_HoveredFlags_AllowWhenDisabled()) then
+        reaper.ImGui_SetTooltip(ctx, "Click: one region around each group of overlapping items (longest extent),\nnamed from the text field\nShift+Click: one region per item, named after the item")
+    end
+
+    -- 우측 끝 Renamer 버튼 배치
+    local open_button_width = S(83)
     local open_button_height = checkbox_height
     reaper.ImGui_SameLine(ctx, 0, 0)
     reaper.ImGui_SetCursorPosX(ctx, row_start_x + math.max(0, available_width - open_button_width))
     reaper.ImGui_SetCursorPosY(ctx, options_row_y + math.max(0, (checkbox_height - open_button_height) * 0.5))
+    
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x233C4FFF)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x435665FF)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x042239FF)
@@ -511,8 +580,10 @@ local function DrawRenamerLite(ctx, mode, active, input_font, properties_button_
 
     input_was_focused = input_focused
     was_active = active and #targets > 0
-    last_target_signature = target_signature
-    last_mode = mode
+    if not is_mouse_down then
+        last_target_signature = target_signature
+        last_mode = mode
+    end
 end
 
 return {

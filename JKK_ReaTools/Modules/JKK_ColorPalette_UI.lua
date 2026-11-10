@@ -24,7 +24,6 @@ local target_mode = "None"
 local last_item_cnt, last_track_cnt = -1, -1
 local last_item_hash, last_track_hash = "", ""
 local last_ts_start, last_ts_end = -1, -1
-local last_cursor_ctx = -1
 
 local function SaveState()
     reaper.SetExtState(ext_section, "palette_idx", tostring(current_palette_idx), true)
@@ -50,138 +49,199 @@ end
 
 local function TruncateName(name, max_len)
     if not name then return "" end
-    if string.len(name) > max_len then
-        return string.sub(name, 1, max_len) .. "..."
-    end
+    if #name > max_len then return name:sub(1, max_len) .. "..." end
     return name
 end
 
--- 현재 target_mode 기반 텍스트 및 개수 포맷팅 (Region/Marker 이름 포함)
-local function FormatSelectionContextResult()
-    local cur_item_cnt = reaper.CountSelectedMediaItems(0)
-    local cur_track_cnt = reaper.CountSelectedTracks(0)
-    local cur_ts_start, cur_ts_end = reaper.GetSet_LoopTimeRange(false, false, 0, 0, false)
-    local max_chars = 30
+-- 실시간 행동(최근 선택) 추적용 변수
+local target_mode = "None"
+local last_item_cnt, last_track_cnt = -1, -1
+local last_item_hash, last_track_hash = "", ""
+local last_ts_start, last_ts_end = -1, -1
 
-    if target_mode == "Items" and cur_item_cnt > 0 then
-        local sel_item = reaper.GetSelectedMediaItem(0, 0)
-        local take = sel_item and reaper.GetActiveTake(sel_item)
-        local name = take and reaper.GetTakeName(take) or "Item"
-        return "Items", cur_item_cnt, string.format("Selected %d Items (%s)", cur_item_cnt, TruncateName(name, max_chars))
-        
-    elseif target_mode == "Tracks" and cur_track_cnt > 0 then
-        local sel_track = reaper.GetSelectedTrack(0, 0)
-        local name = "Track"
-        if sel_track then
-            local retval, tr_name = reaper.GetTrackName(sel_track)
-            if retval and tr_name and tr_name ~= "" then name = tr_name end
-        end
-        return "Tracks", cur_track_cnt, string.format("Selected %d Tracks (%s)", cur_track_cnt, TruncateName(name, max_chars))
-        
-    elseif target_mode == "Markers" and cur_ts_start ~= cur_ts_end then
-        local count = 0
-        local first_name = ""
-        local i = 0
-        while true do
-            local retval, isrgn, pos, rgnend, name = reaper.EnumProjectMarkers3(0, i)
-            if retval == 0 then break end
-            if (isrgn and not (rgnend < cur_ts_start or pos > cur_ts_end)) or (not isrgn and (pos >= cur_ts_start and pos <= cur_ts_end)) then
-                count = count + 1
-                if count == 1 then
-                    first_name = (name and name ~= "") and name or "Region/Marker"
-                end
-            end
-            i = i + 1
-        end
-        if count > 0 then 
-            return "Markers", count, string.format("Selected %d Regions/Markers (%s)", count, TruncateName(first_name, max_chars)) 
-        end
+-- ✅ 마우스 상태 추적을 위한 변수 추가
+local last_left_mouse_down = false
+local drag_context = "None"
+local cached_mode = "None"
+local cached_cnt = 0
+local cached_text = "No Selection"
+
+-- ✅ 마우스 클릭 및 릴리즈 상태 반환 (JS_ReaScriptAPI 필요)
+local function GetLeftMouseState()
+    if not reaper.JS_Mouse_GetState then
+        last_left_mouse_down = false
+        return false, false, false
     end
-    
-    return "None", 0, "No Selection"
+    local state = reaper.JS_Mouse_GetState(1) or 0
+    local is_down = (state & 1) ~= 0
+    local pressed = is_down and not last_left_mouse_down
+    local released = not is_down and last_left_mouse_down
+    last_left_mouse_down = is_down
+    return pressed, released, is_down
 end
 
--- 마우스 릴리즈 감지 및 TCP / 작업 영역 개별 추적 로직
-local function GetSelectionContext(ctx)
-    local is_mouse_down = false
-    if reaper.JS_Mouse_GetState then
-        is_mouse_down = (reaper.JS_Mouse_GetState(1) == 1)
-    elseif ctx then
-        is_mouse_down = reaper.ImGui_IsMouseDown(ctx, 0)
+-- ✅ 마우스가 위치한 REAPER 화면 영역 감지
+local function GetMouseAreaContext()
+    if not (reaper.GetMousePosition and reaper.GetThingFromPoint) then
+        return nil, nil, nil, ""
     end
+    local mouse_x, mouse_y = reaper.GetMousePosition()
+    local hit_track, info = reaper.GetThingFromPoint(mouse_x, mouse_y)
+    info = (info or ""):lower()
 
-    if is_mouse_down then
-        return FormatSelectionContextResult()
+    if info:match("^tcp") then return "Tracks", hit_track, nil, info end
+    if info == "arrange" or info:match("^arrange[%.:_]?") then
+        local hit_item = reaper.GetItemFromPoint and reaper.GetItemFromPoint(mouse_x, mouse_y, false) or nil
+        return "Items", nil, hit_item, info
     end
+    if info:find("ruler", 1, true) or info:find("timeline", 1, true) or info:find("marker", 1, true) or info:find("region", 1, true) then
+        return "Markers", nil, nil, info
+    end
+    return nil, nil, nil, info
+end
 
-    local cursor_ctx = reaper.GetCursorContext2(true) -- 0: TCP, 1: Arrange(작업영역), 2: Envelopes/Ruler
+-- 최근 수행한 유저의 액션을 기반으로 Target을 판단하는 함수
+local function GetSelectionContext()
+    local pressed, released, is_down = GetLeftMouseState()
+    local hit_context, hit_track, hit_item = GetMouseAreaContext()
+
     local cur_item_cnt = reaper.CountSelectedMediaItems(0)
     local cur_track_cnt = reaper.CountSelectedTracks(0)
     local cur_ts_start, cur_ts_end = reaper.GetSet_LoopTimeRange(false, false, 0, 0, false)
 
     local cur_item_hash = ""
-    for i = 0, cur_item_cnt - 1 do
-        cur_item_hash = cur_item_hash .. tostring(reaper.GetSelectedMediaItem(0, i)) .. ","
+    for i = 0, math.min(cur_item_cnt - 1, 5) do
+        cur_item_hash = cur_item_hash .. tostring(reaper.GetSelectedMediaItem(0, i))
     end
-
     local cur_track_hash = ""
-    for i = 0, cur_track_cnt - 1 do
-        cur_track_hash = cur_track_hash .. tostring(reaper.GetSelectedTrack(0, i)) .. ","
+    for i = 0, math.min(cur_track_cnt - 1, 5) do
+        cur_track_hash = cur_track_hash .. tostring(reaper.GetSelectedTrack(0, i))
     end
 
-    local item_changed = (cur_item_cnt ~= last_item_cnt) or (cur_item_hash ~= last_item_hash)
-    local track_changed = (cur_track_cnt ~= last_track_cnt) or (cur_track_hash ~= last_track_hash)
-    local ts_changed = (cur_ts_start ~= last_ts_start) or (cur_ts_end ~= last_ts_end)
-    local ctx_changed = (cursor_ctx ~= last_cursor_ctx)
-    
-    local anything_changed = item_changed or track_changed or ts_changed or ctx_changed
+    local item_sel_changed = (cur_item_cnt ~= last_item_cnt or cur_item_hash ~= last_item_hash)
+    local track_sel_changed = (cur_track_cnt ~= last_track_cnt or cur_track_hash ~= last_track_hash)
+    local time_sel_changed = (cur_ts_start ~= last_ts_start or cur_ts_end ~= last_ts_end)
 
-    if anything_changed then
-        if ts_changed and cur_ts_start ~= cur_ts_end then
-            target_mode = "Markers"
-        elseif item_changed and cur_item_cnt > 0 then
-            target_mode = "Items"
-        elseif track_changed and cursor_ctx == 0 and cur_track_cnt > 0 then
-            target_mode = "Tracks"
-        else
-            if cursor_ctx == 0 then
-                target_mode = (cur_track_cnt > 0) and "Tracks" or "None"
-            elseif cursor_ctx == 1 then
-                target_mode = (cur_item_cnt > 0) and "Items" or "None"
-            elseif cursor_ctx == 2 then
-                target_mode = (cur_ts_start ~= cur_ts_end) and "Markers" or "None"
-            end
-        end
-
-        if target_mode == "Markers" then
-            local count = 0
-            local i = 0
-            while true do
-                local retval, isrgn, pos, rgnend = reaper.EnumProjectMarkers3(0, i)
-                if retval == 0 then break end
-                if (isrgn and not (rgnend < cur_ts_start or pos > cur_ts_end)) or (not isrgn and (pos >= cur_ts_start and pos <= cur_ts_end)) then
-                    count = count + 1
-                    break
-                end
-                i = i + 1
-            end
-            if count == 0 then target_mode = "None" end
-        end
-
+    if not is_down then
         last_item_cnt, last_item_hash = cur_item_cnt, cur_item_hash
         last_track_cnt, last_track_hash = cur_track_cnt, cur_track_hash
         last_ts_start, last_ts_end = cur_ts_start, cur_ts_end
-        last_cursor_ctx = cursor_ctx
     end
 
-    return FormatSelectionContextResult()
+    -- 1. 마우스가 눌려있는(드래그 중인) 동안에는 절대 UI 변경 없음 (캐시 반환)
+    if is_down then
+        return cached_mode, cached_cnt, cached_text
+    end
+
+    -- 2. 오직 마우스를 뗄 때(Released) 판정
+    if released then
+        -- ★ [핵심 수정] 타임셀렉션이 존재하고 변경되었거나 타임라인 쪽을 건드렸다면 무조건 Markers가 최우선!
+        if (cur_ts_start ~= cur_ts_end) and (hit_context == "Markers" or time_sel_changed) then
+            target_mode = "Markers"
+            
+        elseif hit_context == "Tracks" then
+            -- 오직 TCP 영역을 클릭/릴리즈한 경우만 트랙 인정
+            target_mode = (cur_track_cnt > 0) and "Tracks" or "None"
+            
+        elseif hit_context == "Items" then
+            if hit_item then
+                target_mode = "Items" -- 아이템 직접 클릭
+            elseif item_sel_changed and cur_item_cnt > 0 then
+                target_mode = "Items" -- 박스 드래그로 아이템들 선택
+            else
+                target_mode = "None" -- 그 외 빈 공간 클릭은 무조건 No Selection
+            end
+        else
+            target_mode = "None"
+        end
+    else
+        -- 단축키 등 외부 요인 감지
+        if cur_ts_start ~= cur_ts_end and time_sel_changed then target_mode = "Markers"
+        elseif item_sel_changed and cur_item_cnt > 0 then target_mode = "Items"
+        elseif track_sel_changed and cur_track_cnt > 0 then target_mode = "Tracks"
+        end
+    end
+
+    -- 안전장치
+    if target_mode == "Items" and cur_item_cnt == 0 then target_mode = "None" end
+    if target_mode == "Tracks" and cur_track_cnt == 0 then target_mode = "None" end
+    if target_mode == "Markers" and cur_ts_start == cur_ts_end then target_mode = "None" end
+
+    -- 3. 텍스트 포맷팅
+    local max_chars = 30
+    local new_mode, new_cnt, new_text = "None", 0, "No Selection"
+
+    if target_mode == "Items" then
+        local take = reaper.GetActiveTake(reaper.GetSelectedMediaItem(0, 0))
+        local name = take and reaper.GetTakeName(take) or "Item"
+        new_mode, new_cnt, new_text = "Items", cur_item_cnt, string.format("Selected %d Items (%s)", cur_item_cnt, TruncateName(name, max_chars))
+        
+    elseif target_mode == "Tracks" then
+        local _, name = reaper.GetTrackName(reaper.GetSelectedTrack(0, 0))
+        new_mode, new_cnt, new_text = "Tracks", cur_track_cnt, string.format("Selected %d Tracks (%s)", cur_track_cnt, TruncateName(name, max_chars))
+        
+    elseif target_mode == "Markers" then
+        local count = 0
+        local first_name = ""
+        local has_region = false
+        local has_marker = false
+        local i = 0
+
+        while true do
+            local retval, isrgn, pos, rgnend, name = reaper.EnumProjectMarkers3(0, i)
+            if retval == 0 then break end
+            
+            -- 타임셀렉션 범위 내에 포함되는지 체크
+            local in_range = false
+            if isrgn then
+                if not (rgnend < cur_ts_start or pos > cur_ts_end) then
+                    in_range = true
+                end
+            else
+                if pos >= cur_ts_start and pos <= cur_ts_end then
+                    in_range = true
+                end
+            end
+
+            if in_range then
+                count = count + 1
+                if isrgn then has_region = true else has_marker = true end
+                if count == 1 then 
+                    first_name = (name and name ~= "") and name or (isrgn and "Region" or "Marker") 
+                end
+            end
+            i = i + 1
+        end
+
+        if count > 0 then
+            -- 타입 결정 (Region / Marker / Region/Marker)
+            local type_str = "Marker"
+            if has_region and has_marker then
+                type_str = "Region/Marker"
+            elseif has_region then
+                type_str = "Region"
+            end
+
+            new_mode = "Markers"
+            new_cnt = count
+            new_text = string.format("Selected %d %s (%s)", count, type_str, TruncateName(first_name, max_chars))
+        else
+            new_mode, new_cnt, new_text = "None", 0, "No Regions/Markers in Time Selection"
+        end
+    end
+    
+    cached_mode = new_mode
+    cached_cnt = new_cnt
+    cached_text = new_text
+
+    return cached_mode, cached_cnt, cached_text
 end
 
-local function ApplyColor(u32_color, ctx)
+local function ApplyColor(u32_color)
     local r, g, b, a = reaper.ImGui_ColorConvertU32ToDouble4(u32_color)
     local native_color = (u32_color == 0) and 0 or (reaper.ColorToNative(math.floor(r*255), math.floor(g*255), math.floor(b*255)) | 0x1000000)
     
-    local ctx_type, cnt = GetSelectionContext(ctx)
+    local ctx_type, cnt = GetSelectionContext()
     if ctx_type == "None" then return false end
     
     reaper.Undo_BeginBlock()
@@ -255,7 +315,7 @@ function JKK_ColorPalette_Draw(ctx)
     local local_idx = (current_palette_idx <= #default_palettes) and current_palette_idx or (current_palette_idx - #default_palettes)
     local active_palette = current_palette_list[local_idx]
 
-    local ctx_type, _, ctx_desc = GetSelectionContext(ctx)
+    local ctx_type, _, ctx_desc = GetSelectionContext()
     
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF)
     reaper.ImGui_Text(ctx, ctx_desc)
@@ -373,7 +433,7 @@ function JKK_ColorPalette_Draw(ctx)
         local col_u32 = active_palette.colors[i]
         reaper.ImGui_PushID(ctx, "ColorCell_" .. i)
         if reaper.ImGui_ColorButton(ctx, "##Btn", col_u32, 0, cell_w, cell_h) then
-            if ApplyColor(col_u32, ctx) then should_close = true end
+            if ApplyColor(col_u32) then should_close = true end
         end
         
         if reaper.ImGui_IsItemHovered(ctx) then
@@ -406,6 +466,7 @@ function JKK_ColorPalette_Draw(ctx)
         reaper.ImGui_SetCursorPosY(ctx, target_y)
     end
 
+    -- 구분선 상단 여백 추가
     reaper.ImGui_Spacing(ctx)
     reaper.ImGui_Spacing(ctx)
     reaper.ImGui_Separator(ctx)
@@ -428,20 +489,20 @@ function JKK_ColorPalette_Draw(ctx)
 
     if reaper.ImGui_Button(ctx, "Random from Palette", rnd_w, btn_h) then
         if active_palette and #active_palette.colors > 0 then
-            if ApplyColor(active_palette.colors[math.random(1, 24)], ctx) then should_close = true end
+            if ApplyColor(active_palette.colors[math.random(1, 24)]) then should_close = true end
         end
     end
     reaper.ImGui_SameLine(ctx)
     if reaper.ImGui_Button(ctx, "Absolute Random", rnd_w, btn_h) then
         local rnd_u32 = (math.random(0,255)<<24) | (math.random(0,255)<<16) | (math.random(0,255)<<8) | 255
-        if ApplyColor(rnd_u32, ctx) then should_close = true end
+        if ApplyColor(rnd_u32) then should_close = true end
     end
     
     reaper.ImGui_PopStyleColor(ctx, 3)
 
     reaper.ImGui_SameLine(ctx)
     if reaper.ImGui_Button(ctx, "Clear Color", clear_w, btn_h) then 
-        if ApplyColor(0, ctx) then should_close = true end
+        if ApplyColor(0) then should_close = true end
     end
     
     return should_close

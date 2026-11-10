@@ -6,6 +6,27 @@
 
 local reaper = reaper
 
+-- UI zoom factor published by JKK_ReaTools (1.0 = original design size).
+-- Kept global on purpose: this chunk is already close to Lua's local-variable limit.
+function JKK_Scale(v) return v * (JKK_UI_SCALE or 1) end
+
+-- FIX: slider undo blocks. The block used to open when a slider was clicked and
+-- close only after an actual edit, so a click without a change left it open.
+-- It now opens on the first change and closes whenever the slider is released.
+JKK_ItemSliderUndoOpen = false
+function JKK_ItemSliderUndoBegin()
+    if not JKK_ItemSliderUndoOpen then
+        reaper.Undo_BeginBlock()
+        JKK_ItemSliderUndoOpen = true
+    end
+end
+function JKK_ItemSliderUndoEnd(ctx, description)
+    if JKK_ItemSliderUndoOpen and reaper.ImGui_IsItemDeactivated(ctx) then
+        reaper.Undo_EndBlock(description, -1)
+        JKK_ItemSliderUndoOpen = false
+    end
+end
+
 math.randomseed(os.time())
 
 ----------------------------------------------------------
@@ -18,7 +39,7 @@ math.randomseed(os.time())
         local adjust_rate = 1.0
         local group_stretch_ratio = 1.0
         local prev_group_stretch_ratio = 1.0
-        function ApplyBatchVolume()
+        function JKK_IT_ApplyBatchVolume()
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt == 0 then return end
 
@@ -30,13 +51,17 @@ math.randomseed(os.time())
                 local take = reaper.GetActiveTake(item)
                 
                 if take then
-                    reaper.SetMediaItemTakeInfo_Value(take, "D_VOL", linear_vol)
+                    -- FIX: a negative take volume means "polarity flipped". Keep the
+                    -- sign so changing the volume no longer resets the polarity.
+                    local current = reaper.GetMediaItemTakeInfo_Value(take, "D_VOL")
+                    reaper.SetMediaItemTakeInfo_Value(take, "D_VOL",
+                        (current < 0) and -linear_vol or linear_vol)
                 end
             end
             
             reaper.UpdateArrange()
         end
-        function ApplyBatchPan()
+        function JKK_IT_ApplyBatchPan()
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt == 0 then return end
 
@@ -50,18 +75,22 @@ math.randomseed(os.time())
 
             reaper.UpdateArrange()
         end
-        function ApplyBatchPitch()
+        function JKK_IT_ApplyBatchPitch()
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt == 0 then return end
 
             for i = 0, cnt - 1 do
                 local item = reaper.GetSelectedMediaItem(0, i)
-                reaper.SetMediaItemTakeInfo_Value(reaper.GetActiveTake(item), "D_PITCH", adjust_pitch)
+                -- FIX: empty items have no take; passing nil raised an argument error.
+                local take = reaper.GetActiveTake(item)
+                if take then
+                    reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", adjust_pitch)
+                end
             end
             
             reaper.UpdateArrange()
         end
-        function ApplyBatchRate()
+        function JKK_IT_ApplyBatchRate()
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt == 0 then return end
 
@@ -86,7 +115,7 @@ math.randomseed(os.time())
             
             reaper.UpdateArrange()
         end
-        function ApplyGroupStretch(stretch_ratio)
+        function JKK_IT_ApplyGroupStretch(stretch_ratio)
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt < 2 then 
               return 
@@ -128,202 +157,27 @@ math.randomseed(os.time())
         local item_loop_src = false
         local item_mute = false
         local item_lock = false
-        function ApplyItemProperty(key, val)
+        function JKK_IT_ApplyItemProperty(key, val)
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt == 0 then return end
 
+            -- FIX: these toggles were not recorded in the undo history.
+            reaper.Undo_BeginBlock()
             for i = 0, cnt - 1 do
                 local item = reaper.GetSelectedMediaItem(0, i)
                 reaper.SetMediaItemInfo_Value(item, key, val)
             end
             reaper.UpdateArrange()
+            local names = { B_LOOPSRC = "Loop Source", B_MUTE = "Mute", C_LOCK = "Lock" }
+            reaper.Undo_EndBlock("Set Item " .. (names[key] or key), -1)
         end
     -- Fader
         local drag_start_cur = 0.0
         local adj_fade_in_cur = 0.0
         local adj_fade_out_cur = 0.0
-        function ApplyBatchFadeIn(cur)
-            local cnt = reaper.CountSelectedMediaItems(0)
-            if cnt == 0 then return end
-
-            for i = 0, cnt - 1 do
-                local item = reaper.GetSelectedMediaItem(0, i)
-                reaper.SetMediaItemInfo_Value(item, "D_FADEINDIR", -cur)
-            end
-            reaper.UpdateArrange()
-        end
-        function ApplyBatchFadeOut(cur)
-            local cnt = reaper.CountSelectedMediaItems(0)
-            if cnt == 0 then return end
-            for i = 0, cnt - 1 do
-                local item = reaper.GetSelectedMediaItem(0, i)
-                reaper.SetMediaItemInfo_Value(item, "D_FADEOUTDIR", cur)
-            end
-            
-            reaper.UpdateArrange()
-        end
-        function ApplyFadeShape(shape_idx, is_fade_in)
-            local cnt = reaper.CountSelectedMediaItems(0)
-            if cnt == 0 then return end
-            
-            reaper.Undo_BeginBlock()
-            reaper.PreventUIRefresh(1)
-            
-            for i = 0, cnt - 1 do
-                local item = reaper.GetSelectedMediaItem(0, i)
-                if item then
-                    local field = is_fade_in and "C_FADEINSHAPE" or "C_FADEOUTSHAPE"
-                    reaper.SetMediaItemInfo_Value(item, field, shape_idx)
-                    reaper.UpdateItemInProject(item)
-                end
-            end
-            
-            reaper.PreventUIRefresh(-1)
-            reaper.UpdateArrange()
-            reaper.Undo_EndBlock("Set Fade Shape", -1)
-        end
-        local function GetFadeCurveY(t, shape_idx)
-            if shape_idx == 0 then return t -- Linear
-            elseif shape_idx == 1 then return t * t -- Slow Start
-            elseif shape_idx == 2 then return 1 - (1 - t) * (1 - t) -- Fast Start
-            elseif shape_idx == 3 then return t * t * (3 - 2 * t) -- S-Curve
-            elseif shape_idx == 4 then return 1 - ((1 - t) ^ 4) -- Logarithmic
-            elseif shape_idx == 5 then return t ^ 4 -- Exponential
-            elseif shape_idx == 6 then -- S-Curve (Steep)
-                if t < 0.5 then return 8 * (t ^ 4) else return 1 - 8 * ((1 - t) ^ 4) end
-            end
-            return t
-        end
-        local function DrawPopupShapePreview(draw_list, p_min_x, p_min_y, p_max_x, p_max_y, shape_idx, is_fade_in, color)
-            local segments = 16
-            local width = p_max_x - p_min_x
-            local height = p_max_y - p_min_y
-            local points = {}
-            
-            for i = 0, segments do
-                local t = i / segments
-                local curve_val = GetFadeCurveY(t, shape_idx)
-                
-                local x, y
-                if is_fade_in then
-                    x = p_min_x + (t * width)
-                    y = p_max_y - (curve_val * height)
-                else
-                    x = p_min_x + ((1 - t) * width)
-                    y = p_max_y - (curve_val * height)
-                end
-                table.insert(points, x)
-                table.insert(points, y)
-            end
-            
-            for i = 1, #points - 2, 2 do
-                reaper.ImGui_DrawList_AddLine(draw_list, points[i], points[i+1], points[i+2], points[i+3], color, 2.0)
-            end
-        end
-        function DrawFadeWidget(ctx, label, cur, width, height, is_fade_in)
-            local cursor_x, cursor_y = reaper.ImGui_GetCursorScreenPos(ctx)
-            local draw_list = reaper.ImGui_GetWindowDrawList(ctx)
-            
-            -- 1. 배경 그리기
-            reaper.ImGui_DrawList_AddRectFilled(draw_list, cursor_x, cursor_y, cursor_x + width, cursor_y + height, 0x222222FF)
-            reaper.ImGui_DrawList_AddRect(draw_list, cursor_x, cursor_y, cursor_x + width, cursor_y + height, 0x555555FF)
-            local mid_y = cursor_y + (height / 2)
-            reaper.ImGui_DrawList_AddLine(draw_list, cursor_x, mid_y, cursor_x + width, mid_y, 0x444444FF, 1)
-
-            -- 2. 버튼 생성 (이벤트 감지용)
-            reaper.ImGui_InvisibleButton(ctx, "##" .. label, width, height)
-            
-            local changed = false
-
-            -- 3. Ctrl + 좌클릭 초기화 (Tension Reset)
-            if reaper.ImGui_IsItemClicked(ctx, 0) and reaper.ImGui_IsKeyDown(ctx, reaper.ImGui_Mod_Ctrl()) then
-                cur = 0.0
-                changed = true
-            end
-
-            -- 4. 드래그 로직 (Tension Control)
-            if reaper.ImGui_IsItemActivated(ctx) then
-                drag_start_cur = cur 
-            end
-
-            if reaper.ImGui_IsItemActive(ctx) then
-                local _, dy = reaper.ImGui_GetMouseDragDelta(ctx)
-                -- 감도 조절 (0.4)
-                local delta_cur = -dy / (height / 2) * 0.4
-                cur = math.max(-1, math.min(1, drag_start_cur + delta_cur))
-                changed = true
-                reaper.ImGui_SetTooltip(ctx, string.format("Curve Tension: %.2f", cur))
-            end
-
-            -- 5. 우클릭 시 셰이프 선택 팝업 열기
-            local popup_id = "FadeShapePopup_" .. label
-            if reaper.ImGui_IsItemClicked(ctx, 1) then
-                reaper.ImGui_OpenPopup(ctx, popup_id)
-            end
-
-            reaper.ImGui_SetNextWindowSize(ctx, 122, 385)
-            if reaper.ImGui_BeginPopup(ctx, popup_id) then
-                reaper.ImGui_Text(ctx, is_fade_in and "Fade In Type" or "Fade Out Type")
-                reaper.ImGui_Separator(ctx)
-                
-                local dl = reaper.ImGui_GetWindowDrawList(ctx)
-                local btn_w, btn_h = 100, 40 
-
-                local draw_order = {0, 2, 1, 4, 5, 3, 6}
-
-                for k, visual_idx in ipairs(draw_order) do
-                    local apply_idx = k - 1 
-                    
-                    local sx, sy = reaper.ImGui_GetCursorScreenPos(ctx)
-                    local btn_id = "##btn_shape_" .. label .. "_" .. apply_idx
-                    
-                    if reaper.ImGui_InvisibleButton(ctx, btn_id, btn_w, btn_h) then
-                        ApplyFadeShape(apply_idx, is_fade_in)
-                        reaper.ImGui_CloseCurrentPopup(ctx)
-                    end
-                    
-                    -- 스타일링
-                    local is_hover = reaper.ImGui_IsItemHovered(ctx)
-                    local bg_col = is_hover and 0x444444FF or 0x222222FF
-                    local line_col = is_hover and 0xFFFF00FF or 0xAAAAAAFF
-                    
-                    reaper.ImGui_DrawList_AddRectFilled(dl, sx, sy, sx + btn_w, sy + btn_h, bg_col)
-                    DrawPopupShapePreview(dl, sx + 5, sy + 5, sx + btn_w - 5, sy + btn_h - 5, visual_idx, is_fade_in, line_col)
-                    reaper.ImGui_DrawList_AddRect(dl, sx, sy, sx + btn_w, sy + btn_h, 0x555555FF)
-                    reaper.ImGui_Spacing(ctx)
-                end
-                reaper.ImGui_EndPopup(ctx)
-            end
-
-            -- 6. 메인 위젯 시각화
-            local col_line = reaper.ImGui_IsItemHovered(ctx) and 0x49B6CCFF or 0x068FC3FF
-            
-            local start_x, start_y, end_x, end_y
-            local convex_cp_x, convex_cp_y, concave_cp_x, concave_cp_y
-
-            if is_fade_in then
-                start_x, start_y = cursor_x, cursor_y + height
-                end_x, end_y = cursor_x + width, cursor_y
-                convex_cp_x, convex_cp_y = start_x, end_y 
-                concave_cp_x, concave_cp_y = end_x, start_y 
-            else
-                start_x, start_y = cursor_x + width, cursor_y + height
-                end_x, end_y = cursor_x, cursor_y
-                convex_cp_x, convex_cp_y = start_x, end_y 
-                concave_cp_x, concave_cp_y = end_x, start_y
-            end
-            
-            local t = (cur + 1) / 2
-            local ctrl_x = concave_cp_x + (convex_cp_x - concave_cp_x) * t
-            local ctrl_y = concave_cp_y + (convex_cp_y - concave_cp_y) * t
-
-            reaper.ImGui_DrawList_AddBezierQuadratic(draw_list, start_x, start_y, ctrl_x, ctrl_y, end_x, end_y, col_line, 2)
-            
-            return changed, cur
-        end
         local last_project_change_count = reaper.GetProjectStateChangeCount(0)
     -- Take Channel Mode & Pitch Mode
-        function ApplyTakeChannelMode(mode)
+        function JKK_IT_ApplyTakeChannelMode(mode)
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt == 0 then return end
 
@@ -357,7 +211,7 @@ math.randomseed(os.time())
                 
                 i = i + 1
             end
-        function ApplyTakePitchMode(main_mode, sub_mode)
+        function JKK_IT_ApplyTakePitchMode(main_mode, sub_mode)
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt == 0 then return end
             sub_mode = sub_mode or 0
@@ -394,29 +248,29 @@ math.randomseed(os.time())
             end
             return table.concat(guids, ",")
         end
-        item_info_str1 = "  SR: "
-        item_info_str2 = "  Ch:   |  Len: "
-        item_info_str3 = "  Take: "
-        function SyncSelectionData(ctx)
+        JKK_IT_item_info_str1 = "  SR: "
+        JKK_IT_item_info_str2 = "  Ch:   |  Len: "
+        JKK_IT_item_info_str3 = "  Take: "
+        function JKK_IT_SyncSelectionData(ctx)
             if reaper.ImGui_IsAnyItemActive(ctx) then
                 last_project_change_count = reaper.GetProjectStateChangeCount(0)
                 return 
             end
 
+            if reaper.JS_Mouse_GetState and (reaper.JS_Mouse_GetState(1) & 1) == 1 then
+                return
+            end
             -- 2. 변경 감지
             local cur_change_count = reaper.GetProjectStateChangeCount(0)
             local cur_guids = GetSelectedItemsGUIDString()
 
-            if cur_change_count ~= last_project_change_count or cur_guids ~= last_selected_guids then
+            if cur_change_count ~= last_project_change_count or cur_guids ~= JKK_IT_sync_last_guids then
                 last_project_change_count = cur_change_count
-                last_selected_guids = cur_guids
+                JKK_IT_sync_last_guids = cur_guids
 
-                -- Stretch/Batch 관련 변수 초기화
-                anchor_min_pos = nil
-                persistentClusters = {} 
-                slot_group_base = {} 
-                slot_stretch_ratio = 1.0 
-                prev_slot_stretch_ratio = 1.0
+                -- FIX: removed resets of anchor_min_pos / persistentClusters / slot_*.
+                -- They ran before those locals were declared, so they only wrote unused
+                -- globals; behaviour is unchanged.
 
                 local cnt = reaper.CountSelectedMediaItems(0)
                 
@@ -437,7 +291,8 @@ math.randomseed(os.time())
                     local take = reaper.GetActiveTake(item)
                     if take then
                         -- Volume (dB 변환)
-                        local val_vol = reaper.GetMediaItemTakeInfo_Value(take, "D_VOL")
+                        -- FIX: read the magnitude; a flipped polarity is a negative value.
+                        local val_vol = math.abs(reaper.GetMediaItemTakeInfo_Value(take, "D_VOL"))
                         if val_vol > 0.00000001 then
                             adjust_vol = 20 * (math.log(val_vol) / math.log(10))
                         else
@@ -486,9 +341,9 @@ math.randomseed(os.time())
                         local take_idx = reaper.GetMediaItemTakeInfo_Value(take, "IP_TAKENUMBER") + 1
                         local take_cnt = reaper.CountTakes(item)
                         
-                        item_info_str1 = string.format("  SR: %dHz", s_rate)
-                        item_info_str2 = string.format("  Ch: %d  |  Len: %s", n_chan, len_str)
-                        item_info_str3 = string.format("  Take: %d/%d", take_idx, take_cnt)
+                        JKK_IT_item_info_str1 = string.format("  SR: %dHz", s_rate)
+                        JKK_IT_item_info_str2 = string.format("  Ch: %d  |  Len: %s", n_chan, len_str)
+                        JKK_IT_item_info_str3 = string.format("  Take: %d/%d", take_idx, take_cnt)
                     end
                 else
                 -- Default Values =============================
@@ -501,15 +356,15 @@ math.randomseed(os.time())
                     item_lock = 0.0
                     adj_fade_in_cur = 0.0
                     adj_fade_out_cur = 0.0
-                    item_info_str1 = "  SR: "
-                    item_info_str2 = "  Ch:   |  Len: "
-                    item_info_str3 = "  Take: "
+                    JKK_IT_item_info_str1 = "  SR: "
+                    JKK_IT_item_info_str2 = "  Ch:   |  Len: "
+                    JKK_IT_item_info_str3 = "  Take: "
                 end
             end
         end
     -- Channel Mode & Pitch Mode Combo Draw
-        function DrawChannelModeCombo(ctx, width)
-            reaper.ImGui_SetNextItemWidth(ctx, width or 128)
+        function JKK_IT_DrawChannelModeCombo(ctx, width)
+            reaper.ImGui_SetNextItemWidth(ctx, width or JKK_Scale(128))
             -- [1] Preview Text
             local preview_text = ""
 
@@ -539,7 +394,7 @@ math.randomseed(os.time())
                     local real_val = i - 1
                     if reaper.ImGui_Selectable(ctx, name, take_chan_mode == real_val) then
                         take_chan_mode = real_val
-                        ApplyTakeChannelMode(take_chan_mode)
+                        JKK_IT_ApplyTakeChannelMode(take_chan_mode)
                     end
                 end
 
@@ -552,7 +407,7 @@ math.randomseed(os.time())
                         
                         if reaper.ImGui_MenuItem(ctx, "Mono " .. i, nil, take_chan_mode == real_val) then
                             take_chan_mode = real_val
-                            ApplyTakeChannelMode(take_chan_mode) 
+                            JKK_IT_ApplyTakeChannelMode(take_chan_mode) 
                         end
                     end
                     reaper.ImGui_EndMenu(ctx)
@@ -566,7 +421,7 @@ math.randomseed(os.time())
                         
                         if reaper.ImGui_MenuItem(ctx, label, nil, take_chan_mode == real_val) then
                             take_chan_mode = real_val
-                            ApplyTakeChannelMode(take_chan_mode)
+                            JKK_IT_ApplyTakeChannelMode(take_chan_mode)
                         end
                     end
                     reaper.ImGui_EndMenu(ctx)
@@ -582,11 +437,11 @@ math.randomseed(os.time())
                 reaper.ImGui_EndCombo(ctx)
             end
         end
-        function DrawPitchModeCombo(ctx, width1, width2, stacked_sub, stacked_x)
+        function JKK_IT_DrawPitchModeCombo(ctx, width1, width2, stacked_sub, stacked_x)
             local item_cnt = reaper.CountSelectedMediaItems(0)
             
             -- 1. Main Mode Combo (Algorithm)
-            reaper.ImGui_SetNextItemWidth(ctx, width1 or 128)
+            reaper.ImGui_SetNextItemWidth(ctx, width1 or JKK_Scale(128))
             
             local main_preview = ""
             if item_cnt > 0 then
@@ -607,7 +462,7 @@ math.randomseed(os.time())
                     if reaper.ImGui_Selectable(ctx, label, is_selected) then
                         take_pitch_mode = mode.id
                         take_pitch_sub_mode = 0
-                        ApplyTakePitchMode(take_pitch_mode, take_pitch_sub_mode)
+                        JKK_IT_ApplyTakePitchMode(take_pitch_mode, take_pitch_sub_mode)
                     end
 
                     if is_selected then reaper.ImGui_SetItemDefaultFocus(ctx) end
@@ -623,7 +478,7 @@ math.randomseed(os.time())
                     reaper.ImGui_SameLine(ctx)
                 end
             end
-            reaper.ImGui_SetNextItemWidth(ctx, width2 or 128)
+            reaper.ImGui_SetNextItemWidth(ctx, width2 or JKK_Scale(128))
             local is_sub_active = (item_cnt > 0) and (take_pitch_mode ~= -1)
             local sub_preview = ""
 
@@ -646,7 +501,7 @@ math.randomseed(os.time())
                         local is_selected = (take_pitch_sub_mode == j)
                         if reaper.ImGui_Selectable(ctx, sub_name .. "##sub_" .. j, is_selected) then
                             take_pitch_sub_mode = j
-                            ApplyTakePitchMode(take_pitch_mode, take_pitch_sub_mode)
+                            JKK_IT_ApplyTakePitchMode(take_pitch_mode, take_pitch_sub_mode)
                         end
                         
                         if is_selected then reaper.ImGui_SetItemDefaultFocus(ctx) end
@@ -702,11 +557,11 @@ math.randomseed(os.time())
         -- Slot Persistent (Now stores CLUSTERS, not just items)
             local persistentClusters = {} 
             local anchor_min_pos = nil
-        function has_changed()
+        function JKK_IT_has_changed()
             return (
                 width        ~= prev_width or
-                use_clustering ~= prev_use_clustering or
-                spacing_mode  ~= prev_spacing_mode or
+                use_clustering ~= JKK_IT_prev_use_clustering or
+                spacing_mode  ~= JKK_IT_prev_spacing_mode or
                 use_gap_mode  ~= prev_use_gap_mode or
                 pos_range    ~= prev_pos_range or
                 pitch_range  ~= prev_pitch_range or
@@ -718,19 +573,11 @@ math.randomseed(os.time())
                 random_vol   ~= prev_random_vol
             )
         end
-        function has_range_value_changed()
-            return (
-                pos_range    ~= prev_pos_range or
-                pitch_range  ~= prev_pitch_range or
-                playback_range ~= prev_playback_range or
-                vol_range    ~= prev_vol_range
-            )
-        end
-        function update_prev()
+        function JKK_IT_update_prev()
             prev_width        = width
-            prev_use_clustering = use_clustering
+            JKK_IT_prev_use_clustering = use_clustering
             prev_use_gap_mode   = use_gap_mode
-            prev_spacing_mode   = spacing_mode
+            JKK_IT_prev_spacing_mode   = spacing_mode
             prev_pos_range    = pos_range
             prev_pitch_range  = pitch_range
             prev_playback_range = playback_range
@@ -764,7 +611,7 @@ math.randomseed(os.time())
             random_order = LoadFlag("JKK_ItemTool", "random_order", false)
             live_update  = LoadFlag("JKK_ItemTool", "live_update", true)
 
-            update_prev() 
+            JKK_IT_update_prev() 
         end
         local function SaveSettings()
             reaper.SetExtState("JKK_ItemTool", "width", tostring(width), true)
@@ -930,7 +777,7 @@ math.randomseed(os.time())
             return spacing
         end
     -- Apply Spacing
-        function apply_spacing_only()
+        function JKK_IT_apply_spacing_only()
             -- Always take a fresh snapshot before applying Width. The module is
             -- now drawn in a separate panel, so selection synchronization must
             -- not depend on the old unified controller draw order.
@@ -1018,126 +865,7 @@ math.randomseed(os.time())
             current_play_slot = 0
         end
     -- Arrange Items Logic (Randomization/Arrangement)
-        function arrange_items()
-            local sorted_items = CollectAndSortSelectedItems()
-            if #sorted_items == 0 then
-                persistentClusters = {}
-                return
-            end
-
-            local start_pos = reaper.GetCursorPosition() -- 에디트 커서 고정
-            local spacing = CalculateSpacingAmount(width)
-
-            reaper.PreventUIRefresh(1)
-
-            if not IsPersistentClustersValidForSelection(sorted_items) then
-                if use_clustering then
-                    persistentClusters = BuildClusters(sorted_items)
-                else
-                    persistentClusters = {}
-                    for _, data in ipairs(sorted_items) do
-                        table.insert(persistentClusters, {
-                            items = {data.item},
-                            start_pos = data.pos,
-                            end_pos = data.end_pos,
-                            items_data = {{item = data.item, rel_pos = 0}}
-                        })
-                    end
-                end
-            end
-            local clusters = persistentClusters
-
-            local track_counters = {}
-            local track_start_pos = {}
-            local track_last_end_pos = {}
-
-            for i, cluster in ipairs(clusters) do
-                local cluster_base_pos = start_pos
-                
-                local track_key = "global"
-                if not use_clustering then
-                    track_key = reaper.GetMediaItem_Track(cluster.items_data[1].item)
-                end
-                
-                if not track_counters[track_key] then
-                    track_counters[track_key] = 1
-                    track_start_pos[track_key] = start_pos
-                    cluster_base_pos = start_pos
-                else
-                    track_counters[track_key] = track_counters[track_key] + 1
-                    if use_gap_mode then
-                        cluster_base_pos = track_last_end_pos[track_key] + spacing
-                    else
-                        cluster_base_pos = track_start_pos[track_key] + spacing * (track_counters[track_key] - 1)
-                    end
-                end
-
-                local max_cluster_end = cluster_base_pos
-                for j, item_data in ipairs(cluster.items_data) do
-                    local item = item_data.item
-                    if reaper.ValidatePtr(item, "MediaItem*") then
-                        local take = reaper.GetActiveTake(item)
-                        local item_key = i .. "_" .. j 
-
-                        local rnd_pitch_val = random_pitch and ((math.random() * pitch_range * 2) - pitch_range) or (stored_pitch[item_key] or 0)
-                        local rnd_play_rate = random_play and (2 ^ (((math.random() * playback_range * 2) - playback_range) / 12)) or (stored_playrates[item_key] or 1.0)
-                        
-                        -- Gap 모드일 경우 겹침 방지를 위해 랜덤 위치 오프셋 무시
-                        local rnd_pos_offset = 0
-                        if use_gap_mode then
-                            rnd_pos_offset = 0
-                            stored_offsets[item_key] = 0
-                        else
-                            rnd_pos_offset = random_pos and ((math.random() * pos_range * 2) - pos_range) or (stored_offsets[item_key] or 0)
-                        end
-                        
-                        local rnd_vol_val = stored_vols[item_key] or 1.0
-                        if random_vol then
-                            if vol_range > 0 then
-                                local rnd_db = (math.random() * 2.0 - 1.0) * vol_range
-                                rnd_vol_val = 10 ^ (rnd_db / 20)
-                            else
-                                rnd_vol_val = 1.0
-                            end
-                        end
-
-                        stored_vols[item_key] = rnd_vol_val
-                        stored_pitch[item_key] = rnd_pitch_val
-                        stored_playrates[item_key] = rnd_play_rate
-                        if not use_gap_mode then stored_offsets[item_key] = rnd_pos_offset end
-
-                        local new_len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
-                        if take then
-                            reaper.SetMediaItemTakeInfo_Value(take, "D_PITCH", rnd_pitch_val)
-                            reaper.SetMediaItemTakeInfo_Value(take, "D_VOL", rnd_vol_val)
-                            
-                            local current_length = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
-                            local current_rate = reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE")
-                            local source_len = current_length * current_rate
-                            new_len = source_len / rnd_play_rate
-                            
-                            reaper.SetMediaItemLength(item, new_len, true)
-                            reaper.SetMediaItemTakeInfo_Value(take, "D_PLAYRATE", rnd_play_rate)
-                        end
-
-                        local final_cluster_pos = cluster_base_pos + rnd_pos_offset
-                        local scaled_rel_pos = item_data.rel_pos / rnd_play_rate
-                        local new_item_pos = final_cluster_pos + scaled_rel_pos
-                        reaper.SetMediaItemInfo_Value(item, "D_POSITION", new_item_pos)
-
-                        if new_item_pos + new_len > max_cluster_end then
-                            max_cluster_end = new_item_pos + new_len
-                        end
-                    end
-                end
-                track_last_end_pos[track_key] = max_cluster_end
-            end
-
-            reaper.PreventUIRefresh(-1)
-            reaper.UpdateArrange()
-            current_play_slot = 0
-        end
-    function shuffle_item_order()
+    function JKK_IT_shuffle_item_order()
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt == 0 then return end
 
@@ -1201,7 +929,7 @@ math.randomseed(os.time())
             persistentClusters = clusters
 
             -- arrange_items() 대신 위치(간격)만 재배열하는 함수 호출
-            apply_spacing_only()
+            JKK_IT_apply_spacing_only()
         end
 
 ----------------------------------------------------------
@@ -1245,39 +973,23 @@ math.randomseed(os.time())
 
         if not reaper.APIExists("CF_GetSWSVersion") then
             local userChoice = showMessage("This script requires the SWS Extension to run. Would you like to download it ?", "Error", 4)
+            -- FIX: openURL did not exist (load error on "Yes"), and "No" made the
+            -- whole Item Tools module fail to load. Only the Split functions need SWS.
             if userChoice == 6 then
-                openURL("https://www.sws-extension.org/")
-            else
-                return
+                os.execute('start "" "https://www.sws-extension.org/"')
             end
         end
 
         if not reaper.APIExists("ImGui_GetVersion") then
             showMessage("This script requires ReaImGui to run. Please install it with ReaPack.", "Error", 0)
-            return
         end
 
 
         local selectedItems = {}
         local silenceItems = {}
         local lastTrack = nil
-        ---------------------------------------
-        -- FIRST RUN CHECK
-        ---------------------------------------
-            local extStateKey = "PeaksAndValleysByKusa"
-            local extStateFlag = "HasRunBefore"
-
-            local hasRunBefore = reaper.GetExtState(extStateKey, extStateFlag)
-
-            if hasRunBefore == "" then
-                local userChoice = showMessage("If you have just installed this script, please close and reopen REAPER to prevent potential crashes.\n Would you like to quit REAPER now ?", "Thank you for downloading Peaks & Valleys.", 4)
-                if userChoice == 6 then
-                    reaper.SetExtState(extStateKey, extStateFlag, "true", true)
-                    reaper.Main_OnCommand(40004, 0) -- File: Quit REAPER
-                else
-                reaper.SetExtState(extStateKey, extStateFlag, "true", true)
-                end
-            end
+        -- FIX: removed the first-run "quit REAPER now?" prompt inherited from the
+        -- standalone Peaks & Valleys script; it does not apply inside ReaTools.
 
         ---------------------------------------
         -- GENERAL FUNCTIONS
@@ -1337,7 +1049,7 @@ math.randomseed(os.time())
                 for i = parentTrackIdx + 1, trackCount - 1 do
                     local track = reaper.GetTrack(0, i)
                     local isChild = reaper.GetParentTrack(track) == parentTrack
-                    retval, name = reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "", false)
+                    local _, name = reaper.GetSetMediaTrackInfo_String(track, "P_NAME", "", false)
                     if isChild and name == trackName then
                         return track
                     elseif reaper.GetTrackDepth(track) <= reaper.GetTrackDepth(parentTrack) then
@@ -1647,7 +1359,8 @@ math.randomseed(os.time())
             end
 
             local function deleteSilencesFromItem(item, silences)
-                if not item or #silences == 0 then
+                -- FIX: silences is nil when the analysis could not run (e.g. no audio device).
+                if not item or not silences or #silences == 0 then
                     return
                 end
                 reaper.PreventUIRefresh(1)
@@ -1851,7 +1564,7 @@ math.randomseed(os.time())
                 implodeToTakesKeepPosition()
             end
 
-            function tableIsEmpty(table)
+            function JKK_IT_tableIsEmpty(table)
                 for _ in pairs(table) do
                     return false
                 end
@@ -1859,7 +1572,7 @@ math.randomseed(os.time())
             end
 
             local function itemsAreValid(selectedItems)
-                if not tableIsEmpty(selectedItems) then
+                if not JKK_IT_tableIsEmpty(selectedItems) then
                     local itemsToConvert = {}
                     local errorMessages = {}
                     for _, item in ipairs(selectedItems) do
@@ -1875,7 +1588,7 @@ math.randomseed(os.time())
                             table.insert(errorMessages, stretchErrorMessage)
                         end
                     end
-                    if tableIsEmpty(itemsToConvert) then
+                    if JKK_IT_tableIsEmpty(itemsToConvert) then
                         return nil
                     else
                         return itemsToConvert, errorMessages
@@ -1981,7 +1694,7 @@ math.randomseed(os.time())
 ----------------------------------------------------------
 local function GetAvailableWidth(ctx)
     local width = select(1, reaper.ImGui_GetContentRegionAvail(ctx))
-    return math.max(60, width or 60)
+    return math.max(JKK_Scale(60), width or JKK_Scale(60))
 end
 
 local function PushJKKButtonStyle(ctx)
@@ -1998,9 +1711,9 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
     -- Keep the previous controller visible when the selection is empty. The
     -- parent panel wraps this draw call in ImGui_BeginDisabled/EndDisabled.
     -- A fixed label column keeps every slider aligned to the Play Rate row.
-    local label_width = 86
+    local label_width = JKK_Scale(86)
     local row_width = GetAvailableWidth(ctx)
-    local slider_width = math.max(70, row_width - label_width)
+    local slider_width = math.max(JKK_Scale(70), row_width - label_width)
     local function BeginLabeledRow(label)
         local row_x = reaper.ImGui_GetCursorPosX(ctx)
         reaper.ImGui_AlignTextToFramePadding(ctx)
@@ -2013,18 +1726,16 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
     -- Volume
     BeginLabeledRow("Volume")
     local changed_vol, new_vol = reaper.ImGui_SliderDouble(ctx, "##ItemVolume", adjust_vol, -30.0, 30.0, "%.2f dB")
-    if reaper.ImGui_IsItemActivated(ctx) then reaper.Undo_BeginBlock() end
     if changed_vol then
+        JKK_ItemSliderUndoBegin()
         adjust_vol = new_vol
-        ApplyBatchVolume()
+        JKK_IT_ApplyBatchVolume()
     end
-    if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then
-        reaper.Undo_EndBlock("Batch Take Volume Applied", -1)
-    end
+    JKK_ItemSliderUndoEnd(ctx, "Batch Take Volume Applied")
     if reaper.ImGui_IsItemClicked(ctx, 1) then
         reaper.Undo_BeginBlock()
         adjust_vol = 0.0
-        ApplyBatchVolume()
+        JKK_IT_ApplyBatchVolume()
         reaper.Undo_EndBlock("Reset Volume", -1)
     end
 
@@ -2038,36 +1749,32 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
         pan_format = string.format("%.0fR", pan_display_val)
     end
     local changed_pan, new_pan = reaper.ImGui_SliderDouble(ctx, "##ItemPan", adjust_pan, -1.0, 1.0, pan_format)
-    if reaper.ImGui_IsItemActivated(ctx) then reaper.Undo_BeginBlock() end
     if changed_pan then
+        JKK_ItemSliderUndoBegin()
         adjust_pan = new_pan
-        ApplyBatchPan()
+        JKK_IT_ApplyBatchPan()
     end
-    if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then
-        reaper.Undo_EndBlock("Batch Pan Applied", -1)
-    end
+    JKK_ItemSliderUndoEnd(ctx, "Batch Pan Applied")
     if reaper.ImGui_IsItemClicked(ctx, 1) then
         reaper.Undo_BeginBlock()
         adjust_pan = 0.0
-        ApplyBatchPan()
+        JKK_IT_ApplyBatchPan()
         reaper.Undo_EndBlock("Reset Pan", -1)
     end
 
     -- Pitch
     BeginLabeledRow("Pitch")
     local changed_pitch, new_pitch = reaper.ImGui_SliderDouble(ctx, "##ItemPitch", adjust_pitch, -12.0, 12.0, "%.1f st")
-    if reaper.ImGui_IsItemActivated(ctx) then reaper.Undo_BeginBlock() end
     if changed_pitch then
+        JKK_ItemSliderUndoBegin()
         adjust_pitch = new_pitch
-        ApplyBatchPitch()
+        JKK_IT_ApplyBatchPitch()
     end
-    if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then
-        reaper.Undo_EndBlock("Batch Pitch Applied", -1)
-    end
+    JKK_ItemSliderUndoEnd(ctx, "Batch Pitch Applied")
     if reaper.ImGui_IsItemClicked(ctx, 1) then
         reaper.Undo_BeginBlock()
         adjust_pitch = 0.0
-        ApplyBatchPitch()
+        JKK_IT_ApplyBatchPitch()
         reaper.Undo_EndBlock("Reset Pitch", -1)
     end
 
@@ -2077,18 +1784,16 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
         ctx, "##ItemPlaybackRate", adjust_rate, 0.25, 4.0, "%.2f",
         reaper.ImGui_SliderFlags_Logarithmic()
     )
-    if reaper.ImGui_IsItemActivated(ctx) then reaper.Undo_BeginBlock() end
     if changed_rate then
+        JKK_ItemSliderUndoBegin()
         adjust_rate = new_rate
-        ApplyBatchRate()
+        JKK_IT_ApplyBatchRate()
     end
-    if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then
-        reaper.Undo_EndBlock("Batch Playback Rate Applied", -1)
-    end
+    JKK_ItemSliderUndoEnd(ctx, "Batch Playback Rate Applied")
     if reaper.ImGui_IsItemClicked(ctx, 1) then
         reaper.Undo_BeginBlock()
         adjust_rate = 1.0
-        ApplyBatchRate()
+        JKK_IT_ApplyBatchRate()
         reaper.Undo_EndBlock("Reset Playback Rate", -1)
     end
 
@@ -2105,61 +1810,59 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
             prev_group_stretch_ratio = 1.0
         end
     end
-    if reaper.ImGui_IsItemActivated(ctx) then reaper.Undo_BeginBlock() end
     if changed_group_stretch then
+        JKK_ItemSliderUndoBegin()
         group_stretch_ratio = new_group_stretch
         if group_stretch_ratio ~= prev_group_stretch_ratio then
-            ApplyGroupStretch(group_stretch_ratio)
+            JKK_IT_ApplyGroupStretch(group_stretch_ratio)
             prev_group_stretch_ratio = group_stretch_ratio
-            update_prev()
+            JKK_IT_update_prev()
         end
     end
-    if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then
-        reaper.Undo_EndBlock("Group Time Stretch Applied", -1)
-    end
+    JKK_ItemSliderUndoEnd(ctx, "Group Time Stretch Applied")
     if reaper.ImGui_IsItemClicked(ctx, 1) then
         reaper.Undo_BeginBlock()
         group_stretch_ratio = 1.0
-        ApplyGroupStretch(group_stretch_ratio)
+        JKK_IT_ApplyGroupStretch(group_stretch_ratio)
         prev_group_stretch_ratio = 1.0
-        update_prev()
+        JKK_IT_update_prev()
         reaper.Undo_EndBlock("Reset Group Stretch", -1)
     end
 
     -- Compute the primary action width once. Normalize uses the same width and
     -- right edge as Render Take so the controller rows form a clean boundary.
     local available_width = GetAvailableWidth(ctx)
-    local action_gap = 6
-    local nav_button_width = math.max(28,
-        math.min(48, (available_width - (2 * 84) - (action_gap * 4)) / 3))
-    local primary_button_width = math.max(68,
-        math.min(116, (available_width - (nav_button_width * 3) - (action_gap * 4)) / 2))
+    local action_gap = JKK_Scale(6)
+    local nav_button_width = math.max(JKK_Scale(28),
+        math.min(JKK_Scale(48), (available_width - (2 * JKK_Scale(84)) - (action_gap * 4)) / 3))
+    local primary_button_width = math.max(JKK_Scale(68),
+        math.min(JKK_Scale(116), (available_width - (nav_button_width * 3) - (action_gap * 4)) / 2))
 
     -- Properties and Normalize share one line directly below the sliders.
     -- Set vertical ItemSpacing to zero for this row so it touches the final
     -- slider; the horizontal spacing remains unchanged.
-    reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_ItemSpacing(), 8, 0)
+    reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_ItemSpacing(), JKK_Scale(8), 0)
     local checkbox_row_x = reaper.ImGui_GetCursorPosX(ctx)
     local changed_loop, new_loop = reaper.ImGui_Checkbox(ctx, "Loop", item_loop_src)
     if changed_loop then
         item_loop_src = new_loop
-        ApplyItemProperty("B_LOOPSRC", item_loop_src and 1.0 or 0.0)
+        JKK_IT_ApplyItemProperty("B_LOOPSRC", item_loop_src and 1.0 or 0.0)
     end
     reaper.ImGui_SameLine(ctx)
     local changed_mute, new_mute = reaper.ImGui_Checkbox(ctx, "Mute", item_mute)
     if changed_mute then
         item_mute = new_mute
-        ApplyItemProperty("B_MUTE", item_mute and 1.0 or 0.0)
+        JKK_IT_ApplyItemProperty("B_MUTE", item_mute and 1.0 or 0.0)
     end
     reaper.ImGui_SameLine(ctx)
     local changed_lock, new_lock = reaper.ImGui_Checkbox(ctx, "Lock", item_lock)
     if changed_lock then
         item_lock = new_lock
-        ApplyItemProperty("C_LOCK", item_lock and 1.0 or 0.0)
+        JKK_IT_ApplyItemProperty("C_LOCK", item_lock and 1.0 or 0.0)
     end
     reaper.ImGui_SameLine(ctx, 0, action_gap)
     reaper.ImGui_SetCursorPosX(ctx, checkbox_row_x + math.max(0, available_width - primary_button_width))
-    if reaper.ImGui_Button(ctx, "Normalize", primary_button_width, 22) then
+    if reaper.ImGui_Button(ctx, "Normalize", primary_button_width, JKK_Scale(22)) then
         reaper.Main_OnCommand(42460, 0)
     end
     reaper.ImGui_PopStyleVar(ctx, 1)
@@ -2168,7 +1871,7 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
     -- of the controller panel. The panel table is full-height in the main UI.
     local footer_cursor_y = reaper.ImGui_GetCursorPosY(ctx)
     local _, footer_available_y = reaper.ImGui_GetContentRegionAvail(ctx)
-    local take_action_height = 22
+    local take_action_height = JKK_Scale(22)
     reaper.ImGui_SetCursorPosY(
         ctx, footer_cursor_y + math.max(0, footer_available_y - take_action_height)
     )
@@ -2179,7 +1882,7 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
     local has_take_fx = selected_take and reaper.TakeFX_GetCount(selected_take) > 0 or false
 
     PushJKKButtonStyle(ctx)
-    if reaper.ImGui_Button(ctx, "Reverse", primary_button_width, 22) then
+    if reaper.ImGui_Button(ctx, "Reverse", primary_button_width, JKK_Scale(22)) then
         reaper.Undo_BeginBlock()
         reaper.Main_OnCommand(41051, 0)
         reaper.Undo_EndBlock("Take Reverse", -1)
@@ -2189,7 +1892,7 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
     reaper.ImGui_SameLine(ctx, 0, action_gap)
     reaper.ImGui_BeginDisabled(ctx, not has_multiple_takes)
     -- Previous/next take navigation buttons intentionally keep the default theme color.
-    if reaper.ImGui_Button(ctx, "<", nav_button_width, 22) then
+    if reaper.ImGui_Button(ctx, "<", nav_button_width, JKK_Scale(22)) then
         reaper.Undo_BeginBlock()
         reaper.Main_OnCommand(42350, 0)
         reaper.Undo_EndBlock("Prev Take", -1)
@@ -2199,7 +1902,7 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
     reaper.ImGui_SameLine(ctx, 0, action_gap)
     PushJKKButtonStyle(ctx)
     if has_take_fx then reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF) end
-    if reaper.ImGui_Button(ctx, "FX", nav_button_width, 22) then
+    if reaper.ImGui_Button(ctx, "FX", nav_button_width, JKK_Scale(22)) then
         reaper.Main_OnCommand(40638, 0)
     end
     if has_take_fx then reaper.ImGui_PopStyleColor(ctx) end
@@ -2207,7 +1910,7 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
 
     reaper.ImGui_SameLine(ctx, 0, action_gap)
     reaper.ImGui_BeginDisabled(ctx, not has_multiple_takes)
-    if reaper.ImGui_Button(ctx, ">", nav_button_width, 22) then
+    if reaper.ImGui_Button(ctx, ">", nav_button_width, JKK_Scale(22)) then
         reaper.Undo_BeginBlock()
         reaper.Main_OnCommand(42349, 0)
         reaper.Undo_EndBlock("Next Take", -1)
@@ -2216,7 +1919,7 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
 
     reaper.ImGui_SameLine(ctx, 0, action_gap)
     PushJKKButtonStyle(ctx)
-    if reaper.ImGui_Button(ctx, "Render Take", primary_button_width, 22) then
+    if reaper.ImGui_Button(ctx, "Render Take", primary_button_width, JKK_Scale(22)) then
         reaper.Undo_BeginBlock()
         reaper.Main_OnCommand(41999, 0)
         reaper.Undo_EndBlock("Render to New Take", -1)
@@ -2227,7 +1930,7 @@ end
 local function DrawItemTakeMetadata(ctx)
     -- Reduce the horizontal padding on both sides of the Take Controls / Item
     -- Info divider without changing the fixed 2:1 column ratio.
-    reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_CellPadding(), 8, 0)
+    reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_CellPadding(), JKK_Scale(8), 0)
     local properties_width = 0
     local metadata_flags = reaper.ImGui_TableFlags_SizingStretchProp()
         | reaper.ImGui_TableFlags_BordersInnerV()
@@ -2238,15 +1941,15 @@ local function DrawItemTakeMetadata(ctx)
         -- Left: Take Channel + Pitch Mode. Both right-side combo edges align.
         reaper.ImGui_TableNextColumn(ctx)
         local controls_width = GetAvailableWidth(ctx)
-        local label_width = 86
-        local combo_width = math.max(60, controls_width - label_width - 8)
+        local label_width = JKK_Scale(86)
+        local combo_width = math.max(JKK_Scale(60), controls_width - label_width - JKK_Scale(8))
 
         local row_x = reaper.ImGui_GetCursorPosX(ctx)
         reaper.ImGui_AlignTextToFramePadding(ctx)
         reaper.ImGui_Text(ctx, "Take Channel")
         reaper.ImGui_SameLine(ctx)
         reaper.ImGui_SetCursorPosX(ctx, row_x + label_width)
-        DrawChannelModeCombo(ctx, combo_width)
+        JKK_IT_DrawChannelModeCombo(ctx, combo_width)
 
         row_x = reaper.ImGui_GetCursorPosX(ctx)
         reaper.ImGui_AlignTextToFramePadding(ctx)
@@ -2255,36 +1958,34 @@ local function DrawItemTakeMetadata(ctx)
         reaper.ImGui_SetCursorPosX(ctx, row_x + label_width)
         -- The lower sub-mode combo starts at the same X and has the same width
         -- as the main combo, instead of extending past the controls column.
-        DrawPitchModeCombo(ctx, combo_width, combo_width, true, row_x + label_width)
+        JKK_IT_DrawPitchModeCombo(ctx, combo_width, combo_width, true, row_x + label_width)
 
         -- Right: compact metadata and Properties button; no extra vertical spacer.
         reaper.ImGui_TableNextColumn(ctx)
-        if item_info_str1 ~= "" then reaper.ImGui_Text(ctx, item_info_str1) end
-        if item_info_str2 ~= "" then reaper.ImGui_Text(ctx, item_info_str2) end
-        if item_info_str3 ~= "" then reaper.ImGui_Text(ctx, item_info_str3) end
+        if JKK_IT_item_info_str1 ~= "" then reaper.ImGui_Text(ctx, JKK_IT_item_info_str1) end
+        if JKK_IT_item_info_str2 ~= "" then reaper.ImGui_Text(ctx, JKK_IT_item_info_str2) end
+        if JKK_IT_item_info_str3 ~= "" then reaper.ImGui_Text(ctx, JKK_IT_item_info_str3) end
 
         properties_width = GetAvailableWidth(ctx)
-        if reaper.ImGui_Button(ctx, "Properties...", properties_width, 22) then
+        if reaper.ImGui_Button(ctx, "Properties...", properties_width, JKK_Scale(22)) then
             reaper.Main_OnCommand(40011, 0)
         end
         reaper.ImGui_EndTable(ctx)
     end
-    -- This spacer must be outside the nested table. A Dummy inside the final
-    -- table cell can be absorbed by that cell's row sizing and not create a
-    -- visible margin beneath the complete metadata block.
-    reaper.ImGui_Dummy(ctx, 10, 6)
+    -- No trailing spacer: the main script measures this block and aligns its
+    -- bottom with the other panels.
     reaper.ImGui_PopStyleVar(ctx, 1)
     return properties_width
 end
 
 local function GetUtilityRowLayout(ctx)
     local available_width = GetAvailableWidth(ctx)
-    local label_width = 104
-    local button_width = 100
-    local item_spacing = 8
+    local label_width = JKK_Scale(104)
+    local button_width = JKK_Scale(100)
+    local item_spacing = JKK_Scale(8)
 
     -- Width slider now uses the same width as the other utility sliders.
-    local slider_width = math.max(48,
+    local slider_width = math.max(JKK_Scale(48),
         available_width - label_width - button_width - item_spacing)
 
     return {
@@ -2304,20 +2005,13 @@ local function DrawIntervalWidthTools(ctx, layout)
     local row_y = reaper.ImGui_GetCursorPosY(ctx)
 
     local frame_height = reaper.ImGui_GetFrameHeight(ctx)
-    local inner_spacing = 4
+    -- Row gap: the regular vertical ItemSpacing used by every panel, so these
+    -- rows line up with the Controller rows next to them. (The old code read
+    -- the X value of ItemInnerSpacing.)
+    local _, inner_spacing = reaper.ImGui_GetStyleVar(ctx, reaper.ImGui_StyleVar_ItemSpacing())
+    inner_spacing = inner_spacing or JKK_Scale(6)
 
-    if reaper.ImGui_GetStyleVar and reaper.ImGui_StyleVar_ItemInnerSpacing then
-        local ok, value = pcall(
-            reaper.ImGui_GetStyleVar,
-            ctx,
-            reaper.ImGui_StyleVar_ItemInnerSpacing()
-        )
-        if ok and type(value) == "number" then
-            inner_spacing = value
-        end
-    end
-
-    local button_height = 22
+    local button_height = JKK_Scale(22)
 
     -- Width label
     reaper.ImGui_AlignTextToFramePadding(ctx)
@@ -2354,21 +2048,16 @@ local function DrawIntervalWidthTools(ctx, layout)
         format_str
     )
 
-    if reaper.ImGui_IsItemActivated(ctx) then
-        reaper.Undo_BeginBlock()
-    end
-
     if changed_width then
+        JKK_ItemSliderUndoBegin()
         width = (spacing_mode == 0)
             and math.floor(new_width + 0.5)
             or new_width
 
-        apply_spacing_only()
+        JKK_IT_apply_spacing_only()
     end
 
-    if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then
-        reaper.Undo_EndBlock("Update Interval Width", -1)
-    end
+    JKK_ItemSliderUndoEnd(ctx, "Update Interval Width")
 
     if reaper.ImGui_IsItemClicked(ctx, 1) then
         spacing_mode = (spacing_mode + 1) % 3
@@ -2409,7 +2098,10 @@ local function DrawIntervalWidthTools(ctx, layout)
         layout.button_width,
         button_height
     ) then
-        shuffle_item_order()
+        -- FIX: Shuffle Order was not recorded in the undo history.
+        reaper.Undo_BeginBlock()
+        JKK_IT_shuffle_item_order()
+        reaper.Undo_EndBlock("Shuffle Item Order", -1)
     end
 
     reaper.ImGui_PopStyleColor(ctx, 3)
@@ -2486,7 +2178,7 @@ local function DrawIntervalWidthTools(ctx, layout)
     -- Move cursor below the complete two-row layout.
     reaper.ImGui_SetCursorPosY(
         ctx,
-        row_y + frame_height * 2 + inner_spacing
+        row_y + frame_height * 2 + inner_spacing * 2
     )
 end
 
@@ -2510,8 +2202,10 @@ local function DrawDynamicItemSplitter(ctx, selected_item_count, is_active_conte
         thres_changed = true
     end
     reaper.ImGui_SameLine(ctx, 0, layout.item_spacing)
-    PushJKKButtonStyle(ctx)
-    if reaper.ImGui_Button(ctx, "Split Dyn", splitter_button_width, 22) then
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x24866FFF)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x2A9A80FF)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x1F735FFF)
+    if reaper.ImGui_Button(ctx, "Split Dyn", splitter_button_width, JKK_Scale(22)) then
         cleanup()
         reaper.Undo_BeginBlock()
         local items = storeSelectedMediaItems()
@@ -2529,7 +2223,7 @@ local function DrawDynamicItemSplitter(ctx, selected_item_count, is_active_conte
         end
         reaper.Undo_EndBlock("Split", -1)
     end
-    PopJKKButtonStyle(ctx)
+    reaper.ImGui_PopStyleColor(ctx, 3)
 
     -- Minimum silence length + Split & Takes
     row_x = reaper.ImGui_GetCursorPosX(ctx)
@@ -2547,7 +2241,7 @@ local function DrawDynamicItemSplitter(ctx, selected_item_count, is_active_conte
     end
     reaper.ImGui_SameLine(ctx, 0, layout.item_spacing)
     PushJKKButtonStyle(ctx)
-    if reaper.ImGui_Button(ctx, "Split & Takes", splitter_button_width, 22) then
+    if reaper.ImGui_Button(ctx, "Split & Takes", splitter_button_width, JKK_Scale(22)) then
         cleanup()
         reaper.Undo_BeginBlock()
         local items = storeSelectedMediaItems()
@@ -2581,7 +2275,6 @@ local function DrawDynamicItemSplitter(ctx, selected_item_count, is_active_conte
         showGuideBox = new_guide
         if not showGuideBox then clearTemporaryItems() end
     end
-    reaper.ImGui_Spacing(ctx)
 
     local current_signature = GetSelectionHash()
     if is_active_context and showGuideBox
@@ -2619,13 +2312,15 @@ local function DrawGridSplitter(ctx, layout)
     end
 
     reaper.ImGui_SameLine(ctx, 0, layout.item_spacing)
-    PushJKKButtonStyle(ctx)
-    if reaper.ImGui_Button(ctx, "Split Grid", layout.button_width, 22) then
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x24866FFF)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x2A9A80FF)
+    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x1F735FFF)
+    if reaper.ImGui_Button(ctx, "Split Grid", layout.button_width, JKK_Scale(22)) then
         reaper.Undo_BeginBlock()
         GridSplitMain(grid_slice_n)
         reaper.Undo_EndBlock("Grid Split Items", -1)
     end
-    PopJKKButtonStyle(ctx)
+    reaper.ImGui_PopStyleColor(ctx, 3)
 end
 
 function JKK_ItemTool_Draw(ctx, prev_count, current_count, active_context, track_module)
@@ -2636,7 +2331,7 @@ function JKK_ItemTool_Draw(ctx, prev_count, current_count, active_context, track
         -- When the selection becomes empty, keep the last read values visible
         -- underneath the parent panel's disabled state instead of resetting them.
         if selected_item_count > 0 then
-            SyncSelectionData(ctx)
+            JKK_IT_SyncSelectionData(ctx)
         end
         DrawItemBatchController(
             ctx,
@@ -2661,9 +2356,9 @@ function JKK_ItemTool_Draw(ctx, prev_count, current_count, active_context, track
     end
 
     if active_context == "item" then
-        local general_state_changed = has_changed()
+        local general_state_changed = JKK_IT_has_changed()
         if general_state_changed then
-            update_prev()
+            JKK_IT_update_prev()
             SaveSettings()
         end
     end
@@ -2672,53 +2367,27 @@ end
 function JKK_ItemTool_DrawEditingUtilities(ctx, is_active_context)
     local layout = GetUtilityRowLayout(ctx)
 
-    -- Capture available panel area.
-    local start_y = reaper.ImGui_GetCursorPosY(ctx)
-    local _, available_height = reaper.ImGui_GetContentRegionAvail(ctx)
-
-    local frame_height = reaper.ImGui_GetFrameHeight(ctx)
-    local spacing_y = 8
-
-    -- Draw Width at the top.
+    -- Upper block (top-aligned): Arrange Width.
     DrawIntervalWidthTools(ctx, layout)
 
-    -- Estimate the height of the bottom-anchored controls:
-    -- Slice Interval
-    -- Threshold
-    -- Min Length
-    -- Keep Origin / Guide
-    local bottom_block_height =
-        frame_height * 4
-        + spacing_y * 3
-
-    local current_y = reaper.ImGui_GetCursorPosY(ctx)
-
-    -- Anchor the remaining controls to the bottom.
-    local bottom_y = start_y
-        + available_height
-        - bottom_block_height - 13
-
-    -- Avoid overlapping Width when the panel is too short.
-    bottom_y = math.max(
-        bottom_y,
-        current_y + spacing_y
-    )
-
-    reaper.ImGui_SetCursorPosY(ctx, bottom_y)
-    reaper.ImGui_Separator(ctx)
-    -- Spacing below separator
-    reaper.ImGui_Spacing(ctx)
-
-    DrawGridSplitter(ctx, layout)
-
-    reaper.ImGui_Spacing(ctx)
-
-    DrawDynamicItemSplitter(
-        ctx,
-        reaper.CountSelectedMediaItems(0),
-        is_active_context == true,
-        layout
-    )
+    -- Lower block (bottom-aligned): all splitting tools (Slice Interval,
+    -- Threshold, Min Length). The separator sits between Arrange Width and
+    -- Slice Interval; the main script lines it up with the other panels.
+    local function DrawLower()
+        DrawGridSplitter(ctx, layout)
+        DrawDynamicItemSplitter(
+            ctx,
+            reaper.CountSelectedMediaItems(0),
+            is_active_context == true,
+            layout
+        )
+    end
+    if JKK_DrawLowerBlock then
+        JKK_DrawLowerBlock(ctx, "D", DrawLower)
+    else
+        reaper.ImGui_Separator(ctx)
+        DrawLower()
+    end
 end
 
 function JKK_ItemTool_DrawMetadata(ctx)
@@ -2735,7 +2404,15 @@ function JKK_ItemTool_DrawUtilities(ctx)
     JKK_ItemTool_DrawMetadata(ctx)
 end
 
+-- FIX: lets the main script remove the red Guide preview items when it closes;
+-- previously they stayed in the project.
+local function JKK_ItemTool_Cleanup()
+    clearTemporaryItems()
+    reaper.UpdateArrange()
+end
+
 return {
+    JKK_ItemTool_Cleanup = JKK_ItemTool_Cleanup,
     JKK_ItemTool_Draw = JKK_ItemTool_Draw,
     JKK_ItemTool_DrawUtilities = JKK_ItemTool_DrawUtilities,
     JKK_ItemTool_DrawEditingUtilities = JKK_ItemTool_DrawEditingUtilities,

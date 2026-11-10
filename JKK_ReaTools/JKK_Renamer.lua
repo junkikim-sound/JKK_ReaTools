@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Renamer
 -- @author Junki Kim
--- @version 1.0.9
+-- @version 1.1.0
 -- @provides 
 --     [nomain] Modules/JKK_Renamer_UCSList.lua
 --     [nomain] Modules/JKK_Renamer_WildcardList.lua
@@ -44,7 +44,6 @@ EventFlag == InputTextFlags_CallbackHistory ? (
 );
 ]])
 
--- 콜백 함수를 컨텍스트에 연결해 탭 전환 중에도 유효한 수명을 유지
 r.ImGui_Attach(ctx, completion_callback)
 
 r.ImGui_Function_SetValue(completion_callback, "InputTextFlags_CallbackCompletion",
@@ -57,7 +56,6 @@ r.ImGui_Function_SetValue(completion_callback, "tab_requested", 0)
 r.ImGui_Function_SetValue(completion_callback, "up_requested", 0)
 r.ImGui_Function_SetValue(completion_callback, "down_requested", 0)
 
--- 마지막 ImGui 아이템에 마우스를 올렸을 때 설명 툴팁 표시
 local function ShowItemTooltip(message)
     if r.ImGui_IsItemHovered(ctx) and r.ImGui_BeginTooltip(ctx) then
         r.ImGui_Text(ctx, message)
@@ -65,7 +63,6 @@ local function ShowItemTooltip(message)
     end
 end
 
--- 설정값 영구 저장 (REAPER ExtState)
 local ext_section = "JKK_SmartBatchRenamer"
 local function LoadBool(key, default)
     local value = r.GetExtState(ext_section, key)
@@ -78,7 +75,6 @@ local use_number = LoadBool("use_number", false)
 local top_level_only = LoadBool("top_level_only", false)
 local number_start = tonumber(r.GetExtState(ext_section, "number_start")) or 1
 
--- Rename 입력창은 매 실행마다 비우고, Find & Replace 입력값은 복원
 local input_buf = ""
 local find_buf = r.GetExtState(ext_section, "find_buf") or ""
 local replace_buf = r.GetExtState(ext_section, "replace_buf") or ""
@@ -116,28 +112,22 @@ local input_was_focused = false
 local pending_default_name = nil
 local open = true
 
--- 팝업 관련 상태 변수 (안정적인 클릭 처리 및 유지용)
 local popup_dismissed = false
 local suppress_initial_autocomplete = true
 local popup_was_open = false
-local popup_rect = nil -- 팝업 창의 기하학적 영역 저장
+local popup_rect = nil
 
 local popup_sel_idx = 1
 local trigger_char = nil
 local filter_str = ""
 
--- Selection Context
 local current_mode = "None"
 local mode_focus_active = false
 local last_ts_start, last_ts_end = r.GetSet_LoopTimeRange(false, false, 0, 0, false)
-local last_item_ptr = r.GetSelectedMediaItem(0, 0)
-local last_track_ptr = r.GetSelectedTrack(0, 0)
-local last_item_selection_signature = ""
-local last_track_selection_signature = ""
-local last_region_marker_signature = ""
+local last_item_cnt = r.CountSelectedMediaItems(0)
+local last_track_cnt = r.CountSelectedTracks(0)
 local last_left_mouse_down = false
-local mouse_down_context = nil
-local mouse_down_context_frames = 0
+local cached_targets = {}
 
 local function GetSelectedRegionMarkerData()
     local regions, markers = {}, {}
@@ -166,43 +156,6 @@ local function HasSelectedRegionOrMarker()
     local regions, markers = GetSelectedRegionMarkerData()
     return #regions > 0 or #markers > 0
 end
-
-local function GetItemSelectionSignature()
-    local parts = {}
-    for i = 0, r.CountSelectedMediaItems(0) - 1 do
-        local item = r.GetSelectedMediaItem(0, i)
-        if item then
-            local _, guid = r.GetSetMediaItemInfo_String(item, "GUID", "", false)
-            parts[#parts + 1] = guid or tostring(item)
-        end
-    end
-    return table.concat(parts, ",")
-end
-
-local function GetTrackSelectionSignature()
-    local parts = {}
-    for i = 0, r.CountSelectedTracks(0) - 1 do
-        local track = r.GetSelectedTrack(0, i)
-        if track then parts[#parts + 1] = r.GetTrackGUID(track) or tostring(track) end
-    end
-    return table.concat(parts, ",")
-end
-
-local function GetRegionMarkerSelectionSignature()
-    local regions, markers = GetSelectedRegionMarkerData()
-    local parts = {}
-    for _, item in ipairs(regions) do
-        parts[#parts + 1] = "R:" .. tostring(item.pointer) .. ":" .. item.name
-    end
-    for _, item in ipairs(markers) do
-        parts[#parts + 1] = "M:" .. tostring(item.pointer) .. ":" .. item.name
-    end
-    return table.concat(parts, "|")
-end
-
-last_item_selection_signature = GetItemSelectionSignature()
-last_track_selection_signature = GetTrackSelectionSignature()
-last_region_marker_signature = GetRegionMarkerSelectionSignature()
 
 if r.CountSelectedMediaItems(0) > 0 then
     current_mode = "Item"
@@ -267,7 +220,7 @@ local function HasSelectionForMode(mode)
         return r.CountSelectedMediaItems(0) > 0
     elseif mode == "Track" then
         return r.CountSelectedTracks(0) > 0
-    elseif mode == "Region/Marker" then
+    elseif mode == "Region" or mode == "Marker" or mode == "Region/Marker" then
         if HasSelectedRegionOrMarker() then return true end
         local ts_start, ts_end = r.GetSet_LoopTimeRange(false, false, 0, 0, false)
         return ts_end > ts_start
@@ -276,98 +229,80 @@ local function HasSelectionForMode(mode)
 end
 
 local function UpdateFocusMode()
-    local ts_start, ts_end = r.GetSet_LoopTimeRange(false, false, 0, 0, false)
-    local time_selection_changed = ts_start ~= last_ts_start or ts_end ~= last_ts_end
-    last_ts_start, last_ts_end = ts_start, ts_end
-
-    local current_item_ptr = r.GetSelectedMediaItem(0, 0)
-    local current_track_ptr = r.GetSelectedTrack(0, 0)
-    local item_signature = GetItemSelectionSignature()
-    local track_signature = GetTrackSelectionSignature()
-    local region_signature = GetRegionMarkerSelectionSignature()
-
-    local item_selection_changed = item_signature ~= last_item_selection_signature
-    local track_selection_changed = track_signature ~= last_track_selection_signature
-    local region_selection_changed = region_signature ~= last_region_marker_signature
-
-    local left_press, left_release, left_down = GetLeftMouseState()
-    local hit_context, hit_track, hit_item = GetMouseAreaContext()
-    local cursor_context = -1
-    if r.GetCursorContext2 then
-        local ok, value = pcall(r.GetCursorContext2, true)
-        if ok and type(value) == "number" then cursor_context = value end
-    elseif r.GetCursorContext then
-        cursor_context = r.GetCursorContext()
+    if r.ImGui_IsWindowFocused(ctx, r.ImGui_FocusedFlags_RootAndChildWindows()) then
+        return current_mode
     end
 
-    -- 마우스를 클릭할 때(left_press) 대신 떼었을 때(left_release) 반응하도록 변경
-    if left_release then
-        mouse_down_context = hit_context
-        mouse_down_context_frames = 2
+    local pressed, released, is_down = GetLeftMouseState()
+    local hit_context, hit_track, hit_item = GetMouseAreaContext()
 
-        if hit_context == "Track" and hit_track then
-            current_mode = "Track"
+    local cur_item_cnt = r.CountSelectedMediaItems(0)
+    local cur_track_cnt = r.CountSelectedTracks(0)
+    local cur_ts_start, cur_ts_end = r.GetSet_LoopTimeRange(false, false, 0, 0, false)
+
+    local time_sel_changed = (cur_ts_start ~= last_ts_start or cur_ts_end ~= last_ts_end)
+    local item_sel_changed = (cur_item_cnt ~= last_item_cnt)
+    local track_sel_changed = (cur_track_cnt ~= last_track_cnt)
+
+    if is_down then
+        return current_mode
+    end
+
+    last_item_cnt = cur_item_cnt
+    last_track_cnt = cur_track_cnt
+    last_ts_start, last_ts_end = cur_ts_start, cur_ts_end
+
+    if released then
+        if (cur_ts_start ~= cur_ts_end) and (hit_context == "Timeline" or time_sel_changed) then
+            current_mode = "Region/Marker"
             mode_focus_active = true
+        elseif hit_context == "Track" then
+            if cur_track_cnt > 0 then
+                current_mode = "Track"
+                mode_focus_active = true
+            else
+                current_mode = "None"
+                mode_focus_active = false
+            end
         elseif hit_context == "Arrange" then
             if hit_item then
                 current_mode = "Item"
                 mode_focus_active = true
+            elseif item_sel_changed and cur_item_cnt > 0 then
+                current_mode = "Item"
+                mode_focus_active = true
             else
+                current_mode = "None"
                 mode_focus_active = false
             end
-        elseif hit_context == "Timeline" then
+        else
+            current_mode = "None"
+            mode_focus_active = false
+        end
+    else
+        if cur_ts_start ~= cur_ts_end and time_sel_changed then
             current_mode = "Region/Marker"
             mode_focus_active = true
-        end
-    end
-
-    if item_selection_changed and r.CountSelectedMediaItems(0) > 0 then
-        local item_selection_context = mouse_down_context == "Arrange"
-            or (mouse_down_context == nil and (
-                hit_context == "Arrange" or cursor_context == 1
-            ))
-        if item_selection_context or not r.JS_Mouse_GetState then
+        elseif item_sel_changed and cur_item_cnt > 0 then
             current_mode = "Item"
             mode_focus_active = true
-        end
-    end
-    if track_selection_changed and r.CountSelectedTracks(0) > 0 then
-        local track_selection_context = mouse_down_context == "Track"
-            or (mouse_down_context == nil and hit_context == "Track" and cursor_context == 0)
-        if track_selection_context or (not r.JS_Mouse_GetState and hit_context == "Track") then
+        elseif track_sel_changed and cur_track_cnt > 0 then
             current_mode = "Track"
             mode_focus_active = true
         end
     end
 
-    if time_selection_changed then
-        current_mode = "Region/Marker"
-        mode_focus_active = true
-    elseif region_selection_changed and HasSelectedRegionOrMarker() then
-        current_mode = "Region/Marker"
-        mode_focus_active = true
-    end
-
-    if not r.JS_Mouse_GetState and item_selection_changed
-        and r.CountSelectedMediaItems(0) > 0 then
-        current_mode = "Item"
-        mode_focus_active = true
+    if current_mode == "Item" and cur_item_cnt == 0 then current_mode = "None"; mode_focus_active = false end
+    if current_mode == "Track" and cur_track_cnt == 0 then current_mode = "None"; mode_focus_active = false end
+    if (current_mode == "Region" or current_mode == "Marker" or current_mode == "Region/Marker") and cur_ts_start == cur_ts_end and not HasSelectedRegionOrMarker() then 
+        current_mode = "None"; mode_focus_active = false 
     end
 
     if not HasSelectionForMode(current_mode) then
         mode_focus_active = false
+        current_mode = "None"
     end
 
-    last_item_ptr = current_item_ptr
-    last_track_ptr = current_track_ptr
-    last_item_selection_signature = item_signature
-    last_track_selection_signature = track_signature
-    last_region_marker_signature = region_signature
-
-    if not left_down and mouse_down_context_frames > 0 then
-        mouse_down_context_frames = mouse_down_context_frames - 1
-        if mouse_down_context_frames == 0 then mouse_down_context = nil end
-    end
     return current_mode
 end
 
@@ -398,8 +333,19 @@ local function GetTargetTypeStr(target)
 end
 
 local function GetTargets()
+    local _, _, is_down = GetLeftMouseState()
+    if is_down or r.ImGui_IsAnyItemActive(ctx) then
+        return cached_targets
+    end
+    if is_down then
+        return cached_targets
+    end
+
     local raw_targets = {}
-    if not mode_focus_active then return raw_targets end
+    if not mode_focus_active or current_mode == "None" then
+        cached_targets = raw_targets
+        return cached_targets
+    end
     
     if current_mode == "Item" then
         local sel_items = r.CountSelectedMediaItems(0)
@@ -477,7 +423,10 @@ local function GetTargets()
         end
     end
 
-    if not top_level_only then return raw_targets end
+    if not top_level_only then 
+        cached_targets = raw_targets
+        return cached_targets 
+    end
 
     local filtered = {}
     if current_mode == "Track" then
@@ -520,7 +469,8 @@ local function GetTargets()
         filtered = raw_targets
     end
 
-    return filtered
+    cached_targets = filtered
+    return cached_targets
 end
 
 local function BuildHierarchyIndices(targets)
@@ -811,6 +761,39 @@ local function ApplyFindReplaceName(original_name, index, hierarchy_indices)
     return result
 end
 
+-- ✅ 요청하신 'Selected nn 항목' 형식으로 출력 문자열 생성 함수
+local function GetFormattedSelectionText(target_count)
+    if target_count == 0 then
+        return "No Selection"
+    end
+    local noun = "targets"
+    if current_mode == "Item" then
+        noun = (target_count == 1) and "Item" or "Items"
+    elseif current_mode == "Track" then
+        noun = (target_count == 1) and "Track" or "Tracks"
+    elseif current_mode == "Region/Marker" or current_mode == "Region" or current_mode == "Marker" then
+        local has_region, has_marker = false, false
+        local targets = GetTargets()
+        for _, t in ipairs(targets) do
+            if t.type == "Region" then has_region = true end
+            if t.type == "Marker" then has_marker = true end
+        end
+        
+        if has_region and has_marker then
+            noun = "Region/Marker"
+        elseif has_region then
+            noun = (target_count == 1) and "Region" or "Regions"
+        elseif has_marker then
+            noun = (target_count == 1) and "Marker" or "Markers"
+        else
+            noun = "Regions/Markers"
+        end
+    end
+
+    local formatted_num = string.format("%02d", target_count)
+    return string.format("Selected %s %s", formatted_num, noun)
+end
+
 local function SetTargetName(target, new_name)
     if target.type == "Item" then
         local take = r.GetActiveTake(target.item)
@@ -931,14 +914,8 @@ local function Main()
         end
 
         r.ImGui_PushFont(ctx, font_small, 14)
-        local target_type_text = current_mode == "None" and "targets"
-            or ((current_mode == "Region/Marker" or current_mode == "Region" or current_mode == "Marker")
-                and "regions/markers" or (current_mode:lower() .. "s"))
-        if target_count == 0 then
-            r.ImGui_TextColored(ctx, 0xE3DB8EFF, string.format("0 %s selected", target_type_text))
-        else
-            r.ImGui_TextColored(ctx, 0xE3DB8EFF, string.format("Rename %d %s", target_count, target_type_text))
-        end
+        local header_display_text = GetFormattedSelectionText(target_count)
+        r.ImGui_TextColored(ctx, 0xE3DB8EFF, header_display_text)
         r.ImGui_Spacing(ctx)
         
         if r.ImGui_BeginTabBar(ctx, "RenamerTabs") then
@@ -1019,7 +996,6 @@ local function Main()
         local down_requested = r.ImGui_Function_GetValue(completion_callback, "down_requested") == 1
         local keyboard_popup_event = tab_requested or up_requested or down_requested
 
-        -- 마우스 클릭 시: 텍스트 입력창 내부와 팝업 내부 영역 밖을 클릭했을 때만 팝업 닫기 (Geometric Check)
         local mouse_clicked = r.ImGui_IsMouseClicked(ctx, 0)
         if popup_was_open and mouse_clicked then
             local mx, my = r.ImGui_GetMousePos(ctx)
@@ -1059,7 +1035,6 @@ local function Main()
             popup_dismissed = false
         end
 
-        -- 포커스 또는 팝업 오픈 상태일 때 팝업 유지
         local show_popup = (is_focused or keyboard_popup_event or popup_was_open)
             and not popup_dismissed
             and not suppress_initial_autocomplete
@@ -1308,7 +1283,6 @@ local function Main()
                 end
                 r.ImGui_PopFont(ctx)
 
-                -- 팝업 창의 기하학적 영역을 계산하여 저장
                 local px, py = r.ImGui_GetWindowPos(ctx)
                 local pw, ph = r.ImGui_GetWindowSize(ctx)
                 popup_rect = { min_x = px, min_y = py, max_x = px + pw, max_y = py + ph }

@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Renderer
 -- @author Junki Kim
--- @version 1.1.3
+-- @version 1.1.4
 --========================================================
 
 local r = reaper
@@ -52,6 +52,59 @@ local suppress_initial_autocomplete = true
 local popup_was_open = false
 local popup_rect = nil
 local popup_sel_idx = 1
+
+-- =======================================================
+-- Selection Context & Release Detection Helpers
+-- =======================================================
+local last_left_mouse_down = false
+local cached_targets = {}
+local cached_previews = {}
+local current_mode = "None"
+local mode_focus_active = false
+local last_ts_start, last_ts_end = r.GetSet_LoopTimeRange(false, false, 0, 0, false)
+local last_item_cnt = r.CountSelectedMediaItems(0)
+local last_track_cnt = r.CountSelectedTracks(0)
+
+local function GetMouseAreaContext()
+    if not (r.GetMousePosition and r.GetThingFromPoint) then
+        return nil, nil, nil, ""
+    end
+
+    local mouse_x, mouse_y = r.GetMousePosition()
+    local hit_track, info = r.GetThingFromPoint(mouse_x, mouse_y)
+    info = (info or ""):lower()
+
+    if info:match("^tcp") then
+        return "Track", hit_track, nil, info
+    end
+
+    if info == "arrange" or info:match("^arrange[%.:_]?") then
+        local hit_item = r.GetItemFromPoint
+            and r.GetItemFromPoint(mouse_x, mouse_y, false)
+            or nil
+        return "Arrange", nil, hit_item, info
+    end
+
+    if info:find("ruler", 1, true) or info:find("timeline", 1, true)
+        or info:find("marker", 1, true) or info:find("region", 1, true) then
+        return "Timeline", nil, nil, info
+    end
+
+    return nil, nil, nil, info
+end
+
+local function GetLeftMouseState()
+    if not r.JS_Mouse_GetState then
+        last_left_mouse_down = false
+        return false, false, false
+    end
+    local state = r.JS_Mouse_GetState(1) or 0
+    local is_down = (state & 1) ~= 0
+    local pressed = is_down and not last_left_mouse_down
+    local released = not is_down and last_left_mouse_down
+    last_left_mouse_down = is_down
+    return pressed, released, is_down
+end
 
 -- =======================================================
 -- Theme Module Integration
@@ -992,6 +1045,11 @@ end
 local function GeneratePreviewList(tab)
   if not tab then tab = tabs[active_tab_idx] or tabs[1] end
 
+  local _, _, is_down = GetLeftMouseState()
+  if is_down then
+    return cached_previews, cached_targets
+  end
+
   local previews = {}
   local num = 1
   local items_to_process = {}
@@ -1019,7 +1077,11 @@ local function GeneratePreviewList(tab)
     table.insert(items_to_process, {track = r.GetSelectedTrack(0,0), item = r.GetSelectedMediaItem(0,0)})
   end
   
-  if #items_to_process == 0 then return {}, {} end
+  if #items_to_process == 0 then 
+    cached_previews = {}
+    cached_targets = {}
+    return {}, {} 
+  end
   
   for _, p_item in ipairs(items_to_process) do
     local fname = ParseWildcards(tab, tab.file_pattern, p_item.track, p_item.item, p_item.region, num) .. GetRenderFormatExtension(tab)
@@ -1031,6 +1093,8 @@ local function GeneratePreviewList(tab)
     num = num + 1
   end
   
+  cached_previews = previews
+  cached_targets = items_to_process
   return previews, items_to_process
 end
 
@@ -1042,6 +1106,7 @@ local function Main()
   local style_pop_count, color_pop_count = ApplyTheme(ctx)
   
   local visible, open_flag = r.ImGui_Begin(ctx, 'JKK_Renderer', open, r.ImGui_WindowFlags_NoCollapse())
+
   open = open_flag
 
   if r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_Escape()) then
@@ -1049,8 +1114,33 @@ local function Main()
   end
 
   if visible then
+    if not r.ImGui_IsWindowFocused(ctx, r.ImGui_FocusedFlags_RootAndChildWindows and r.ImGui_FocusedFlags_RootAndChildWindows() or 0) then
+      local _, released, is_down = GetLeftMouseState()
+      local hit_context, _, hit_item = GetMouseAreaContext()
+      
+      local cur_item_cnt = r.CountSelectedMediaItems(0)
+      local cur_track_cnt = r.CountSelectedTracks(0)
+      local cur_ts_start, cur_ts_end = r.GetSet_LoopTimeRange(false, false, 0, 0, false)
+      
+      local time_sel_changed = (cur_ts_start ~= last_ts_start or cur_ts_end ~= last_ts_end)
+      local item_sel_changed = (cur_item_cnt ~= last_item_cnt)
+      local track_sel_changed = (cur_track_cnt ~= last_track_cnt)
+
+      if not is_down then
+        last_item_cnt = cur_item_cnt
+        last_track_cnt = cur_track_cnt
+        last_ts_start, last_ts_end = cur_ts_start, cur_ts_end
+      end
+    end
     local is_focused = r.ImGui_IsWindowFocused(ctx, r.ImGui_FocusedFlags_RootAndChildWindows and r.ImGui_FocusedFlags_RootAndChildWindows() or 0)
     local is_any_item_active = r.ImGui_IsAnyItemActive(ctx)
+    if show_autocomplete then
+        local root_focused = r.ImGui_IsWindowFocused(ctx, r.ImGui_FocusedFlags_RootWindow())
+        if not root_focused then
+            popup_dismissed = true
+            show_autocomplete = false
+        end
+    end
 
     -- =======================================================
     -- GLOBAL KEYBOARD SHORTCUTS

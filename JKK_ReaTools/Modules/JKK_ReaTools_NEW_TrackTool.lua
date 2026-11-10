@@ -6,6 +6,26 @@
 
 local reaper = reaper
 
+-- UI zoom factor published by JKK_ReaTools (1.0 = original design size).
+local function S(v) return v * (JKK_UI_SCALE or 1) end
+
+-- FIX: slider undo blocks. The block used to open when a slider was clicked and
+-- close only after an actual edit, so a click without a change left it open.
+-- It now opens on the first change and closes whenever the slider is released.
+local slider_undo_open = false
+local function SliderUndoBegin()
+    if not slider_undo_open then
+        reaper.Undo_BeginBlock()
+        slider_undo_open = true
+    end
+end
+local function SliderUndoEnd(ctx, description)
+    if slider_undo_open and reaper.ImGui_IsItemDeactivated(ctx) then
+        reaper.Undo_EndBlock(description, -1)
+        slider_undo_open = false
+    end
+end
+
 ------------------------------------------------------------
 -- Track Controller State
 ------------------------------------------------------------
@@ -16,6 +36,9 @@ local volume_db = 0.0
 local pan_val = 0.0
 local width_val = 1.0
 local track_channels = 2
+
+-- ✅ 프로젝트 전체 적용 여부를 저장하는 전역 변수
+local apply_all_tracks = false
 
 local function ReadSelectedTrackValues()
     local track = reaper.GetSelectedTrack(0, 0)
@@ -35,6 +58,36 @@ end
 ReadSelectedTrackValues()
 
 ------------------------------------------------------------
+-- Mouse & TCP Detection Helpers
+------------------------------------------------------------
+local last_left_mouse_down = false
+local function GetLeftMouseState()
+    if not reaper.JS_Mouse_GetState then
+        last_left_mouse_down = false
+        return false, false, false
+    end
+    local state = reaper.JS_Mouse_GetState(1) or 0
+    local is_down = (state & 1) ~= 0
+    local pressed = is_down and not last_left_mouse_down
+    local released = not is_down and last_left_mouse_down
+    last_left_mouse_down = is_down
+    return pressed, released, is_down
+end
+
+local function IsMouseOnTCP()
+    if not (reaper.GetMousePosition and reaper.GetThingFromPoint) then
+        return false
+    end
+    local mouse_x, mouse_y = reaper.GetMousePosition()
+    local _, info = reaper.GetThingFromPoint(mouse_x, mouse_y)
+    info = (info or ""):lower()
+    if info:match("^tcp") then
+        return true
+    end
+    return false
+end
+
+------------------------------------------------------------
 -- Track Value Actions
 ------------------------------------------------------------
 local function Action_SetSelectedTracksVolume(value)
@@ -45,24 +98,27 @@ local function Action_SetSelectedTracksVolume(value)
     end
 end
 
-local function Action_RoundSelectedTracksVolumeToHalfDB()
-    local count = reaper.CountSelectedTracks(0)
+-- ✅ 체크박스 상태(apply_all_tracks)에 따라 선택 트랙 또는 프로젝트 전체 트랙 볼륨 반올림 적용
+local function Action_RoundTracksVolumeToHalfDB(all_tracks)
+    local count = all_tracks and reaper.CountTracks(0) or reaper.CountSelectedTracks(0)
     if count == 0 then return end
 
     reaper.Undo_BeginBlock()
     for i = 0, count - 1 do
-        local track = reaper.GetSelectedTrack(0, i)
-        local current_vol = reaper.GetMediaTrackInfo_Value(track, "D_VOL")
-        if current_vol > 0 then
-            local db = 20 * math.log(current_vol, 10)
-            local rounded_db = math.floor(db * 2 + 0.5) / 2
-            local new_vol = 10 ^ (rounded_db / 20.0)
-            if math.abs(current_vol - new_vol) > 0.0001 then
-                reaper.SetMediaTrackInfo_Value(track, "D_VOL", new_vol)
+        local track = all_tracks and reaper.GetTrack(0, i) or reaper.GetSelectedTrack(0, i)
+        if track then
+            local current_vol = reaper.GetMediaTrackInfo_Value(track, "D_VOL")
+            if current_vol > 0 then
+                local db = 20 * math.log(current_vol, 10)
+                local rounded_db = math.floor(db * 2 + 0.5) / 2
+                local new_vol = 10 ^ (rounded_db / 20.0)
+                if math.abs(current_vol - new_vol) > 0.0001 then
+                    reaper.SetMediaTrackInfo_Value(track, "D_VOL", new_vol)
+                end
             end
         end
     end
-    reaper.Undo_EndBlock("Round Volume to 0.5dB", -1)
+    reaper.Undo_EndBlock(all_tracks and "Round All Tracks Volume to 0.5dB" or "Round Selected Tracks Volume to 0.5dB", -1)
 end
 
 local function Action_SetSelectedTracksPan(value)
@@ -231,9 +287,25 @@ local function DrawTrackBatchController(ctx)
     local selected_track = reaper.GetSelectedTrack(0, 0)
     local selected_count = reaper.CountSelectedTracks(0)
 
-    -- Refresh cached values only when a track exists. With no selection, keep
-    -- the last values on screen; the parent panel disables all interactions.
-    if selected_track and selected_count > 0 and not reaper.ImGui_IsAnyItemActive(ctx) then
+    local _, _, is_down = GetLeftMouseState()
+
+    local should_update = false
+    if selected_track and selected_count > 0 then
+        local is_window_focused = reaper.ImGui_IsWindowFocused(ctx, reaper.ImGui_FocusedFlags_RootAndChildWindows())
+        local is_item_active = reaper.ImGui_IsAnyItemActive(ctx)
+        
+        if is_window_focused or is_item_active then
+            should_update = true
+        else
+            -- DAW 메인 창 영역을 클릭한 경우, 오직 마우스가 TCP 영역에 있을 때만 갱신 허용
+            local _, _, is_down = GetLeftMouseState()
+            if not is_down and IsMouseOnTCP() then
+                should_update = true
+            end
+        end
+    end
+
+    if should_update then
         local linear_vol = reaper.GetMediaTrackInfo_Value(selected_track, "D_VOL")
         volume_db = (linear_vol > 0)
             and (20.0 * math.log(linear_vol) / math.log(10))
@@ -244,16 +316,15 @@ local function DrawTrackBatchController(ctx)
         track_channels = reaper.GetMediaTrackInfo_Value(selected_track, "I_NCHAN") or track_channels
     end
 
-    local label_width = 86
-    local round_button_width = 48
-    local row_gap = 6
+    local label_width = S(86)
+    local round_button_width = S(48)
+    local checkbox_width = S(20)  -- ✅ 체크박스 공간 확보
+    local row_gap = S(6)
     local row_width = select(1, reaper.ImGui_GetContentRegionAvail(ctx))
 
-    -- Volume reserves the exact space required by the 0.5 dB button. The
-    -- lower controls use the full combined width, so their right edges align
-    -- with the right edge of that button.
+    -- ✅ 슬라이더 너비 계산 시 0.5dB 버튼과 체크박스 공간을 고려하도록 수정
     local volume_slider_width = math.max(1,
-        row_width - label_width - round_button_width - row_gap)
+        row_width - label_width - round_button_width - checkbox_width - (row_gap * 2))
     local full_control_width = math.max(1, row_width - label_width)
 
     local function BeginLabeledRow(label)
@@ -264,31 +335,39 @@ local function DrawTrackBatchController(ctx)
         reaper.ImGui_SetCursorPosX(ctx, row_x + label_width)
     end
 
-    -- Volume: leave a reserved 0.5 dB button slot so every track slider has the same width.
+    -- Volume
     BeginLabeledRow("Volume")
     reaper.ImGui_SetNextItemWidth(ctx, volume_slider_width)
     local vol_format = (volume_db <= MIN_DB) and "-inf dB" or string.format("%.1f dB", volume_db)
     local changed_vol, new_slider_pos = reaper.ImGui_SliderDouble(
         ctx, "##TrackVolume", db_to_slider_pos(volume_db), 0.0, 1.0, vol_format
     )
-    if reaper.ImGui_IsItemActivated(ctx) then reaper.Undo_BeginBlock() end
     if changed_vol then
+        SliderUndoBegin()
         volume_db = slider_pos_to_db(new_slider_pos)
         Action_SetSelectedTracksVolume(math.min(10 ^ (volume_db / 20.0), 3.98))
     end
-    if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then
-        reaper.Undo_EndBlock("Set Selected Tracks Volume", -1)
-    end
+    SliderUndoEnd(ctx, "Set Selected Tracks Volume")
     if reaper.ImGui_IsItemClicked(ctx, 1) then
         reaper.Undo_BeginBlock()
         volume_db = 0.0
         Action_SetSelectedTracksVolume(1.0)
         reaper.Undo_EndBlock("Reset Volume", -1)
     end
+    
+    -- 0.5dB 버튼
     reaper.ImGui_SameLine(ctx, 0, row_gap)
-    if reaper.ImGui_Button(ctx, "0.5dB", round_button_width, 22) then
-        Action_RoundSelectedTracksVolumeToHalfDB()
+    if reaper.ImGui_Button(ctx, "0.5dB", round_button_width, S(22)) then
+        Action_RoundTracksVolumeToHalfDB(apply_all_tracks)
         ReadSelectedTrackValues()
+    end
+
+    -- ✅ 0.5dB 버튼 오른쪽 이름 없는 체크박스 추가
+    reaper.ImGui_SameLine(ctx, 0, row_gap)
+    local _, new_chk = reaper.ImGui_Checkbox(ctx, "##ApplyAllTracksChk", apply_all_tracks)
+    apply_all_tracks = new_chk
+    if reaper.ImGui_IsItemHovered(ctx) then
+        reaper.ImGui_SetTooltip(ctx, "Check to apply 0.5dB rounding to all tracks in the project")
     end
 
     -- Pan
@@ -302,14 +381,12 @@ local function DrawTrackBatchController(ctx)
         pan_format = string.format("%.0fR", pan_display)
     end
     local changed_pan, new_pan = reaper.ImGui_SliderDouble(ctx, "##TrackPan", pan_val, -1.0, 1.0, pan_format)
-    if reaper.ImGui_IsItemActivated(ctx) then reaper.Undo_BeginBlock() end
     if changed_pan then
+        SliderUndoBegin()
         pan_val = new_pan
         Action_SetSelectedTracksPan(pan_val)
     end
-    if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then
-        reaper.Undo_EndBlock("Set Selected Tracks Panning", -1)
-    end
+    SliderUndoEnd(ctx, "Set Selected Tracks Panning")
     if reaper.ImGui_IsItemClicked(ctx, 1) then
         reaper.Undo_BeginBlock()
         pan_val = 0.0
@@ -328,14 +405,12 @@ local function DrawTrackBatchController(ctx)
         width_format = string.format("%.0f W (Rev)", width_display)
     end
     local changed_width, new_width = reaper.ImGui_SliderDouble(ctx, "##TrackWidth", width_val, -1.0, 1.0, width_format)
-    if reaper.ImGui_IsItemActivated(ctx) then reaper.Undo_BeginBlock() end
     if changed_width then
+        SliderUndoBegin()
         width_val = new_width
         Action_SetSelectedTracksWidth(width_val)
     end
-    if reaper.ImGui_IsItemDeactivatedAfterEdit(ctx) then
-        reaper.Undo_EndBlock("Set Selected Tracks Width", -1)
-    end
+    SliderUndoEnd(ctx, "Set Selected Tracks Width")
     if reaper.ImGui_IsItemClicked(ctx, 1) then
         reaper.Undo_BeginBlock()
         width_val = 1.0
@@ -343,7 +418,7 @@ local function DrawTrackBatchController(ctx)
         reaper.Undo_EndBlock("Reset Width", -1)
     end
 
-    -- Channels: align its control with the slider start, matching the rows above.
+    -- Channels
     BeginLabeledRow("Channels")
     local channel_options = " 2 ch\0 4 ch\0 6 ch\0 8 ch\0 10 ch\0 12 ch\0 16 ch\0"
     local current_nchan = selected_track
@@ -369,24 +444,24 @@ end
 ------------------------------------------------------------
 local function DrawTrackActions(ctx)
     local available_width = select(1, reaper.ImGui_GetContentRegionAvail(ctx))
-    if reaper.ImGui_Button(ctx, "Delete Unused Tracks", available_width, 22) then
+    if reaper.ImGui_Button(ctx, "Delete Unused Tracks", available_width, S(22)) then
         DeleteEmptyTracksAndFolders()
     end
 
-    local button_gap = 6
+    local button_gap = S(6)
     local button_width = math.max(1, (available_width - (button_gap * 2)) / 3)
-    if reaper.ImGui_Button(ctx, "Trim", button_width, 22) then
+    if reaper.ImGui_Button(ctx, "Trim", button_width, S(22)) then
         Action_SetSelectedTracksAutomationMode(0)
     end
     reaper.ImGui_SameLine(ctx, 0, button_gap)
-    if reaper.ImGui_Button(ctx, "Read", button_width, 22) then
+    if reaper.ImGui_Button(ctx, "Read", button_width, S(22)) then
         Action_SetSelectedTracksAutomationMode(1)
     end
     reaper.ImGui_SameLine(ctx, 0, button_gap)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x992222FF)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0xCC3333FF)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0xFF4444FF)
-    if reaper.ImGui_Button(ctx, "Write", button_width, 22) then
+    if reaper.ImGui_Button(ctx, "Write", button_width, S(22)) then
         Action_SetSelectedTracksAutomationMode(3)
     end
     reaper.ImGui_PopStyleColor(ctx, 3)
@@ -397,12 +472,12 @@ local function DrawTimelineActions(ctx)
     local has_regions = overlapping_regions and #overlapping_regions > 0
     reaper.ImGui_BeginDisabled(ctx, not has_regions)
     local button_width = select(1, reaper.ImGui_GetContentRegionAvail(ctx))
-    if reaper.ImGui_Button(ctx, "Delete Selected Regions", button_width, 22) then
+    if reaper.ImGui_Button(ctx, "Delete Selected Regions", button_width, S(22)) then
         DeleteOverlappingRegions()
     end
     reaper.ImGui_EndDisabled(ctx)
     if not has_regions then
-        reaper.ImGui_Text(ctx, "Adjust a time selection over one or more regions.")
+        reaper.ImGui_Text(ctx, "Description: Adjust a time selection over one or more regions.")
     end
 end
 
@@ -411,11 +486,9 @@ local function JKK_TrackTool_Draw(ctx, active_context)
     if active_context == "track" then
         DrawTrackBatchController(ctx)
 
-        -- Keep Delete Unused Tracks and the Trim / Read / Write row at the
-        -- bottom of the full-height controller panel.
         local footer_cursor_y = reaper.ImGui_GetCursorPosY(ctx)
         local _, footer_available_y = reaper.ImGui_GetContentRegionAvail(ctx)
-        local track_actions_height = 22 * 2 + 6 -- two rows plus one row gap
+        local track_actions_height = S(22) * 2 + S(6) 
         reaper.ImGui_SetCursorPosY(
             ctx, footer_cursor_y + math.max(0, footer_available_y - track_actions_height)
         )
