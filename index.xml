@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="JKK_ReaTools" commit="b23f108f74c069ad0481182c9b81500380cc1bdb">
+<index version="1" name="JKK_ReaTools" commit="ded665bbeafe8ae4830db6265211b21a1b1fd285">
   <category name="Global Sampler (Origin by BirdBird)">
     <reapack name="BirdBird_Global Sampler (JKK_Edited).lua" type="script" desc="Global Sampler (Edited by JKK)">
       <version name="0.99.8.5" author="BirdBird" time="2026-05-08T13:57:22Z">
@@ -31,6 +31,11 @@
       </version>
       <version name="1.0.6" author="Junki Kim" time="2026-11-10T12:21:43Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/d984b53c0053cc0afa7f19e3dc87d03463a27440/JKK_ReaTools/JKK_ColorPalette.lua</source>
+      </version>
+      <version name="1.0.7" author="Junki Kim" time="2026-11-11T02:48:54Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/ded665bbeafe8ae4830db6265211b21a1b1fd285/JKK_ReaTools/JKK_ColorPalette.lua</source>
+        <source file="Modules/JKK_ColorPalette_Data.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ded665bbeafe8ae4830db6265211b21a1b1fd285/JKK_ReaTools/Modules/JKK_ColorPalette_Data.lua</source>
+        <source file="Modules/JKK_ColorPalette_UI.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ded665bbeafe8ae4830db6265211b21a1b1fd285/JKK_ReaTools/Modules/JKK_ColorPalette_UI.lua</source>
       </version>
     </reapack>
     <reapack name="JKK_Loopmaker.lua" type="script">
