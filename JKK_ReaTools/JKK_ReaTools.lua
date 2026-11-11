@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.9.87
+-- @version 0.9.88
 -- @provides
 --     [nomain] Modules/JKK_ReaTools_NEW_ItemTool.lua
 --     [nomain] Modules/JKK_ReaTools_NEW_TrackTool.lua
@@ -1130,13 +1130,34 @@ local function DrawSettingsPopup()
         RPR.Main_OnCommand(42074, 0)
     end
     if RPR.ImGui_MenuItem(ctx, "Open Project Directory") then
-        local command_id = RPR.NamedCommandLookup("_S&M_OPEN_PRJ_PATH")
-        if command_id ~= 0 then
-            RPR.Main_OnCommand(command_id, 0)
+    -- 현재 열려있는 프로젝트의 .rpp 파일 경로 가져오기
+    local _, proj_path = RPR.EnumProjects(-1)
+    
+    if proj_path and proj_path ~= "" then
+        -- SWS의 CF_LocateInExplorer가 설치되어 있으면 .rpp 파일이 선택된 상태로 폴더 열기
+        if RPR.CF_LocateInExplorer then
+            RPR.CF_LocateInExplorer(proj_path)
         else
-            RPR.ShowMessageBox("해당 커스텀/SWS 액션을 찾을 수 없습니다.", "오류", 0)
+            -- SWS가 없을 경우 OS 기본 파일 탐색기로 폴더 열기
+            local is_win = RPR.GetOS():find("Win") ~= nil
+            local is_mac = RPR.GetOS():find("OSX") ~= nil or RPR.GetOS():find("macOS") ~= nil
+            local unsafe = is_win and '["%%\n^&|<>]' or '["\'`$\\\n]'
+            
+            if proj_path:find(unsafe) then
+                RPR.ShowMessageBox("경로에 보안상 허용되지 않은 특수문자가 포함되어 있습니다.", "오류", 0)
+            elseif is_mac then
+                os.execute(('open -R "%s"'):format(proj_path))
+            elseif is_win then
+                os.execute(('explorer /select,"%s"'):format(proj_path:gsub('/', '\\')))
+            else
+                local dir = proj_path:match("^(.*)[/\\]")
+                if dir then os.execute(('xdg-open "%s"'):format(dir)) end
+            end
         end
+    else
+        RPR.ShowMessageBox("현재 프로젝트가 아직 저장되지 않았습니다.", "알림", 0)
     end
+end
 
     RPR.ImGui_EndPopup(ctx)
 end
