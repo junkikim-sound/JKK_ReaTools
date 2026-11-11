@@ -1,7 +1,10 @@
 --========================================================
 -- @title JKK_ColorPalette
 -- @author Junki Kim
--- @version 1.0.6
+-- @version 1.0.7
+-- @provides
+--     [nomain] Modules/JKK_ColorPalette_Data.lua
+--     [nomain] Modules/JKK_ColorPalette_UI.lua
 --========================================================
 
 local reaper = reaper
