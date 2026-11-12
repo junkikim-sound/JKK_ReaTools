@@ -9,6 +9,14 @@ local reaper = reaper
 -- UI zoom factor published by JKK_ReaTools (1.0 = original design size).
 local function S(v) return v * (JKK_UI_SCALE or 1) end
 
+-- JKK_ReaTools가 먼저 로드한 SelectionManager 참조 (단독 로드 시 폴백 포함)
+local script_dir = (debug.getinfo(1, "S").source or ""):match("^@(.+[\\/])") or ""
+local sel_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_SelectionManager.lua"
+if not reaper.file_exists(sel_path) then
+    sel_path = script_dir .. "JKK_SelectionManager.lua"
+end
+local sel_mgr = _G.JKK_SelectionManager or (reaper.file_exists(sel_path) and dofile(sel_path))
+
 -- FIX: slider undo blocks. The block used to open when a slider was clicked and
 -- close only after an actual edit, so a click without a change left it open.
 -- It now opens on the first change and closes whenever the slider is released.
@@ -37,7 +45,7 @@ local pan_val = 0.0
 local width_val = 1.0
 local track_channels = 2
 
--- ✅ 프로젝트 전체 적용 여부를 저장하는 전역 변수
+-- 프로젝트 전체 적용 여부를 저장하는 변수
 local apply_all_tracks = false
 
 local function ReadSelectedTrackValues()
@@ -58,36 +66,6 @@ end
 ReadSelectedTrackValues()
 
 ------------------------------------------------------------
--- Mouse & TCP Detection Helpers
-------------------------------------------------------------
-local last_left_mouse_down = false
-local function GetLeftMouseState()
-    if not reaper.JS_Mouse_GetState then
-        last_left_mouse_down = false
-        return false, false, false
-    end
-    local state = reaper.JS_Mouse_GetState(1) or 0
-    local is_down = (state & 1) ~= 0
-    local pressed = is_down and not last_left_mouse_down
-    local released = not is_down and last_left_mouse_down
-    last_left_mouse_down = is_down
-    return pressed, released, is_down
-end
-
-local function IsMouseOnTCP()
-    if not (reaper.GetMousePosition and reaper.GetThingFromPoint) then
-        return false
-    end
-    local mouse_x, mouse_y = reaper.GetMousePosition()
-    local _, info = reaper.GetThingFromPoint(mouse_x, mouse_y)
-    info = (info or ""):lower()
-    if info:match("^tcp") then
-        return true
-    end
-    return false
-end
-
-------------------------------------------------------------
 -- Track Value Actions
 ------------------------------------------------------------
 local function Action_SetSelectedTracksVolume(value)
@@ -98,7 +76,6 @@ local function Action_SetSelectedTracksVolume(value)
     end
 end
 
--- ✅ 체크박스 상태(apply_all_tracks)에 따라 선택 트랙 또는 프로젝트 전체 트랙 볼륨 반올림 적용
 local function Action_RoundTracksVolumeToHalfDB(all_tracks)
     local count = all_tracks and reaper.CountTracks(0) or reaper.CountSelectedTracks(0)
     if count == 0 then return end
@@ -287,21 +264,18 @@ local function DrawTrackBatchController(ctx)
     local selected_track = reaper.GetSelectedTrack(0, 0)
     local selected_count = reaper.CountSelectedTracks(0)
 
-    local _, _, is_down = GetLeftMouseState()
-
     local should_update = false
     if selected_track and selected_count > 0 then
         local is_window_focused = reaper.ImGui_IsWindowFocused(ctx, reaper.ImGui_FocusedFlags_RootAndChildWindows())
         local is_item_active = reaper.ImGui_IsAnyItemActive(ctx)
-        
-        if is_window_focused or is_item_active then
+        local is_down = sel_mgr and sel_mgr.IsMouseDown() or false
+        local cur_mode, cur_active = "Track", true
+        if sel_mgr then
+            cur_mode, cur_active = sel_mgr.GetMode()
+        end
+
+        if is_window_focused or is_item_active or (not is_down and cur_mode == "Track" and cur_active) then
             should_update = true
-        else
-            -- DAW 메인 창 영역을 클릭한 경우, 오직 마우스가 TCP 영역에 있을 때만 갱신 허용
-            local _, _, is_down = GetLeftMouseState()
-            if not is_down and IsMouseOnTCP() then
-                should_update = true
-            end
         end
     end
 
@@ -318,11 +292,10 @@ local function DrawTrackBatchController(ctx)
 
     local label_width = S(86)
     local round_button_width = S(48)
-    local checkbox_width = S(20)  -- ✅ 체크박스 공간 확보
+    local checkbox_width = S(20)
     local row_gap = S(6)
     local row_width = select(1, reaper.ImGui_GetContentRegionAvail(ctx))
 
-    -- ✅ 슬라이더 너비 계산 시 0.5dB 버튼과 체크박스 공간을 고려하도록 수정
     local volume_slider_width = math.max(1,
         row_width - label_width - round_button_width - checkbox_width - (row_gap * 2))
     local full_control_width = math.max(1, row_width - label_width)
@@ -362,7 +335,7 @@ local function DrawTrackBatchController(ctx)
         ReadSelectedTrackValues()
     end
 
-    -- ✅ 0.5dB 버튼 오른쪽 이름 없는 체크박스 추가
+    -- 0.5dB 버튼 오른쪽 프로젝트 전체 적용 체크박스
     reaper.ImGui_SameLine(ctx, 0, row_gap)
     local _, new_chk = reaper.ImGui_Checkbox(ctx, "##ApplyAllTracksChk", apply_all_tracks)
     apply_all_tracks = new_chk
@@ -442,13 +415,43 @@ end
 ------------------------------------------------------------
 -- UI: Context-specific Actions
 ------------------------------------------------------------
+local function PushJKKButtonStyle(ctx)
+    if JKK_Theme then
+        JKK_Theme.PushButton(ctx, "primary")
+    else
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x233C4FFF)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x435665FF)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x042239FF)
+    end
+end
+
+local function PopJKKButtonStyle(ctx)
+    if JKK_Theme then
+        JKK_Theme.PopButton(ctx)
+    else
+        reaper.ImGui_PopStyleColor(ctx, 3)
+    end
+end
+
 local function DrawTrackActions(ctx)
     local available_width = select(1, reaper.ImGui_GetContentRegionAvail(ctx))
-    if reaper.ImGui_Button(ctx, "Delete Unused Tracks", available_width, S(22)) then
+    local button_gap = S(6)
+    local top_button_width = math.max(1, (available_width - button_gap) / 2)
+
+    if reaper.ImGui_Button(ctx, "Delete Unused Tracks", top_button_width, S(22)) then
         DeleteEmptyTracksAndFolders()
     end
 
-    local button_gap = S(6)
+    reaper.ImGui_SameLine(ctx, 0, button_gap)
+    PushJKKButtonStyle(ctx)
+    if reaper.ImGui_Button(ctx, "Track Manager", top_button_width, S(22)) then
+        local cmd_id = reaper.NamedCommandLookup("_RS672098c29f44e4b9b23dd82b40f07cfaba13c9a9")
+        if cmd_id ~= 0 then
+            reaper.Main_OnCommand(cmd_id, 0)
+        end
+    end
+    PopJKKButtonStyle(ctx)
+
     local button_width = math.max(1, (available_width - (button_gap * 2)) / 3)
     if reaper.ImGui_Button(ctx, "Trim", button_width, S(22)) then
         Action_SetSelectedTracksAutomationMode(0)

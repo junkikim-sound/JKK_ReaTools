@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Loopmaker
 -- @author Junki Kim
--- @version 1.2.5
+-- @version 1.2.6
 --========================================================
 
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'
@@ -17,16 +17,57 @@ local theme_paths = {
     script_path .. "../Modules/JKK_Theme.lua",
     RPR.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme.lua"
 }
+local sel_paths = {
+    script_path .. "Modules/JKK_SelectionManager.lua",
+    script_path .. "../Modules/JKK_SelectionManager.lua",
+    RPR.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_SelectionManager.lua"
+}
+local sel_mgr = _G.JKK_SelectionManager
+for _, spath in ipairs(sel_paths) do
+    if RPR.file_exists(spath) then
+        local status, result = pcall(dofile, spath)
+        if status and type(result) == "table" then
+            sel_mgr = result
+            break
+        end
+    end
+end
 
-local ApplyTheme = function(ctx) return 0, 0 end
+local theme = _G.JKK_Theme or {}
 for _, tpath in ipairs(theme_paths) do
     if RPR.file_exists(tpath) then
         local status, result = pcall(dofile, tpath)
         if status and type(result) == "table" and result.ApplyTheme then
-            ApplyTheme = result.ApplyTheme
+            theme = result
             break
         end
     end
+end
+
+local ApplyTheme = theme.ApplyTheme or function(ctx) return 0, 0 end
+local PushButton = theme.PushButton or function(ctx, kind)
+    if kind == "confirm" then
+        ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x24866FFF)
+        ImGui.PushStyleColor(ctx, ImGui.Col_ButtonHovered, 0x2A9A80FF)
+        ImGui.PushStyleColor(ctx, ImGui.Col_ButtonActive, 0x1B6B58FF)
+    elseif kind == "highlight" then
+        ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0xFFEA70FF)
+        ImGui.PushStyleColor(ctx, ImGui.Col_ButtonHovered, 0xEFE060FF)
+        ImGui.PushStyleColor(ctx, ImGui.Col_ButtonActive, 0xDFD050FF)
+    else
+        ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x233C4FFF)
+        ImGui.PushStyleColor(ctx, ImGui.Col_ButtonHovered, 0x435665FF)
+        ImGui.PushStyleColor(ctx, ImGui.Col_ButtonActive, 0x042239FF)
+    end
+end
+local PopButton = theme.PopButton or function(ctx)
+    ImGui.PopStyleColor(ctx, 3)
+end
+local GetColor = theme.GetColor or function(role)
+    if role == "accent" or role == "text_accent" then return 0xE3DB8EFF end
+    if role == "slider" or role == "accent_main" then return 0x068FC3FF end
+    if role == "btn_primary" then return 0x233C4FFF end
+    return 0xEDEDEDFF
 end
 
 -- ==========================================
@@ -107,7 +148,7 @@ local function DrawFadeCurveButton(ctx, str_id, shape_idx, is_fade_out)
     local x0, x1 = p_min_x + pad_x, p_max_x - pad_x
     local y_top, y_bot = p_min_y + pad_y, p_max_y - pad_y
     local w, h = x1 - x0, y_bot - y_top
-    local color = 0x068FC3FF
+    local color = GetColor("slider")
     local steps = 16
     for i = 0, steps - 1 do
         local t1, t2 = i / steps, (i + 1) / steps
@@ -121,14 +162,16 @@ end
 local function DrawFadeCurveSelectorPopup(ctx, popup_id, current_shape, is_fade_out)
     local selected_shape = nil
     if ImGui.BeginPopup(ctx, popup_id) then
-        ImGui.TextColored(ctx, 0x808080FF, "Select Curve Shape:")
+        ImGui.TextDisabled(ctx, "Select Curve Shape:")
         ImGui.Spacing(ctx)
+        local slider_col = GetColor("slider")
+        local slider_bg_col = (slider_col & 0xFFFFFF00) | 0x88
         for idx = 0, 6 do
             ImGui.PushID(ctx, idx)
             local is_active = (current_shape == idx)
             if is_active then
-                ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x068FC388)
-                ImGui.PushStyleColor(ctx, ImGui.Col_ButtonHovered, 0x068FC3FF)
+                ImGui.PushStyleColor(ctx, ImGui.Col_Button, slider_bg_col)
+                ImGui.PushStyleColor(ctx, ImGui.Col_ButtonHovered, slider_col)
             end
             local clicked = ImGui.Button(ctx, "##curve_btn", 44, 32)
             local p_min_x, p_min_y = ImGui.GetItemRectMin(ctx)
@@ -137,7 +180,7 @@ local function DrawFadeCurveSelectorPopup(ctx, popup_id, current_shape, is_fade_
             local x0, x1 = p_min_x + 6, p_max_x - 6
             local y_top, y_bot = p_min_y + 5, p_max_y - 5
             local w, h = x1 - x0, y_bot - y_top
-            local line_col = is_active and 0xFFFFFFFF or 0xEDEDEDFF
+            local line_col = GetColor("text_main")
             for s = 0, 15 do
                 local t1, t2 = s / 16, (s + 1) / 16
                 local val1 = EvaluateFadePoint(idx, is_fade_out and (1 - t1) or t1)
@@ -189,8 +232,8 @@ function GetSelectedOriginalItems()
     end
     
     local items = {}
-    for i = 0, reaper.CountSelectedMediaItems(0) - 1 do
-        local item = reaper.GetSelectedMediaItem(0, i)
+    local raw_items = sel_mgr and sel_mgr.GetSelectedItems() or {}
+    for _, item in ipairs(raw_items) do
         local track = reaper.GetMediaItem_Track(item)
         if not preview_set[track] then table.insert(items, item) end
     end
@@ -243,9 +286,9 @@ end
 local last_mouse_down_state = false
 local pending_items_signature = nil
 
-function CheckAndSyncSelection()
-    local mouse_state = reaper.JS_Mouse_GetState and reaper.JS_Mouse_GetState(1) or 0
-    local is_mouse_down = (mouse_state & 1) ~= 0
+function CheckAndSyncSelection(is_focused)
+    if sel_mgr then sel_mgr.Update(is_focused) end
+    local is_mouse_down = sel_mgr and sel_mgr.IsMouseDown() or false
     local mouse_released = last_mouse_down_state and not is_mouse_down
     last_mouse_down_state = is_mouse_down
 
@@ -822,7 +865,7 @@ function Loop()
 
         local avail_w = ImGui.GetContentRegionAvail(ctx)
         
-        ImGui.TextColored(ctx, 0xE3DB8EFF, string.format("Selected %d items", #target_items))
+        ImGui.TextColored(ctx, GetColor("accent"), string.format("Selected %d items", #target_items))
         ImGui.Spacing(ctx)
         
         if ImGui.BeginTabBar(ctx, "MainTabs") then
@@ -922,9 +965,6 @@ function Loop()
                     UpdatePreview() 
                 end
                 
-                if c_val then SaveSettings() end
-                if ImGui.IsItemDeactivatedAfterEdit(ctx) or c_val then UpdatePreview() end
-                
                 -- 3. Polyphony
                 ImGui.AlignTextToFramePadding(ctx)
                 ImGui.Text(ctx, "Polyphony")
@@ -981,13 +1021,12 @@ function Loop()
                 local slider_right_x = label_w + content_w
                 ImGui.SetCursorPosX(ctx, slider_right_x - shuffle_w)
                 
-                ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x068FC388)
-                ImGui.PushStyleColor(ctx, ImGui.Col_ButtonHovered, 0x068FC3FF)
+                PushButton(ctx, "primary")
                 if ImGui.Button(ctx, "Shuffle", shuffle_w, ImGui.GetFrameHeight(ctx)) then
                     cfg.seq_seed = cfg.seq_seed + 1
                     SaveSettings(); UpdatePreview()
                 end
-                ImGui.PopStyleColor(ctx, 2)
+                PopButton(ctx)
 
                 ImGui.EndTabItem(ctx)
             end
@@ -1047,22 +1086,21 @@ function Loop()
         end
         
         if not is_valid then
-            ImGui.TextColored(ctx, 0xFFFF00FF, "[!] " .. err_msg)
+            ImGui.TextColored(ctx, GetColor("accent"), "[!] " .. err_msg)
             ImGui.BeginDisabled(ctx, true)
         else
             ImGui.Dummy(ctx, 0, ImGui.GetTextLineHeight(ctx))
         end
         
         ImGui.PushFont(ctx, font_btn)
-        ImGui.PushStyleColor(ctx, ImGui.Col_Button, 0x24866FFF)
-        ImGui.PushStyleColor(ctx, ImGui.Col_ButtonHovered, 0x2A9A80FF)
-        
+        PushButton(ctx, "confirm")
+
         local btn_text = (cfg.active_tab == 0) and " Make Loop " or " Arrange Items "
         if ImGui.Button(ctx, btn_text, -1, btn_height) then
             ApplyAndClose(); open = false
         end
-        
-        ImGui.PopStyleColor(ctx, 2); ImGui.PopFont(ctx)
+
+        PopButton(ctx); ImGui.PopFont(ctx)
         if not is_valid then ImGui.EndDisabled(ctx) end
 
         ImGui.End(ctx)

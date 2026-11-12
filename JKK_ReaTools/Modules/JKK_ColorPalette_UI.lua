@@ -6,29 +6,59 @@
 
 local reaper = reaper
 
-local data_path = debug.getinfo(1, "S").source:match("@?(.*[\\/])") .. "JKK_ColorPalette_Data.lua"
+local script_dir = debug.getinfo(1, "S").source:match("@?(.*[\\/])") or ""
+local data_path = script_dir .. "JKK_ColorPalette_Data.lua"
 local data_module = reaper.file_exists(data_path) and dofile(data_path) or nil
+local sel_path = script_dir .. "JKK_SelectionManager.lua"
+local sel_mgr = _G.JKK_SelectionManager or (reaper.file_exists(sel_path) and dofile(sel_path))
+
+local theme = _G.JKK_Theme or {}
+local PushButton = theme.PushButton or function(c, kind)
+    reaper.ImGui_PushStyleColor(c, reaper.ImGui_Col_Button(), 0x24866FFF)
+    reaper.ImGui_PushStyleColor(c, reaper.ImGui_Col_ButtonHovered(), 0x2A9A80FF)
+    reaper.ImGui_PushStyleColor(c, reaper.ImGui_Col_ButtonActive(), 0x1F735FFF)
+end
+local PopButton = theme.PopButton or function(c)
+    reaper.ImGui_PopStyleColor(c, 3)
+end
+local PushText = theme.PushText or function(c, role)
+    reaper.ImGui_PushStyleColor(c, reaper.ImGui_Col_Text(), 0xE3DB8EFF)
+end
+local PopText = theme.PopText or function(c)
+    reaper.ImGui_PopStyleColor(c, 1)
+end
 
 local default_palettes = data_module and data_module.default_palettes or {}
 local user_palettes = data_module and data_module.LoadUserPalettes() or {}
 
-local ext_section = "JKK_ColorPalette_State"
+-- ColorPaletteLite와 동일한 ExtState 섹션 공유
+local ext_section = "JKK_ReaTools_ColorPalette"
 local current_palette_idx = tonumber(reaper.GetExtState(ext_section, "palette_idx")) or 1
 local auto_close = (reaper.GetExtState(ext_section, "auto_close") == "1")
 local apply_to_children = (reaper.GetExtState(ext_section, "apply_to_children") == "1")
 local is_editing_name = false
 local editing_name_str = ""
 
--- 실시간 행동(최근 선택) 추적용 변수
-local target_mode = "None"
-local last_item_cnt, last_track_cnt = -1, -1
-local last_item_hash, last_track_hash = "", ""
-local last_ts_start, last_ts_end = -1, -1
-
-local function SaveState()
+local function SaveState(user_palettes_modified)
     reaper.SetExtState(ext_section, "palette_idx", tostring(current_palette_idx), true)
     reaper.SetExtState(ext_section, "auto_close", auto_close and "1" or "0", true)
     reaper.SetExtState(ext_section, "apply_to_children", apply_to_children and "1" or "0", true)
+    if user_palettes_modified then
+        reaper.SetExtState(ext_section, "user_palettes_rev", tostring(reaper.time_precise()), true)
+    end
+end
+
+-- ColorPaletteLite와 프리셋 및 옵션 실시간 동기화
+local function SyncSharedState()
+    local ext_idx = tonumber(reaper.GetExtState(ext_section, "palette_idx"))
+    if ext_idx and ext_idx >= 1 and ext_idx ~= current_palette_idx then
+        current_palette_idx = ext_idx
+    end
+
+    local ext_children = (reaper.GetExtState(ext_section, "apply_to_children") == "1")
+    if ext_children ~= apply_to_children then
+        apply_to_children = ext_children
+    end
 end
 
 local function GetChildTracks(parent_track)
@@ -53,195 +83,48 @@ local function TruncateName(name, max_len)
     return name
 end
 
--- 실시간 행동(최근 선택) 추적용 변수
-local target_mode = "None"
-local last_item_cnt, last_track_cnt = -1, -1
-local last_item_hash, last_track_hash = "", ""
-local last_ts_start, last_ts_end = -1, -1
-
--- ✅ 마우스 상태 추적을 위한 변수 추가
-local last_left_mouse_down = false
-local drag_context = "None"
-local cached_mode = "None"
-local cached_cnt = 0
-local cached_text = "No Selection"
-
--- ✅ 마우스 클릭 및 릴리즈 상태 반환 (JS_ReaScriptAPI 필요)
-local function GetLeftMouseState()
-    if not reaper.JS_Mouse_GetState then
-        last_left_mouse_down = false
-        return false, false, false
-    end
-    local state = reaper.JS_Mouse_GetState(1) or 0
-    local is_down = (state & 1) ~= 0
-    local pressed = is_down and not last_left_mouse_down
-    local released = not is_down and last_left_mouse_down
-    last_left_mouse_down = is_down
-    return pressed, released, is_down
-end
-
--- ✅ 마우스가 위치한 REAPER 화면 영역 감지
-local function GetMouseAreaContext()
-    if not (reaper.GetMousePosition and reaper.GetThingFromPoint) then
-        return nil, nil, nil, ""
-    end
-    local mouse_x, mouse_y = reaper.GetMousePosition()
-    local hit_track, info = reaper.GetThingFromPoint(mouse_x, mouse_y)
-    info = (info or ""):lower()
-
-    if info:match("^tcp") then return "Tracks", hit_track, nil, info end
-    if info == "arrange" or info:match("^arrange[%.:_]?") then
-        local hit_item = reaper.GetItemFromPoint and reaper.GetItemFromPoint(mouse_x, mouse_y, false) or nil
-        return "Items", nil, hit_item, info
-    end
-    if info:find("ruler", 1, true) or info:find("timeline", 1, true) or info:find("marker", 1, true) or info:find("region", 1, true) then
-        return "Markers", nil, nil, info
-    end
-    return nil, nil, nil, info
-end
-
--- 최근 수행한 유저의 액션을 기반으로 Target을 판단하는 함수
-local function GetSelectionContext()
-    local pressed, released, is_down = GetLeftMouseState()
-    local hit_context, hit_track, hit_item = GetMouseAreaContext()
-
-    local cur_item_cnt = reaper.CountSelectedMediaItems(0)
-    local cur_track_cnt = reaper.CountSelectedTracks(0)
-    local cur_ts_start, cur_ts_end = reaper.GetSet_LoopTimeRange(false, false, 0, 0, false)
-
-    local cur_item_hash = ""
-    for i = 0, math.min(cur_item_cnt - 1, 5) do
-        cur_item_hash = cur_item_hash .. tostring(reaper.GetSelectedMediaItem(0, i))
-    end
-    local cur_track_hash = ""
-    for i = 0, math.min(cur_track_cnt - 1, 5) do
-        cur_track_hash = cur_track_hash .. tostring(reaper.GetSelectedTrack(0, i))
+local function GetSelectionContext(is_imgui_focused)
+    local mode, is_active = sel_mgr.Update(is_imgui_focused)
+    if not is_active or mode == "None" then
+        return "None", 0, "No Selection"
     end
 
-    local item_sel_changed = (cur_item_cnt ~= last_item_cnt or cur_item_hash ~= last_item_hash)
-    local track_sel_changed = (cur_track_cnt ~= last_track_cnt or cur_track_hash ~= last_track_hash)
-    local time_sel_changed = (cur_ts_start ~= last_ts_start or cur_ts_end ~= last_ts_end)
-
-    if not is_down then
-        last_item_cnt, last_item_hash = cur_item_cnt, cur_item_hash
-        last_track_cnt, last_track_hash = cur_track_cnt, cur_track_hash
-        last_ts_start, last_ts_end = cur_ts_start, cur_ts_end
-    end
-
-    -- 1. 마우스가 눌려있는(드래그 중인) 동안에는 절대 UI 변경 없음 (캐시 반환)
-    if is_down then
-        return cached_mode, cached_cnt, cached_text
-    end
-
-    -- 2. 오직 마우스를 뗄 때(Released) 판정
-    if released then
-        -- ★ [핵심 수정] 타임셀렉션이 존재하고 변경되었거나 타임라인 쪽을 건드렸다면 무조건 Markers가 최우선!
-        if (cur_ts_start ~= cur_ts_end) and (hit_context == "Markers" or time_sel_changed) then
-            target_mode = "Markers"
-            
-        elseif hit_context == "Tracks" then
-            -- 오직 TCP 영역을 클릭/릴리즈한 경우만 트랙 인정
-            target_mode = (cur_track_cnt > 0) and "Tracks" or "None"
-            
-        elseif hit_context == "Items" then
-            if hit_item then
-                target_mode = "Items" -- 아이템 직접 클릭
-            elseif item_sel_changed and cur_item_cnt > 0 then
-                target_mode = "Items" -- 박스 드래그로 아이템들 선택
-            else
-                target_mode = "None" -- 그 외 빈 공간 클릭은 무조건 No Selection
-            end
-        else
-            target_mode = "None"
-        end
-    else
-        -- 단축키 등 외부 요인 감지
-        if cur_ts_start ~= cur_ts_end and time_sel_changed then target_mode = "Markers"
-        elseif item_sel_changed and cur_item_cnt > 0 then target_mode = "Items"
-        elseif track_sel_changed and cur_track_cnt > 0 then target_mode = "Tracks"
-        end
-    end
-
-    -- 안전장치
-    if target_mode == "Items" and cur_item_cnt == 0 then target_mode = "None" end
-    if target_mode == "Tracks" and cur_track_cnt == 0 then target_mode = "None" end
-    if target_mode == "Markers" and cur_ts_start == cur_ts_end then target_mode = "None" end
-
-    -- 3. 텍스트 포맷팅
     local max_chars = 30
-    local new_mode, new_cnt, new_text = "None", 0, "No Selection"
-
-    if target_mode == "Items" then
-        local take = reaper.GetActiveTake(reaper.GetSelectedMediaItem(0, 0))
+    if mode == "Item" then
+        local items = sel_mgr.GetSelectedItems()
+        local cnt = #items
+        local take = cnt > 0 and reaper.GetActiveTake(items[1]) or nil
         local name = take and reaper.GetTakeName(take) or "Item"
-        new_mode, new_cnt, new_text = "Items", cur_item_cnt, string.format("Selected %d Items (%s)", cur_item_cnt, TruncateName(name, max_chars))
-        
-    elseif target_mode == "Tracks" then
-        local _, name = reaper.GetTrackName(reaper.GetSelectedTrack(0, 0))
-        new_mode, new_cnt, new_text = "Tracks", cur_track_cnt, string.format("Selected %d Tracks (%s)", cur_track_cnt, TruncateName(name, max_chars))
-        
-    elseif target_mode == "Markers" then
-        local count = 0
-        local first_name = ""
-        local has_region = false
-        local has_marker = false
-        local i = 0
+        return "Items", cnt, string.format("Selected %d Items (%s)", cnt, TruncateName(name, max_chars))
 
-        while true do
-            local retval, isrgn, pos, rgnend, name = reaper.EnumProjectMarkers3(0, i)
-            if retval == 0 then break end
-            
-            -- 타임셀렉션 범위 내에 포함되는지 체크
-            local in_range = false
-            if isrgn then
-                if not (rgnend < cur_ts_start or pos > cur_ts_end) then
-                    in_range = true
-                end
-            else
-                if pos >= cur_ts_start and pos <= cur_ts_end then
-                    in_range = true
-                end
-            end
+    elseif mode == "Track" then
+        local tracks = sel_mgr.GetSelectedTracks()
+        local cnt = #tracks
+        local _, name = reaper.GetTrackName(tracks[1])
+        return "Tracks", cnt, string.format("Selected %d Tracks (%s)", cnt, TruncateName(name, max_chars))
 
-            if in_range then
-                count = count + 1
-                if isrgn then has_region = true else has_marker = true end
-                if count == 1 then 
-                    first_name = (name and name ~= "") and name or (isrgn and "Region" or "Marker") 
-                end
-            end
-            i = i + 1
+    elseif mode == "Region/Marker" then
+        local sel_r, sel_m = sel_mgr.GetSelectedRegionMarkers()
+        if #sel_r == 0 and #sel_m == 0 then
+            sel_r, sel_m = sel_mgr.GetTimeSelectionRegionMarkers()
         end
-
-        if count > 0 then
-            -- 타입 결정 (Region / Marker / Region/Marker)
-            local type_str = "Marker"
-            if has_region and has_marker then
-                type_str = "Region/Marker"
-            elseif has_region then
-                type_str = "Region"
-            end
-
-            new_mode = "Markers"
-            new_cnt = count
-            new_text = string.format("Selected %d %s (%s)", count, type_str, TruncateName(first_name, max_chars))
-        else
-            new_mode, new_cnt, new_text = "None", 0, "No Regions/Markers in Time Selection"
+        local cnt = #sel_r + #sel_m
+        if cnt > 0 then
+            local type_str = (#sel_r > 0 and #sel_m > 0) and "Region/Marker" or (#sel_r > 0 and "Region" or "Marker")
+            local first = sel_r[1] or sel_m[1]
+            local first_name = (first.name ~= "") and first.name or type_str
+            return "Markers", cnt, string.format("Selected %d %s (%s)", cnt, type_str, TruncateName(first_name, max_chars))
         end
+        return "None", 0, "No Regions/Markers in Time Selection"
     end
-    
-    cached_mode = new_mode
-    cached_cnt = new_cnt
-    cached_text = new_text
-
-    return cached_mode, cached_cnt, cached_text
+    return "None", 0, "No Selection"
 end
 
-local function ApplyColor(u32_color)
-    local r, g, b, a = reaper.ImGui_ColorConvertU32ToDouble4(u32_color)
-    local native_color = (u32_color == 0) and 0 or (reaper.ColorToNative(math.floor(r*255), math.floor(g*255), math.floor(b*255)) | 0x1000000)
+local function ApplyColor(u32_color, is_imgui_focused)
+    local r, g, b = reaper.ImGui_ColorConvertU32ToDouble4(u32_color)
+    local native_color = (u32_color == 0) and 0 or (reaper.ColorToNative(math.floor(r*255 + 0.5), math.floor(g*255 + 0.5), math.floor(b*255 + 0.5)) | 0x1000000)
     
-    local ctx_type, cnt = GetSelectionContext()
+    local ctx_type, cnt = GetSelectionContext(is_imgui_focused)
     if ctx_type == "None" then return false end
     
     reaper.Undo_BeginBlock()
@@ -279,16 +162,17 @@ local function ApplyColor(u32_color)
             end
         end
     elseif ctx_type == "Markers" then
-        local ts_start, ts_end = reaper.GetSet_LoopTimeRange(false, false, 0, 0, false)
-        local i = 0
-        while true do
-            local retval, isrgn, pos, rgnend, name, idx = reaper.EnumProjectMarkers3(0, i)
-            if retval == 0 then break end
-            if (isrgn and not (rgnend < ts_start or pos > ts_end)) or (not isrgn and (pos >= ts_start and pos <= ts_end)) then
-                reaper.SetProjectMarker4(0, idx, isrgn, pos, rgnend, name, native_color)
-            end
-            i = i + 1
+        local sel_r, sel_m = sel_mgr.GetSelectedRegionMarkers()
+        if #sel_r == 0 and #sel_m == 0 then
+            sel_r, sel_m = sel_mgr.GetTimeSelectionRegionMarkers()
         end
+        for _, entry in ipairs(sel_r) do
+            reaper.SetProjectMarker4(0, entry.index, true, entry.pos, entry.rgnend, entry.name, native_color)
+        end
+        for _, entry in ipairs(sel_m) do
+            reaper.SetProjectMarker4(0, entry.index, false, entry.pos, entry.rgnend, entry.name, native_color)
+        end
+        if reaper.UpdateTimeline then reaper.UpdateTimeline() end
     end
     
     reaper.UpdateArrange()
@@ -305,6 +189,9 @@ local function HSVtoHSL(h, s, v)
 end
 
 function JKK_ColorPalette_Draw(ctx)
+    SyncSharedState()
+
+    local is_focused = reaper.ImGui_IsWindowFocused(ctx, reaper.ImGui_FocusedFlags_RootAndChildWindows())
     local should_close = false
     local total_palettes = #default_palettes + #user_palettes
     if current_palette_idx > total_palettes or current_palette_idx < 1 then 
@@ -315,11 +202,11 @@ function JKK_ColorPalette_Draw(ctx)
     local local_idx = (current_palette_idx <= #default_palettes) and current_palette_idx or (current_palette_idx - #default_palettes)
     local active_palette = current_palette_list[local_idx]
 
-    local ctx_type, _, ctx_desc = GetSelectionContext()
-    
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF)
+    local _, _, ctx_desc = GetSelectionContext(is_focused)
+
+    PushText(ctx, "accent")
     reaper.ImGui_Text(ctx, ctx_desc)
-    reaper.ImGui_PopStyleColor(ctx)
+    PopText(ctx)
     reaper.ImGui_Spacing(ctx)
 
     if reaper.ImGui_Button(ctx, "<", 25, 23) then
@@ -350,7 +237,7 @@ function JKK_ColorPalette_Draw(ctx)
             table.insert(user_palettes, new_pal)
             data_module.SaveUserPalettes(user_palettes)
             current_palette_idx = #default_palettes + #user_palettes
-            SaveState()
+            SaveState(true)
         end
         reaper.ImGui_EndCombo(ctx)
     end
@@ -379,6 +266,7 @@ function JKK_ColorPalette_Draw(ctx)
                 active_palette.name = editing_name_str
                 data_module.SaveUserPalettes(user_palettes)
                 is_editing_name = false
+                SaveState(true)
             end
         else
             if reaper.ImGui_Button(ctx, "Edit", 45, 23) then
@@ -390,7 +278,7 @@ function JKK_ColorPalette_Draw(ctx)
                 table.remove(user_palettes, local_idx)
                 data_module.SaveUserPalettes(user_palettes)
                 current_palette_idx = 1
-                SaveState()
+                SaveState(true)
             end
         end
     else
@@ -433,7 +321,7 @@ function JKK_ColorPalette_Draw(ctx)
         local col_u32 = active_palette.colors[i]
         reaper.ImGui_PushID(ctx, "ColorCell_" .. i)
         if reaper.ImGui_ColorButton(ctx, "##Btn", col_u32, 0, cell_w, cell_h) then
-            if ApplyColor(col_u32) then should_close = true end
+            if ApplyColor(col_u32, is_focused) then should_close = true end
         end
         
         if reaper.ImGui_IsItemHovered(ctx) then
@@ -453,6 +341,7 @@ function JKK_ColorPalette_Draw(ctx)
             if changed then
                 active_palette.colors[i] = new_col
                 data_module.SaveUserPalettes(user_palettes)
+                SaveState(true)
             end
             reaper.ImGui_EndPopup(ctx)
         end
@@ -466,7 +355,6 @@ function JKK_ColorPalette_Draw(ctx)
         reaper.ImGui_SetCursorPosY(ctx, target_y)
     end
 
-    -- 구분선 상단 여백 추가
     reaper.ImGui_Spacing(ctx)
     reaper.ImGui_Spacing(ctx)
     reaper.ImGui_Separator(ctx)
@@ -483,26 +371,24 @@ function JKK_ColorPalette_Draw(ctx)
     local rnd_w = (avail_w - clear_w - (spacing_x * 2)) / 2
     local btn_h = 45 
 
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x24866FFF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x2A9A80FF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x1F735FFF)
+    PushButton(ctx, "confirm")
 
     if reaper.ImGui_Button(ctx, "Random from Palette", rnd_w, btn_h) then
         if active_palette and #active_palette.colors > 0 then
-            if ApplyColor(active_palette.colors[math.random(1, 24)]) then should_close = true end
+            if ApplyColor(active_palette.colors[math.random(1, 24)], is_focused) then should_close = true end
         end
     end
     reaper.ImGui_SameLine(ctx)
     if reaper.ImGui_Button(ctx, "Absolute Random", rnd_w, btn_h) then
         local rnd_u32 = (math.random(0,255)<<24) | (math.random(0,255)<<16) | (math.random(0,255)<<8) | 255
-        if ApplyColor(rnd_u32) then should_close = true end
+        if ApplyColor(rnd_u32, is_focused) then should_close = true end
     end
-    
-    reaper.ImGui_PopStyleColor(ctx, 3)
+
+    PopButton(ctx)
 
     reaper.ImGui_SameLine(ctx)
     if reaper.ImGui_Button(ctx, "Clear Color", clear_w, btn_h) then 
-        if ApplyColor(0) then should_close = true end
+        if ApplyColor(0, is_focused) then should_close = true end
     end
     
     return should_close

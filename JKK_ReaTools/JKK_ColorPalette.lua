@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ColorPalette
 -- @author Junki Kim
--- @version 1.0.7
+-- @version 1.0.8
 -- @provides
 --     [nomain] Modules/JKK_ColorPalette_Data.lua
 --     [nomain] Modules/JKK_ColorPalette_UI.lua
@@ -15,7 +15,7 @@ reaper.ImGui_Attach(ctx, font)
 
 -- 1. GetResourcePath 기반 절대 경로 설정
 local resource_path = reaper.GetResourcePath()
-local base_dir = resource_path .. "/Scripts/JKK_ColorPalette/" -- 본인이 사용하는 스크립트 디렉토리 경로
+local base_dir = resource_path .. "/Scripts/JKK_ColorPalette/"
 
 -- 2. 현재 스크립트 실행 경로 동적 추출 (fallback용)
 local script_dir = debug.getinfo(1, "S").source:match("@?(.*[\\/])") or ""

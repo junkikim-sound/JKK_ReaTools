@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Renamer
 -- @author Junki Kim
--- @version 1.1.1
+-- @version 1.1.2
 -- @provides 
 --     [nomain] Modules/JKK_Renamer_UCSList.lua
 --     [nomain] Modules/JKK_Renamer_WildcardList.lua
@@ -14,6 +14,7 @@ local info = debug.getinfo(1, 'S')
 local script_path = info.source:match([[^@?(.*[\/])]]) or ""
 local w_list = dofile(script_path .. "Modules/JKK_Renamer_WildcardList.lua")
 local ucs_list = dofile(script_path .. "Modules/JKK_Renamer_UCSList.lua")
+local sel_mgr = _G.JKK_SelectionManager or dofile(script_path .. "Modules/JKK_SelectionManager.lua")
 
 -- JKK_Theme.lua 안전 로드
 local theme_path = r.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme.lua"
@@ -21,8 +22,38 @@ if not r.file_exists(theme_path) then
     theme_path = script_path .. "Modules/JKK_Theme.lua"
 end
 
-local ApplyTheme = (r.file_exists(theme_path) and dofile(theme_path).ApplyTheme) 
-                   or function(ctx) return 0, 0 end
+local theme = r.file_exists(theme_path) and dofile(theme_path) or {}
+local ApplyTheme = theme.ApplyTheme or function(ctx) return 0, 0 end
+local PushButton = theme.PushButton or function(ctx, kind)
+    if kind == "confirm" then
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(), 0x24866FFF)
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), 0x2A9A80FF)
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonActive(), 0x1B6B58FF)
+    elseif kind == "highlight" then
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(), 0xFFEA70FF)
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), 0xEFE060FF)
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonActive(), 0xDFD050FF)
+    else
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(), 0x233C4FFF)
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), 0x3F586BFF)
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonActive(), 0x1A2E3DFF)
+    end
+end
+local PopButton = theme.PopButton or function(ctx)
+    r.ImGui_PopStyleColor(ctx, 3)
+end
+local GetColor = theme.GetColor or function(role)
+    if role == "accent" or role == "text_accent" then return 0xE3DB8EFF end
+    if role == "btn_primary" then return 0x233C4FFF end
+    if role == "status" then return 0x888888FF end
+    return 0xEDEDEDFF
+end
+local PushText = theme.PushText or function(ctx, role)
+    r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), GetColor(role))
+end
+local PopText = theme.PopText or function(ctx)
+    r.ImGui_PopStyleColor(ctx, 1)
+end
 
 -- ReaImGui 컨텍스트 생성 및 폰트 설정
 local ctx = r.ImGui_CreateContext("JKK_Renamer")
@@ -102,6 +133,20 @@ local function SaveState()
     r.SetExtState(ext_section, "split_underscore", split_underscore and "1" or "0", true)
     r.SetExtState(ext_section, "active_tab", active_tab, true)
 end
+
+-- RenamerLite와 실시간 공유 옵션 동기화
+local function SyncSharedSettings(num_input_active)
+    local ext_num = LoadBool("use_number", false)
+    local ext_top = LoadBool("top_level_only", false)
+    local ext_start = tonumber(r.GetExtState(ext_section, "number_start"))
+
+    if ext_num ~= use_number then use_number = ext_num end
+    if ext_top ~= top_level_only then top_level_only = ext_top end
+    if ext_start and ext_start ~= number_start and not num_input_active then
+        number_start = ext_start
+    end
+end
+
 local set_focus = true
 local select_all_on_initial_focus = true
 local initial_name_initialized = false
@@ -123,183 +168,11 @@ local filter_str = ""
 
 local current_mode = "None"
 local mode_focus_active = false
-local last_ts_start, last_ts_end = r.GetSet_LoopTimeRange(false, false, 0, 0, false)
-local last_item_cnt = r.CountSelectedMediaItems(0)
-local last_track_cnt = r.CountSelectedTracks(0)
-local last_left_mouse_down = false
 local cached_targets = {}
 
-local function GetSelectedRegionMarkerData()
-    local regions, markers = {}, {}
-    if not (r.GetNumRegionsOrMarkers and r.GetRegionOrMarker and r.GetRegionOrMarkerInfo_Value) then
-        return regions, markers
-    end
-
-    local marker_count, region_count = r.GetNumRegionsOrMarkers(0)
-    for idx = 0, (marker_count or 0) + (region_count or 0) - 1 do
-        local pm = r.GetRegionOrMarker(0, idx, "")
-        if pm and r.GetRegionOrMarkerInfo_Value(0, pm, "B_UISEL") > 0 then
-            local is_region = r.GetRegionOrMarkerInfo_Value(0, pm, "B_ISREGION") == 1
-            local _, name = r.GetSetRegionOrMarkerInfo_String(0, pm, "P_NAME", "", false)
-            local entry = { pointer = pm, name = name or "" }
-            if is_region then
-                regions[#regions + 1] = entry
-            else
-                markers[#markers + 1] = entry
-            end
-        end
-    end
-    return regions, markers
-end
-
-local function HasSelectedRegionOrMarker()
-    local regions, markers = GetSelectedRegionMarkerData()
-    return #regions > 0 or #markers > 0
-end
-
-if r.CountSelectedMediaItems(0) > 0 then
-    current_mode = "Item"
-    mode_focus_active = true
-elseif r.CountSelectedTracks(0) > 0 then
-    current_mode = "Track"
-    mode_focus_active = true
-elseif HasSelectedRegionOrMarker() then
-    current_mode = "Region/Marker"
-    mode_focus_active = true
-else
-    local initial_ts_start, initial_ts_end = r.GetSet_LoopTimeRange(false, false, 0, 0, false)
-    if initial_ts_end > initial_ts_start then
-        current_mode = "Region/Marker"
-        mode_focus_active = true
-    end
-end
-
-local function GetMouseAreaContext()
-    if not (r.GetMousePosition and r.GetThingFromPoint) then
-        return nil, nil, nil, ""
-    end
-
-    local mouse_x, mouse_y = r.GetMousePosition()
-    local hit_track, info = r.GetThingFromPoint(mouse_x, mouse_y)
-    info = (info or ""):lower()
-
-    if info:match("^tcp") then
-        return "Track", hit_track, nil, info
-    end
-
-    if info == "arrange" or info:match("^arrange[%.:_]?") then
-        local hit_item = r.GetItemFromPoint
-            and r.GetItemFromPoint(mouse_x, mouse_y, false)
-            or nil
-        return "Arrange", nil, hit_item, info
-    end
-
-    if info:find("ruler", 1, true) or info:find("timeline", 1, true)
-        or info:find("marker", 1, true) or info:find("region", 1, true) then
-        return "Timeline", nil, nil, info
-    end
-
-    return nil, nil, nil, info
-end
-
-local function GetLeftMouseState()
-    if not r.JS_Mouse_GetState then
-        last_left_mouse_down = false
-        return false, false, false
-    end
-    local state = r.JS_Mouse_GetState(1) or 0
-    local is_down = (state & 1) ~= 0
-    local pressed = is_down and not last_left_mouse_down
-    local released = not is_down and last_left_mouse_down
-    last_left_mouse_down = is_down
-    return pressed, released, is_down
-end
-
-local function HasSelectionForMode(mode)
-    if mode == "Item" then
-        return r.CountSelectedMediaItems(0) > 0
-    elseif mode == "Track" then
-        return r.CountSelectedTracks(0) > 0
-    elseif mode == "Region" or mode == "Marker" or mode == "Region/Marker" then
-        if HasSelectedRegionOrMarker() then return true end
-        local ts_start, ts_end = r.GetSet_LoopTimeRange(false, false, 0, 0, false)
-        return ts_end > ts_start
-    end
-    return false
-end
-
 local function UpdateFocusMode()
-    if r.ImGui_IsWindowFocused(ctx, r.ImGui_FocusedFlags_RootAndChildWindows()) then
-        return current_mode
-    end
-
-    local pressed, released, is_down = GetLeftMouseState()
-    local hit_context, hit_track, hit_item = GetMouseAreaContext()
-
-    local cur_item_cnt = r.CountSelectedMediaItems(0)
-    local cur_track_cnt = r.CountSelectedTracks(0)
-    local cur_ts_start, cur_ts_end = r.GetSet_LoopTimeRange(false, false, 0, 0, false)
-
-    local time_sel_changed = (cur_ts_start ~= last_ts_start or cur_ts_end ~= last_ts_end)
-    local item_sel_changed = (cur_item_cnt ~= last_item_cnt)
-    local track_sel_changed = (cur_track_cnt ~= last_track_cnt)
-
-    if is_down then
-        return current_mode
-    end
-
-    last_item_cnt = cur_item_cnt
-    last_track_cnt = cur_track_cnt
-    last_ts_start, last_ts_end = cur_ts_start, cur_ts_end
-
-    if released then
-        if (cur_ts_start ~= cur_ts_end) and (hit_context == "Timeline" or time_sel_changed) then
-            current_mode = "Region/Marker"
-            mode_focus_active = true
-        elseif hit_context == "Track" then
-            -- 유저가 TCP(트랙 패널)를 직접 클릭했을 때만 Track 모드로 진입
-            if cur_track_cnt > 0 then
-                current_mode = "Track"
-                mode_focus_active = true
-            else
-                current_mode = "None"
-                mode_focus_active = false
-            end
-        else
-            -- 어레인지 영역 및 트랙 아래 빈 공간:
-            -- 아이템이 1개 이상 선택되어 있으면 Item, 0개면 무조건 None(No Selection)
-            if cur_item_cnt > 0 then
-                current_mode = "Item"
-                mode_focus_active = true
-            else
-                current_mode = "None"
-                mode_focus_active = false
-            end
-        end
-    else
-        if cur_ts_start ~= cur_ts_end and time_sel_changed then
-            current_mode = "Region/Marker"
-            mode_focus_active = true
-        elseif item_sel_changed and cur_item_cnt > 0 then
-            current_mode = "Item"
-            mode_focus_active = true
-        elseif track_sel_changed and cur_track_cnt > 0 and hit_context == "Track" then
-            current_mode = "Track"
-            mode_focus_active = true
-        end
-    end
-
-    if current_mode == "Item" and cur_item_cnt == 0 then current_mode = "None"; mode_focus_active = false end
-    if current_mode == "Track" and cur_track_cnt == 0 then current_mode = "None"; mode_focus_active = false end
-    if (current_mode == "Region" or current_mode == "Marker" or current_mode == "Region/Marker") and cur_ts_start == cur_ts_end and not HasSelectedRegionOrMarker() then 
-        current_mode = "None"; mode_focus_active = false 
-    end
-
-    if not HasSelectionForMode(current_mode) then
-        mode_focus_active = false
-        current_mode = "None"
-    end
-
+    local is_focused = r.ImGui_IsWindowFocused(ctx, r.ImGui_FocusedFlags_RootAndChildWindows())
+    current_mode, mode_focus_active = sel_mgr.Update(is_focused)
     return current_mode
 end
 
@@ -330,95 +203,7 @@ local function GetTargetTypeStr(target)
 end
 
 local function GetTargets()
-    local _, _, is_down = GetLeftMouseState()
-    if is_down or r.ImGui_IsAnyItemActive(ctx) then
-        return cached_targets
-    end
-    if is_down then
-        return cached_targets
-    end
-
-    local raw_targets = {}
-    if not mode_focus_active or current_mode == "None" then
-        cached_targets = raw_targets
-        return cached_targets
-    end
-    
-    if current_mode == "Item" then
-        local sel_items = r.CountSelectedMediaItems(0)
-        for i = 0, sel_items - 1 do
-            local item = r.GetSelectedMediaItem(0, i)
-            local track = r.GetMediaItem_Track(item)
-            local take = r.GetActiveTake(item)
-            local name = ""
-            if take then
-                _, name = r.GetSetMediaItemTakeInfo_String(take, "P_NAME", "", false)
-                if (not name or name == "") and r.GetTakeName then
-                    name = r.GetTakeName(take)
-                end
-            end
-            table.insert(raw_targets, { type = "Item", item = item, track = track, original_name = name or "" })
-        end
-    elseif current_mode == "Track" then
-        local sel_tracks = r.CountSelectedTracks(0)
-        for i = 0, sel_tracks - 1 do
-            local track = r.GetSelectedTrack(0, i)
-            local _, name = r.GetTrackName(track)
-            table.insert(raw_targets, { type = "Track", track = track, original_name = name })
-        end
-    elseif current_mode == "Region" or current_mode == "Marker" or current_mode == "Region/Marker" then
-        local sel_rgns = {}
-        local sel_mkrs = {}
-        
-        if r.GetNumRegionsOrMarkers and r.GetRegionOrMarker and r.GetRegionOrMarkerInfo_Value then
-            local num_markers, num_regions = r.GetNumRegionsOrMarkers(0)
-            local total = (num_markers or 0) + (num_regions or 0)
-            for idx = 0, total - 1 do
-                local pm = r.GetRegionOrMarker(0, idx, "")
-                if pm then
-                    local is_sel = r.GetRegionOrMarkerInfo_Value(0, pm, "B_UISEL")
-                    if is_sel and is_sel > 0 then
-                        local isrgn = (r.GetRegionOrMarkerInfo_Value(0, pm, "B_ISREGION") == 1)
-                        local pos = r.GetRegionOrMarkerInfo_Value(0, pm, "D_STARTPOS")
-                        local rgnend = r.GetRegionOrMarkerInfo_Value(0, pm, "D_ENDPOS")
-                        local markidx = math.floor(r.GetRegionOrMarkerInfo_Value(0, pm, "I_NUMBER") + 0.5)
-                        local color = math.floor(r.GetRegionOrMarkerInfo_Value(0, pm, "I_CUSTOMCOLOR") + 0.5)
-                        local _, name = r.GetSetRegionOrMarkerInfo_String(0, pm, "P_NAME", "", false)
-                        
-                        if isrgn then
-                            table.insert(sel_rgns, { type = "Region", pm = pm, index = markidx, is_region = true, pos = pos, rgnend = rgnend, color = color, original_name = name or "" })
-                        else
-                            table.insert(sel_mkrs, { type = "Marker", pm = pm, index = markidx, is_region = false, pos = pos, rgnend = 0, color = color, original_name = name or "" })
-                        end
-                    end
-                end
-            end
-        end
-
-        if #sel_rgns > 0 or #sel_mkrs > 0 then
-            for _, rgn in ipairs(sel_rgns) do table.insert(raw_targets, rgn) end
-            for _, mkr in ipairs(sel_mkrs) do table.insert(raw_targets, mkr) end
-        else
-            local ts_start, ts_end = r.GetSet_LoopTimeRange(false, false, 0, 0, false)
-            if ts_end > ts_start then
-                local idx = 0
-                while true do
-                    local retval, isrgn, pos, rgnend, name, markidx, color = r.EnumProjectMarkers3(0, idx)
-                    if retval == 0 then break end
-                    if isrgn then
-                        if pos < ts_end and rgnend > ts_start then
-                            table.insert(raw_targets, { type = "Region", index = markidx, is_region = true, pos = pos, rgnend = rgnend, color = color, original_name = name })
-                        end
-                    else
-                        if pos >= ts_start and pos <= ts_end then
-                            table.insert(raw_targets, { type = "Marker", index = markidx, is_region = false, pos = pos, rgnend = 0, color = color, original_name = name })
-                        end
-                    end
-                    idx = idx + 1
-                end
-            end
-        end
-    end
+    local raw_targets = sel_mgr.GetTargets()
 
     if not top_level_only then 
         cached_targets = raw_targets
@@ -758,7 +543,6 @@ local function ApplyFindReplaceName(original_name, index, hierarchy_indices)
     return result
 end
 
--- ✅ 요청하신 'Selected nn 항목' 형식으로 출력 문자열 생성 함수
 local function GetFormattedSelectionText(target_count)
     if target_count == 0 then
         return "No Selection"
@@ -857,6 +641,8 @@ local function BuildInputTargetSignature(targets)
     return table.concat(parts, "|")
 end
 
+local num_input_active = false
+
 local function Main()
     r.ImGui_PushFont(ctx, font, 16)
     r.ImGui_SetNextWindowSize(ctx, 840, 480, r.ImGui_Cond_FirstUseEver())
@@ -872,6 +658,7 @@ local function Main()
     end
 
     if visible then
+        SyncSharedSettings(num_input_active)
         UpdateFocusMode()
         
         local targets = GetTargets()
@@ -912,9 +699,11 @@ local function Main()
 
         r.ImGui_PushFont(ctx, font_small, 14)
         local header_display_text = GetFormattedSelectionText(target_count)
-        r.ImGui_TextColored(ctx, 0xE3DB8EFF, header_display_text)
+        r.ImGui_TextColored(ctx, GetColor("accent"), header_display_text)
         r.ImGui_Spacing(ctx)
         
+        num_input_active = false
+
         if r.ImGui_BeginTabBar(ctx, "RenamerTabs") then
         local rename_tab_flags = (restore_saved_tab and active_tab == "Rename")
             and r.ImGui_TabItemFlags_SetSelected() or 0
@@ -1015,13 +804,12 @@ local function Main()
         r.ImGui_SameLine(ctx, 0, 8)
         r.ImGui_PushStyleVar(ctx, r.ImGui_StyleVar_FramePadding(), 6, 5)
         r.ImGui_PushFont(ctx, font_large, 18)
-        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(), 0x24866FFF)
-        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), 0x2A9A80FF)
+        PushButton(ctx, "confirm")
         if r.ImGui_Button(ctx, "Apply", apply_btn_w, 41) then
             ApplyRename(targets, hierarchy_indices)
             open = false
         end
-        r.ImGui_PopStyleColor(ctx, 2)
+        PopButton(ctx)
         r.ImGui_PopFont(ctx)
         r.ImGui_PopStyleVar(ctx)
 
@@ -1141,8 +929,9 @@ local function Main()
             r.ImGui_SameLine(ctx)
             r.ImGui_SetNextItemWidth(ctx, 45)
             local num_changed, new_num = r.ImGui_InputInt(ctx, "##NumStart", number_start, 0)
+            if r.ImGui_IsItemActive(ctx) then num_input_active = true end
             if num_changed then
-                number_start = new_num
+                number_start = math.max(1, new_num)
                 SaveState()
             end
         end
@@ -1177,14 +966,14 @@ local function Main()
                     for i, target in ipairs(targets) do
                         r.ImGui_TableNextRow(ctx)
                         r.ImGui_TableNextColumn(ctx)
-                        r.ImGui_TextColored(ctx, 0x888888FF, GetTargetTypeStr(target))
+                        r.ImGui_TextDisabled(ctx, GetTargetTypeStr(target))
                         r.ImGui_TableNextColumn(ctx)
                         r.ImGui_Text(ctx, target.original_name or "")
                         r.ImGui_TableNextColumn(ctx)
-                        r.ImGui_TextColored(ctx, 0x555555FF, "│")
+                        r.ImGui_TextDisabled(ctx, "│")
                         r.ImGui_TableNextColumn(ctx)
                         local evaluated = EvaluateName(input_buf, target, i, hierarchy_indices)
-                        r.ImGui_TextColored(ctx, 0xE3DB8EFF,
+                        r.ImGui_TextColored(ctx, GetColor("accent"),
                             evaluated == "" and (target.original_name or "") or evaluated)
                     end
                     r.ImGui_EndTable(ctx)
@@ -1192,7 +981,7 @@ local function Main()
                 r.ImGui_PopFont(ctx)
             else
                 r.ImGui_PushFont(ctx, font_small, 14)
-                r.ImGui_TextColored(ctx, 0x666666FF, "No items selected.")
+                r.ImGui_TextDisabled(ctx, "No items selected.")
                 r.ImGui_PopFont(ctx)
             end
 
@@ -1241,12 +1030,12 @@ local function Main()
                         
                         local is_selected = (i == popup_sel_idx)
                         if is_selected then 
-                            r.ImGui_TableSetBgColor(ctx, r.ImGui_TableBgTarget_RowBg0(), 0x335588FF)
+                            r.ImGui_TableSetBgColor(ctx, r.ImGui_TableBgTarget_RowBg0(), GetColor("btn_primary"))
                         end
 
                         r.ImGui_TableNextColumn(ctx)
-                        
-                        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xE3DB8EFF)
+
+                        PushText(ctx, "accent")
                         local display_text = item.insert
                         if r.ImGui_Selectable(ctx, display_text .. "##" .. tostring(i), false, r.ImGui_SelectableFlags_SpanAllColumns()) then
                             if trigger_char == "$" then
@@ -1258,7 +1047,7 @@ local function Main()
                             show_popup = false
                             set_focus = true
                         end
-                        r.ImGui_PopStyleColor(ctx)
+                        PopText(ctx)
                         
                         if r.ImGui_IsItemHovered(ctx) then popup_sel_idx = i end
 
@@ -1266,14 +1055,14 @@ local function Main()
                             r.ImGui_TableNextColumn(ctx)
                             r.ImGui_Text(ctx, item.name)
                             r.ImGui_TableNextColumn(ctx)
-                            r.ImGui_TextColored(ctx, 0x999999FF, item.desc)
+                            r.ImGui_TextDisabled(ctx, item.desc)
                         else
                             r.ImGui_TableNextColumn(ctx)
                             r.ImGui_Text(ctx, item.cat)
                             r.ImGui_TableNextColumn(ctx)
                             r.ImGui_Text(ctx, item.sub)
                             r.ImGui_TableNextColumn(ctx)
-                            r.ImGui_TextColored(ctx, 0x999999FF, item.desc)
+                            r.ImGui_TextDisabled(ctx, item.desc)
                         end
                     end
                     r.ImGui_EndTable(ctx)
@@ -1332,13 +1121,12 @@ local function Main()
             r.ImGui_SameLine(ctx, 0, 8)
             r.ImGui_SetCursorPosY(ctx, r.ImGui_GetCursorPosY(ctx) - 2)
             r.ImGui_PushFont(ctx, font_large, 18)
-            r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(), 0x24866FFF)
-            r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), 0x2A9A80FF)
+            PushButton(ctx, "confirm")
             if r.ImGui_Button(ctx, "Apply", apply_width, 64) then
                 ApplyFindReplace(targets, hierarchy_indices)
             end
             r.ImGui_PopFont(ctx)
-            r.ImGui_PopStyleColor(ctx, 2)
+            PopButton(ctx)
 
             r.ImGui_PushFont(ctx, font_small, 14)
 
@@ -1400,8 +1188,9 @@ local function Main()
                 r.ImGui_SameLine(ctx)
                 r.ImGui_SetNextItemWidth(ctx, 55)
                 local num_changed, num_value = r.ImGui_InputInt(ctx, "##FindReplaceNumStart", number_start, 0)
+                if r.ImGui_IsItemActive(ctx) then num_input_active = true end
                 if num_changed then
-                    number_start = num_value
+                    number_start = math.max(1, num_value)
                     SaveState()
                 end
             end
@@ -1435,21 +1224,21 @@ local function Main()
                         for i, target in ipairs(targets) do
                             r.ImGui_TableNextRow(ctx)
                             r.ImGui_TableNextColumn(ctx)
-                            r.ImGui_TextColored(ctx, 0x888888FF, GetTargetTypeStr(target))
+                            r.ImGui_TextDisabled(ctx, GetTargetTypeStr(target))
                             r.ImGui_TableNextColumn(ctx)
                             r.ImGui_Text(ctx, target.original_name or "")
                             r.ImGui_TableNextColumn(ctx)
-                            r.ImGui_TextColored(ctx, 0x555555FF, "│")
+                            r.ImGui_TextDisabled(ctx, "│")
                             r.ImGui_TableNextColumn(ctx)
                             local evaluated = ApplyFindReplaceName(target.original_name, i, hierarchy_indices)
-                            r.ImGui_TextColored(ctx, 0xE3DB8EFF, evaluated)
+                            r.ImGui_TextColored(ctx, GetColor("accent"), evaluated)
                         end
                         r.ImGui_EndTable(ctx)
                     end
                     r.ImGui_PopFont(ctx)
                 else
                     r.ImGui_PushFont(ctx, font_small, 14)
-                    r.ImGui_TextColored(ctx, 0x666666FF, "No items selected.")
+                    r.ImGui_TextDisabled(ctx, "No items selected.")
                     r.ImGui_PopFont(ctx)
                 end
                 r.ImGui_Unindent(ctx, 6)

@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Renderer
 -- @author Junki Kim
--- @version 1.1.4
+-- @version 1.1.5
 --========================================================
 
 local r = reaper
@@ -16,6 +16,7 @@ local function LoadListModule(filename)
 end
 local w_list = LoadListModule("JKK_Renamer_WildcardList.lua")
 local ucs_list = LoadListModule("JKK_Renamer_UCSList.lua")
+local sel_mgr = LoadListModule("JKK_SelectionManager.lua")
 
 local ctx = r.ImGui_CreateContext("JKK_Render")
 local font = r.ImGui_CreateFont('Arial', 14)
@@ -54,63 +55,51 @@ local popup_rect = nil
 local popup_sel_idx = 1
 
 -- =======================================================
--- Selection Context & Release Detection Helpers
+-- Preview Cache
 -- =======================================================
-local last_left_mouse_down = false
 local cached_targets = {}
 local cached_previews = {}
-local current_mode = "None"
-local mode_focus_active = false
-local last_ts_start, last_ts_end = r.GetSet_LoopTimeRange(false, false, 0, 0, false)
-local last_item_cnt = r.CountSelectedMediaItems(0)
-local last_track_cnt = r.CountSelectedTracks(0)
-
-local function GetMouseAreaContext()
-    if not (r.GetMousePosition and r.GetThingFromPoint) then
-        return nil, nil, nil, ""
-    end
-
-    local mouse_x, mouse_y = r.GetMousePosition()
-    local hit_track, info = r.GetThingFromPoint(mouse_x, mouse_y)
-    info = (info or ""):lower()
-
-    if info:match("^tcp") then
-        return "Track", hit_track, nil, info
-    end
-
-    if info == "arrange" or info:match("^arrange[%.:_]?") then
-        local hit_item = r.GetItemFromPoint
-            and r.GetItemFromPoint(mouse_x, mouse_y, false)
-            or nil
-        return "Arrange", nil, hit_item, info
-    end
-
-    if info:find("ruler", 1, true) or info:find("timeline", 1, true)
-        or info:find("marker", 1, true) or info:find("region", 1, true) then
-        return "Timeline", nil, nil, info
-    end
-
-    return nil, nil, nil, info
-end
-
-local function GetLeftMouseState()
-    if not r.JS_Mouse_GetState then
-        last_left_mouse_down = false
-        return false, false, false
-    end
-    local state = r.JS_Mouse_GetState(1) or 0
-    local is_down = (state & 1) ~= 0
-    local pressed = is_down and not last_left_mouse_down
-    local released = not is_down and last_left_mouse_down
-    last_left_mouse_down = is_down
-    return pressed, released, is_down
-end
 
 -- =======================================================
 -- Theme Module Integration
 -- =======================================================
 local theme_path = r.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme.lua"
-local ApplyTheme = (r.file_exists(theme_path) and dofile(theme_path).ApplyTheme) or function(ctx) return 0, 0 end
+if not r.file_exists(theme_path) then
+  theme_path = script_path .. "Modules/JKK_Theme.lua"
+end
+
+local theme = r.file_exists(theme_path) and dofile(theme_path) or {}
+local ApplyTheme = theme.ApplyTheme or function(ctx) return 0, 0 end
+local PushButton = theme.PushButton or function(ctx, kind)
+  if kind == "confirm" then
+    r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(), 0x24866FFF)
+    r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), 0x2A9A80FF)
+    r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonActive(), 0x1B6B58FF)
+  elseif kind == "highlight" then
+    r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(), 0xFFEA70FF)
+    r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), 0xEFE060FF)
+    r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonActive(), 0xDFD050FF)
+  else
+    r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(), 0x233C4FFF)
+    r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), 0x435665FF)
+    r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonActive(), 0x042239FF)
+  end
+end
+local PopButton = theme.PopButton or function(ctx)
+  r.ImGui_PopStyleColor(ctx, 3)
+end
+local GetColor = theme.GetColor or function(role)
+  if role == "accent" or role == "text_accent" then return 0xE3DB8EFF end
+  if role == "slider" or role == "accent_main" then return 0x068FC3FF end
+  if role == "btn_primary" then return 0x233C4FFF end
+  return 0xEDEDEDFF
+end
+local PushText = theme.PushText or function(ctx, role)
+  r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), GetColor(role))
+end
+local PopText = theme.PopText or function(ctx)
+  r.ImGui_PopStyleColor(ctx, 1)
+end
 
 -- Format Lists
 local src_list = " Master mix\0 Selected tracks (stems)\0 Selected Regions (Matrix)\0 Selected Regions (Time Selection)\0 Selected media items (Grouped)\0 Selected media items (Separately)\0"
@@ -539,13 +528,11 @@ local function EvaluateFadePoint(shape, t)
 end
 
 local function PushAccentButtonStyle(ctx)
-  r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(), 0x233C4FFF)
-  r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), 0x435665FF)
-  r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonActive(), 0x042239FF)
+  PushButton(ctx, "primary")
 end
 
 local function PopAccentButtonStyle(ctx)
-  r.ImGui_PopStyleColor(ctx, 3)
+  PopButton(ctx)
 end
 
 local function DrawFadeCurveButton(ctx, str_id, shape_idx, is_fade_out)
@@ -562,7 +549,7 @@ local function DrawFadeCurveButton(ctx, str_id, shape_idx, is_fade_out)
   local y_top, y_bot = p_min_y + pad_y, p_max_y - pad_y
   local w, h = x1 - x0, y_bot - y_top
   
-  local color = 0x068FC3FF
+  local color = GetColor("slider")
   local steps = 12
   
   for i = 0, steps - 1 do
@@ -578,17 +565,19 @@ end
 local function DrawFadeCurveSelectorPopup(ctx, popup_id, current_shape, is_fade_out)
   local selected_shape = nil
   if r.ImGui_BeginPopup(ctx, popup_id) then
-    r.ImGui_TextColored(ctx, 0x808080FF, "Select Curve Shape:")
+    r.ImGui_TextDisabled(ctx, "Select Curve Shape:")
     r.ImGui_Spacing(ctx)
     local cols = 3
+    local slider_col = GetColor("slider")
+    local slider_bg_col = (slider_col & 0xFFFFFF00) | 0x88
     for idx = 0, 6 do
       r.ImGui_PushID(ctx, idx)
       local is_active = (current_shape == idx)
       if is_active then
-        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(), 0x068FC388)
-        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), 0x068FC3FF)
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(), slider_bg_col)
+        r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), slider_col)
       end
-      
+
       local btn_w, btn_h = 44, 32
       local clicked = r.ImGui_Button(ctx, "##curve_btn", btn_w, btn_h)
       local p_min_x, p_min_y = r.ImGui_GetItemRectMin(ctx)
@@ -598,7 +587,7 @@ local function DrawFadeCurveSelectorPopup(ctx, popup_id, current_shape, is_fade_
       local x0, x1 = p_min_x + pad_x, p_max_x - pad_x
       local y_top, y_bot = p_min_y + pad_y, p_max_y - pad_y
       local w, h = x1 - x0, y_bot - y_top
-      local line_col = is_active and 0xFFFFFFFF or 0xEDEDEDFF
+      local line_col = GetColor("text_main")
       
       local steps = 16
       for s = 0, steps - 1 do
@@ -1045,8 +1034,7 @@ end
 local function GeneratePreviewList(tab)
   if not tab then tab = tabs[active_tab_idx] or tabs[1] end
 
-  local _, _, is_down = GetLeftMouseState()
-  if is_down then
+  if sel_mgr.IsMouseDown() then
     return cached_previews, cached_targets
   end
 
@@ -1114,25 +1102,8 @@ local function Main()
   end
 
   if visible then
-    if not r.ImGui_IsWindowFocused(ctx, r.ImGui_FocusedFlags_RootAndChildWindows and r.ImGui_FocusedFlags_RootAndChildWindows() or 0) then
-      local _, released, is_down = GetLeftMouseState()
-      local hit_context, _, hit_item = GetMouseAreaContext()
-      
-      local cur_item_cnt = r.CountSelectedMediaItems(0)
-      local cur_track_cnt = r.CountSelectedTracks(0)
-      local cur_ts_start, cur_ts_end = r.GetSet_LoopTimeRange(false, false, 0, 0, false)
-      
-      local time_sel_changed = (cur_ts_start ~= last_ts_start or cur_ts_end ~= last_ts_end)
-      local item_sel_changed = (cur_item_cnt ~= last_item_cnt)
-      local track_sel_changed = (cur_track_cnt ~= last_track_cnt)
-
-      if not is_down then
-        last_item_cnt = cur_item_cnt
-        last_track_cnt = cur_track_cnt
-        last_ts_start, last_ts_end = cur_ts_start, cur_ts_end
-      end
-    end
     local is_focused = r.ImGui_IsWindowFocused(ctx, r.ImGui_FocusedFlags_RootAndChildWindows and r.ImGui_FocusedFlags_RootAndChildWindows() or 0)
+    sel_mgr.Update(is_focused)
     local is_any_item_active = r.ImGui_IsAnyItemActive(ctx)
     if show_autocomplete then
         local root_focused = r.ImGui_IsWindowFocused(ctx, r.ImGui_FocusedFlags_RootWindow())
@@ -1228,7 +1199,7 @@ local function Main()
       -- =======================================================
       -- LEFT PANE
       -- =======================================================
-      r.ImGui_TextColored(ctx, 0xE3DB8EFF, "Source & Bounds")
+      r.ImGui_TextColored(ctx, GetColor("accent"), "Source & Bounds")
       r.ImGui_Spacing(ctx)
 
       r.ImGui_SetNextItemWidth(ctx, 180)
@@ -1250,7 +1221,7 @@ local function Main()
         end
         local len = math.max(0, tab.bounds_end - tab.bounds_start)
         local range_str = string.format(" Range: %.2fs ~ %.2fs (%.2fs)", tab.bounds_start, tab.bounds_end, len)
-        r.ImGui_TextColored(ctx, 0x808080FF, range_str)
+        r.ImGui_TextDisabled(ctx, range_str)
       elseif tab.render_source == 2 then
         local rgn_count = GetMatrixRegions()
         if r.ImGui_Button(ctx, "Region Matrix (" .. tostring(rgn_count) .. ")##matrix_btn", 130) then
@@ -1279,7 +1250,7 @@ local function Main()
         else
           range_text = "No Time Selection"
         end
-        r.ImGui_TextColored(ctx, 0x808080FF, range_text)
+        r.ImGui_TextDisabled(ctx, range_text)
       else
         r.ImGui_BeginDisabled(ctx)
         r.ImGui_SetNextItemWidth(ctx, 180)
@@ -1290,7 +1261,7 @@ local function Main()
       r.ImGui_Separator(ctx)
       r.ImGui_Spacing(ctx)
 
-      r.ImGui_TextColored(ctx, 0xE3DB8EFF, "Format Settings")
+      r.ImGui_TextColored(ctx, GetColor("accent"), "Format Settings")
       r.ImGui_Spacing(ctx)
 
       r.ImGui_SetNextItemWidth(ctx, 180)
@@ -1388,7 +1359,7 @@ local function Main()
       r.ImGui_Separator(ctx)
       r.ImGui_Spacing(ctx)
       
-      r.ImGui_TextColored(ctx, 0xE3DB8EFF, "Post Processing")
+      r.ImGui_TextColored(ctx, GetColor("accent"), "Post Processing")
       r.ImGui_Spacing(ctx)
 
       local chk_ps_changed, new_ps_chk = r.ImGui_Checkbox(ctx, "##ps_chk", tab.enable_pad_start or false)
@@ -1463,7 +1434,7 @@ local function Main()
       r.ImGui_Separator(ctx)
       r.ImGui_Spacing(ctx)
       
-      r.ImGui_TextColored(ctx, 0xE3DB8EFF, "File Settings")
+      r.ImGui_TextColored(ctx, GetColor("accent"), "File Settings")
       r.ImGui_Spacing(ctx)
 
       if tab.render_source == 1 or tab.render_source == 4 or tab.render_source == 5 then
@@ -1495,7 +1466,7 @@ local function Main()
       r.ImGui_Separator(ctx)
       r.ImGui_Spacing(ctx)
       
-      r.ImGui_TextColored(ctx, 0xE3DB8EFF, "Output Actions")
+      r.ImGui_TextColored(ctx, GetColor("accent"), "Output Actions")
       r.ImGui_Spacing(ctx)
 
       _, tab.add_to_proj = r.ImGui_Checkbox(ctx, ' Add to project', tab.add_to_proj)
@@ -1521,10 +1492,9 @@ local function Main()
       local main_btn_w = math.max(120, avail_w - sub_btn_w - 18)
 
       r.ImGui_PushFont(ctx, font_btn, 23)
-      r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Button(), 0x24866FFF)
-      r.ImGui_PushStyleColor(ctx, r.ImGui_Col_ButtonHovered(), 0x2A9A80FF)
+      PushButton(ctx, "confirm")
       local render_btn_txt = tab.add_to_queue and "Add to Queue" or "Render"
-      
+
       if not can_render then r.ImGui_BeginDisabled(ctx) end
       local render_btn_clicked = r.ImGui_Button(ctx, render_btn_txt, main_btn_w, btn_h)
       if not can_render then r.ImGui_EndDisabled(ctx) end
@@ -1600,7 +1570,7 @@ local function Main()
         if tab.auto_close then open = false end
       end
       
-      r.ImGui_PopStyleColor(ctx, 2)
+      PopButton(ctx)
       r.ImGui_PopFont(ctx)
 
       r.ImGui_SameLine(ctx)
@@ -1670,7 +1640,7 @@ local function Main()
       if r.ImGui_BeginPopupModal(ctx, "AddFavoriteModal", nil, r.ImGui_WindowFlags_AlwaysAutoResize()) then
         r.ImGui_Text(ctx, "Favorite Name:")
         _, fav_name_buf = r.ImGui_InputText(ctx, "##fav_name", fav_name_buf)
-        r.ImGui_TextColored(ctx, 0x808080FF, "Path: " .. SmartShortenPath(ctx, tab.file_directory, 300))
+        r.ImGui_TextDisabled(ctx, "Path: " .. SmartShortenPath(ctx, tab.file_directory, 300))
         r.ImGui_Spacing(ctx)
         
         if r.ImGui_Button(ctx, "Save", 80, 0) then
@@ -1886,15 +1856,15 @@ local function Main()
             for i, item in ipairs(filtered_shortcuts) do
               r.ImGui_TableNextRow(ctx)
               if i == popup_sel_idx then
-                r.ImGui_TableSetBgColor(ctx, r.ImGui_TableBgTarget_RowBg0(), 0x335588FF)
+                r.ImGui_TableSetBgColor(ctx, r.ImGui_TableBgTarget_RowBg0(), GetColor("btn_primary"))
               end
 
               r.ImGui_TableNextColumn(ctx)
-              r.ImGui_PushStyleColor(ctx, r.ImGui_Col_Text(), 0xE3DB8EFF)
+              PushText(ctx, "accent")
               local item_clicked = r.ImGui_Selectable(ctx,
                 item.insert .. "##renderer_shortcut_" .. tostring(i), false,
                 r.ImGui_SelectableFlags_SpanAllColumns())
-              r.ImGui_PopStyleColor(ctx)
+              PopText(ctx)
               if r.ImGui_IsItemHovered(ctx) then popup_sel_idx = i end
               if item_clicked then SelectAutocompleteItem(item) end
 
@@ -1902,19 +1872,19 @@ local function Main()
                 r.ImGui_TableNextColumn(ctx)
                 r.ImGui_Text(ctx, item.name or "")
                 r.ImGui_TableNextColumn(ctx)
-                r.ImGui_TextColored(ctx, 0x999999FF, item.desc or "")
+                r.ImGui_TextDisabled(ctx, item.desc or "")
               elseif trigger_char == "!" then
                 r.ImGui_TableNextColumn(ctx)
                 r.ImGui_Text(ctx, item.cat or "")
                 r.ImGui_TableNextColumn(ctx)
                 r.ImGui_Text(ctx, item.sub or "")
                 r.ImGui_TableNextColumn(ctx)
-                r.ImGui_TextColored(ctx, 0x999999FF, item.desc or "")
+                r.ImGui_TextDisabled(ctx, item.desc or "")
               else
                 r.ImGui_TableNextColumn(ctx)
                 r.ImGui_Text(ctx, item.name or "")
                 r.ImGui_TableNextColumn(ctx)
-                r.ImGui_TextColored(ctx, 0x999999FF, item.desc or "")
+                r.ImGui_TextDisabled(ctx, item.desc or "")
               end
             end
             r.ImGui_EndTable(ctx)
@@ -1953,10 +1923,10 @@ local function Main()
         r.ImGui_SetCursorPosY(ctx, (box_h1 - content_h) / 2)
         
         r.ImGui_SetCursorPosX(ctx, 16)
-        r.ImGui_TextColored(ctx, 0x808080FF, dir_title)
+        r.ImGui_TextDisabled(ctx, dir_title)
         
         r.ImGui_SetCursorPosX(ctx, 16)
-        r.ImGui_TextColored(ctx, 0xEDEDEDFF, display_dir)
+        r.ImGui_Text(ctx, display_dir)
         if r.ImGui_IsItemHovered(ctx) then r.ImGui_SetTooltip(ctx, full_dir) end
         
         r.ImGui_EndChild(ctx)
@@ -1976,7 +1946,7 @@ local function Main()
           [5] = "Items to Render Separately (" .. tostring(#previews) .. "):"
         }
         local box_title = render_title_map[tab.render_source] or ("Items to Render (" .. tostring(#previews) .. "):")
-        r.ImGui_TextColored(ctx, 0x808080FF, box_title)
+        r.ImGui_TextDisabled(ctx, box_title)
         r.ImGui_SetCursorPosY(ctx, r.ImGui_GetCursorPosY(ctx) + 4)
         
         if #previews == 0 then
@@ -1986,7 +1956,7 @@ local function Main()
           }
           local empty_msg = empty_msg_map[tab.render_source] or " (No items selected)"
           r.ImGui_SetCursorPosX(ctx, 16)
-          r.ImGui_TextColored(ctx, 0x666666FF, empty_msg)
+          r.ImGui_TextDisabled(ctx, empty_msg)
         else
           r.ImGui_Indent(ctx, 16)
           local table_flags = r.ImGui_TableFlags_RowBg() | r.ImGui_TableFlags_ScrollY()

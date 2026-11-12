@@ -8,6 +8,28 @@ local reaper = reaper
 local source = debug.getinfo(1, "S").source or ""
 local script_dir = source:match("^@(.+[\\/])") or ""
 local data_path = script_dir .. "JKK_ColorPalette_Data.lua"
+local sel_path = script_dir .. "JKK_SelectionManager.lua"
+local sel_mgr = _G.JKK_SelectionManager or (reaper.file_exists(sel_path) and dofile(sel_path))
+
+local function PushThemeButton(ctx, kind)
+    local theme = _G.JKK_Theme
+    if theme and theme.PushButton then
+        theme.PushButton(ctx, kind)
+    else
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x24866FFF)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x2A9A80FF)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x1F735FFF)
+    end
+end
+
+local function PopThemeButton(ctx)
+    local theme = _G.JKK_Theme
+    if theme and theme.PopButton then
+        theme.PopButton(ctx)
+    else
+        reaper.ImGui_PopStyleColor(ctx, 3)
+    end
+end
 
 local data_module, data_error
 if reaper.file_exists(data_path) then
@@ -42,6 +64,33 @@ local apply_to_children = reaper.GetExtState(ext_section, "apply_to_children") =
 local function SaveState()
     reaper.SetExtState(ext_section, "palette_idx", tostring(current_palette_idx), true)
     reaper.SetExtState(ext_section, "apply_to_children", apply_to_children and "1" or "0", true)
+end
+
+local last_user_palettes_rev = ""
+
+-- 스탠드얼론 ColorPalette와 프리셋 및 옵션 실시간 동기화
+local function SyncSharedState()
+    local ext_idx = tonumber(reaper.GetExtState(ext_section, "palette_idx"))
+    if ext_idx and ext_idx >= 1 and ext_idx ~= current_palette_idx then
+        current_palette_idx = ext_idx
+    end
+
+    local ext_children = (reaper.GetExtState(ext_section, "apply_to_children") == "1")
+    if ext_children ~= apply_to_children then
+        apply_to_children = ext_children
+    end
+
+    -- 스탠드얼론에서 유저 팔레트를 추가/삭제/이름변경 했을 때 갱신
+    if data_module and type(data_module.LoadUserPalettes) == "function" then
+        local ext_rev = reaper.GetExtState(ext_section, "user_palettes_rev")
+        if ext_rev ~= last_user_palettes_rev then
+            last_user_palettes_rev = ext_rev
+            local ok, result = pcall(data_module.LoadUserPalettes)
+            if ok and type(result) == "table" then
+                user_palettes = result
+            end
+        end
+    end
 end
 
 local function GetAllPalettes()
@@ -82,64 +131,27 @@ local function GetChildTracks(parent_track)
     return children
 end
 
-local function GetTimelineTargets()
-    local targets = {}
-    if not (reaper.GetNumRegionsOrMarkers and reaper.GetRegionOrMarker
-        and reaper.GetRegionOrMarkerInfo_Value) then
-        return targets
-    end
-
-    local marker_count, region_count = reaper.GetNumRegionsOrMarkers(0)
-    local total = (marker_count or 0) + (region_count or 0)
-    local explicitly_selected = {}
-
-    for index = 0, total - 1 do
-        local marker = reaper.GetRegionOrMarker(0, index, "")
-        if marker and reaper.GetRegionOrMarkerInfo_Value(0, marker, "B_UISEL") > 0 then
-            explicitly_selected[#explicitly_selected + 1] = marker
-        end
-    end
-
-    if #explicitly_selected > 0 then
-        return explicitly_selected
-    end
-
-    local ts_start, ts_end = reaper.GetSet_LoopTimeRange(false, false, 0, 0, false)
-    if ts_end <= ts_start then return targets end
-
-    for index = 0, total - 1 do
-        local marker = reaper.GetRegionOrMarker(0, index, "")
-        if marker then
-            local is_region = reaper.GetRegionOrMarkerInfo_Value(0, marker, "B_ISREGION") == 1
-            local pos = reaper.GetRegionOrMarkerInfo_Value(0, marker, "D_STARTPOS")
-            local ending = reaper.GetRegionOrMarkerInfo_Value(0, marker, "D_ENDPOS")
-            local overlaps = is_region
-                and pos < ts_end and ending > ts_start
-                or (not is_region and pos >= ts_start and pos <= ts_end)
-            if overlaps then targets[#targets + 1] = marker end
-        end
-    end
-    return targets
-end
-
 local function GetTargetContext(mode, is_active)
     if not is_active then return "None", {}, "No active selection" end
-    local targets = {}
     if mode == "Item" then
-        for i = 0, reaper.CountSelectedMediaItems(0) - 1 do
-            local item = reaper.GetSelectedMediaItem(0, i)
-            if item then targets[#targets + 1] = item end
-        end
+        local targets = sel_mgr.GetSelectedItems()
         return "Items", targets, string.format("Selected %d Items", #targets)
     elseif mode == "Track" then
-        for i = 0, reaper.CountSelectedTracks(0) - 1 do
-            local track = reaper.GetSelectedTrack(0, i)
-            if track then targets[#targets + 1] = track end
-        end
+        local targets = sel_mgr.GetSelectedTracks()
         return "Tracks", targets, string.format("Selected %d Tracks", #targets)
     elseif mode == "Region/Marker" then
-        targets = GetTimelineTargets()
-        return "Markers", targets, string.format("Timeline Targets: %d", #targets)
+        local sel_r, sel_m = sel_mgr.GetSelectedRegionMarkers()
+        local list = (#sel_r > 0 or #sel_m > 0) and {} or nil
+        if list then
+            for _, v in ipairs(sel_r) do list[#list + 1] = v.pm end
+            for _, v in ipairs(sel_m) do list[#list + 1] = v.pm end
+        else
+            local ts_r, ts_m = sel_mgr.GetTimeSelectionRegionMarkers()
+            list = {}
+            for _, v in ipairs(ts_r) do list[#list + 1] = v.pm end
+            for _, v in ipairs(ts_m) do list[#list + 1] = v.pm end
+        end
+        return "Markers", list, string.format("Timeline Targets: %d", #list)
     end
     return "None", {}, "No active selection"
 end
@@ -278,6 +290,8 @@ local function DrawColorMenu(ctx, mode, is_active)
 end
 
 local function JKK_ColorPalette_Draw(ctx, mode, is_active)
+    SyncSharedState()
+
     local available_width, available_height = reaper.ImGui_GetContentRegionAvail(ctx)
     local frame_height = reaper.ImGui_GetFrameHeight(ctx)
     local _, spacing_y = reaper.ImGui_GetStyleVar(ctx, reaper.ImGui_StyleVar_ItemSpacing())
@@ -297,15 +311,11 @@ local function JKK_ColorPalette_Draw(ctx, mode, is_active)
     end
     local active_palette = palettes[current_palette_idx]
 
-    -- 1. 하단 영역이 잘리지 않도록 메인 높이에 여유(spacing_y * 1.5) 추가
     local main_height = math.max(S(60), available_height - frame_height - spacing_y * 1.5)
-    
-    -- 2. 휠 크기도 넉넉하게 줄여서 스크롤 유발 방지
     local wheel_size = math.min(main_height - S(4), available_width * 0.35)
     if wheel_size < S(60) then wheel_size = S(60) end
     local right_width = math.max(S(1), available_width - wheel_size - spacing_x)
 
-    -- 3. 스크롤바 강제 비활성화 플래그 적용
     local no_scroll_flags = reaper.ImGui_WindowFlags_NoScrollbar() | reaper.ImGui_WindowFlags_NoScrollWithMouse()
     local child_flags_none = reaper.ImGui_ChildFlags_None and reaper.ImGui_ChildFlags_None() or 0
 
@@ -342,7 +352,6 @@ local function JKK_ColorPalette_Draw(ctx, mode, is_active)
 
     -- [우측] 프리셋 셀렉터 및 팔레트 그리드 영역
     if reaper.ImGui_BeginChild(ctx, "ColorPaletteArea", right_width, main_height, child_flags_none, no_scroll_flags) then
-        -- 프리셋 셀렉터 ( < , 콤보 , > , 랜덤 )
         local nav_width = S(23)
         local rnd_width = S(28)
         local combo_width = math.max(S(40), right_width - nav_width * 2 - rnd_width - spacing_x * 3)
@@ -378,10 +387,8 @@ local function JKK_ColorPalette_Draw(ctx, mode, is_active)
             SaveState()
         end
 
-        -- 팔레트 24색상 그리드
         reaper.ImGui_Spacing(ctx)
         
-        -- 4. 그리드 높이를 남은 픽셀 기반으로 정확히 계산하여 삐져나감 방지
         local current_y = reaper.ImGui_GetCursorPosY(ctx)
         local grid_height = math.max(S(20), main_height - current_y - S(2)) - 10
         
@@ -423,7 +430,6 @@ local function JKK_ColorPalette_Draw(ctx, mode, is_active)
     local fit = math.floor((available_width - action_btns_width) / (swatch + S(4)))
     local count = math.max(0, math.min(#recent_colors, fit))
     
-    -- 하단부 시작 시 커서 Y를 정확히 맞춰줌 (메인 영역과 분리)
     reaper.ImGui_SetCursorPosY(ctx, math.max(reaper.ImGui_GetCursorPosY(ctx), available_height - frame_height))
 
     for index = 1, count do
@@ -442,35 +448,29 @@ local function JKK_ColorPalette_Draw(ctx, mode, is_active)
         reaper.ImGui_TextDisabled(ctx, "Recent")
     end
 
-    -- 우측 정렬 버튼들
     reaper.ImGui_SameLine(ctx, 0, 0)
     reaper.ImGui_SetCursorPosX(ctx, math.max(0, available_width - action_btns_width + spacing_x))
 
     reaper.ImGui_BeginDisabled(ctx, not is_active)
     
-    -- 팔레트 랜덤
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x24866FFF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x2A9A80FF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x1F735FFF)
+    PushThemeButton(ctx, "confirm")
     if reaper.ImGui_Button(ctx, "Pal Rnd", btn_pal_rnd, frame_height) then
         if active_palette then ApplyAndRemember(GetPaletteColor(active_palette, math.random(1, 24)), mode, is_active) end
     end
     if reaper.ImGui_IsItemHovered(ctx, reaper.ImGui_HoveredFlags_AllowWhenDisabled()) then reaper.ImGui_SetTooltip(ctx, "Random from Palette") end
-    
+
     reaper.ImGui_SameLine(ctx, 0, spacing_x)
-    
-    -- 전체 랜덤
+
     if reaper.ImGui_Button(ctx, "All Rnd", btn_all_rnd, frame_height) then
         local color = RandomOpaqueColor()
         wheel_color = color
         ApplyAndRemember(color, mode, is_active)
     end
     if reaper.ImGui_IsItemHovered(ctx, reaper.ImGui_HoveredFlags_AllowWhenDisabled()) then reaper.ImGui_SetTooltip(ctx, "Absolute Random") end
-    reaper.ImGui_PopStyleColor(ctx, 3)
+    PopThemeButton(ctx)
     
     reaper.ImGui_SameLine(ctx, 0, spacing_x)
 
-    -- 클리어
     if reaper.ImGui_Button(ctx, "Clear", btn_clear, frame_height) then
         ApplyColor(0, mode, is_active)
     end
@@ -479,7 +479,6 @@ local function JKK_ColorPalette_Draw(ctx, mode, is_active)
     reaper.ImGui_EndDisabled(ctx)
     reaper.ImGui_SameLine(ctx, 0, spacing_x)
 
-    -- ... 메뉴 버튼
     if reaper.ImGui_Button(ctx, "...##JKKLiteColorMenuButton", menu_width, frame_height) then
         reaper.ImGui_OpenPopup(ctx, COLOR_MENU_ID)
     end

@@ -6,6 +6,14 @@
 
 local reaper = reaper
 
+-- JKK_ReaTools가 먼저 로드한 SelectionManager 참조 (단독 로드 시 폴백 포함)
+local script_dir = (debug.getinfo(1, "S").source or ""):match("^@(.+[\\/])") or ""
+local sel_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_SelectionManager.lua"
+if not reaper.file_exists(sel_path) then
+    sel_path = script_dir .. "JKK_SelectionManager.lua"
+end
+local sel_mgr = _G.JKK_SelectionManager or (reaper.file_exists(sel_path) and dofile(sel_path))
+
 -- UI zoom factor published by JKK_ReaTools (1.0 = original design size).
 -- Kept global on purpose: this chunk is already close to Lua's local-variable limit.
 function JKK_Scale(v) return v * (JKK_UI_SCALE or 1) end
@@ -251,10 +259,10 @@ math.randomseed(os.time())
         JKK_IT_item_info_str1 = "  SR: "
         JKK_IT_item_info_str2 = "  Ch:   |  Len: "
         JKK_IT_item_info_str3 = "  Take: "
-        function JKK_IT_SyncSelectionData(ctx)
-            if reaper.ImGui_IsAnyItemActive(ctx) then
-                last_project_change_count = reaper.GetProjectStateChangeCount(0)
-                return 
+        local function JKK_IT_SyncSelectionData(prev_state, curr_state, force)
+            -- Skip updates during active mouse dragging or UI slider adjustment
+            if sel_mgr and sel_mgr.IsMouseDown() then
+                return
             end
 
             if reaper.JS_Mouse_GetState and (reaper.JS_Mouse_GetState(1) & 1) == 1 then
@@ -942,10 +950,28 @@ math.randomseed(os.time())
         local keep_original_state = reaper.GetExtState("PeaksAndValleys", "shouldKeepOriginal")
         local shouldKeepOriginal = (keep_original_state == "" or keep_original_state == "true")
         local grid_slice_n = 5
+        local grid_live = {
+            enabled = false,
+            mode = 0,          -- 0: Grid, 1: Seconds
+            sec = 0.5,         -- Seconds 모드 기본값 (0.01 ~ 5.0초)
+            snapshot = nil,    -- 원본 아이템 상태 스냅샷
+            output_guids = nil,
+            undo_label = "Live Grid Split Items",
+        }
         local splitAndSpace = false
         local shouldAlignToMarker = false
 
         local lastSelectionSignature = ""
+        local guide_guard = {
+            max_items = 30,          -- 동시 분석 허용 최대 아이템 수
+            max_total_sec = 300.0,   -- 동시 분석 허용 최대 총 길이 (초, 5분)
+            max_guide_items = 200,   -- 생성할 붉은 가이드 아이템 최대 개수 상한
+            debounce_delay = 0.08,   -- 슬라이더 드래그 시 갱신 지연 시간 (초)
+            pending_update = false,
+            last_change_time = 0.0,
+            warning_msg = nil,
+            buffer_cache = {},
+        }
     -- Logic & Function
         local function tableToString(tbl, depth)
             if depth == nil then depth = 1 end
@@ -1417,41 +1443,126 @@ math.randomseed(os.time())
                 end
             end
 
-            local function createTemporaryItems(track, silences, itemPosition)
+            local function createTemporaryItems(track, silences, itemPosition, max_remaining)
                 lastTrack = track
                 local redColor = reaper.ColorToNative(255, 0, 0) | 0x1000000
+                local created = 0
+                local capped = false
                 for _, silence in ipairs(silences) do
+                    if max_remaining and created >= max_remaining then
+                        capped = true
+                        break
+                    end
                     local silenceStart = itemPosition + silence.start
                     local silenceEnd = itemPosition + silence["end"]
                     local silenceLength = silenceEnd - silenceStart
 
-                    local newItem = reaper.AddMediaItemToTrack(track)
-                    reaper.SetMediaItemInfo_Value(newItem, "D_POSITION", silenceStart)
-                    reaper.SetMediaItemInfo_Value(newItem, "D_LENGTH", silenceLength)
-                    reaper.SetMediaItemInfo_Value(newItem, "D_FADEINLEN", 0)
-                    reaper.SetMediaItemInfo_Value(newItem, "D_FADEOUTLEN", 0)
+                    if silenceLength > 0.0001 then
+                        local newItem = reaper.AddMediaItemToTrack(track)
+                        reaper.SetMediaItemInfo_Value(newItem, "D_POSITION", silenceStart)
+                        reaper.SetMediaItemInfo_Value(newItem, "D_LENGTH", silenceLength)
+                        reaper.SetMediaItemInfo_Value(newItem, "D_FADEINLEN", 0)
+                        reaper.SetMediaItemInfo_Value(newItem, "D_FADEOUTLEN", 0)
 
-                    reaper.SetMediaItemInfo_Value(newItem, "I_CUSTOMCOLOR", redColor)
-                    table.insert(silenceItems, newItem)
-                end
-            end
-
-            local function clearTemporaryItems()
-                for _, item in ipairs(silenceItems) do
-                    if reaper.ValidatePtr(item, "MediaItem*") then
-                        local track = reaper.GetMediaItem_Track(item)
-                        reaper.DeleteTrackMediaItem(track, item)
+                        reaper.SetMediaItemInfo_Value(newItem, "I_CUSTOMCOLOR", redColor)
+                        table.insert(silenceItems, newItem)
+                        created = created + 1
                     end
                 end
-                silenceItems = {}
+                return created, capped
+            end
+
+            local function clearTemporaryItems(skip_refresh)
+                if #silenceItems > 0 then
+                    if not skip_refresh then reaper.PreventUIRefresh(1) end
+                    for _, item in ipairs(silenceItems) do
+                        if reaper.ValidatePtr(item, "MediaItem*") then
+                            local track = reaper.GetMediaItem_Track(item)
+                            reaper.DeleteTrackMediaItem(track, item)
+                        end
+                    end
+                    silenceItems = {}
+                    if not skip_refresh then
+                        reaper.PreventUIRefresh(-1)
+                        reaper.UpdateArrange()
+                    end
+                else
+                    silenceItems = {}
+                end
             end
 
             local function cleanup()
-                    clearTemporaryItems()
-                    reaper.UpdateArrange()
+                clearTemporaryItems(false)
             end
 
-            local function getSilenceTime(item, take)
+            local function GetItemBufferCacheKey(item, take)
+                local pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+                local len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+                local offs = reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS")
+                local rate = reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE")
+                return string.format("%s|%s|%.4f|%.4f|%.4f|%.4f",
+                    tostring(item), tostring(take), pos, len, offs, rate)
+            end
+
+            local function GetCachedSilenceBuffer(item, take)
+                if not item or not take then return nil end
+                local cache_key = GetItemBufferCacheKey(item, take)
+                local cached = guide_guard.buffer_cache[cache_key]
+                if cached then
+                    return cached.buffer, cached.num_blocks, cached.num_channels,
+                           cached.downsampling_factor, cached.sample_rate, cached.start_time
+                end
+
+                local accessor, sampleRate, numChannels, startTime, endTime = prepareItemAnalysis(item, take)
+                if not accessor then return nil end
+                if not sampleRate or not numChannels or numChannels <= 0 or endTime <= startTime then
+                    reaper.DestroyAudioAccessor(accessor)
+                    return nil
+                end
+
+                local totalSamples = calculateTotalSamples(startTime, endTime, sampleRate)
+                if totalSamples <= 0 then
+                    reaper.DestroyAudioAccessor(accessor)
+                    return nil
+                end
+
+                local downsamplingFactor = calculateDownsamplingFactor(totalSamples, numChannels) * 80
+                local effectiveRate = math.max(200, math.floor(sampleRate / downsamplingFactor))
+                local eff_factor = sampleRate / effectiveRate
+                local totalBlocks = math.max(1, math.ceil((endTime - startTime) * effectiveRate))
+
+                -- 배열 메모리 상한 보호 (최대 250,000 요소)
+                if totalBlocks * numChannels > 250000 then
+                    totalBlocks = math.floor(250000 / numChannels)
+                    effectiveRate = math.max(50, math.floor(totalBlocks / math.max(0.001, endTime - startTime)))
+                    eff_factor = sampleRate / effectiveRate
+                end
+
+                -- 1샘플 루프 대신 C++ API 한 번으로 전체 블록 일괄 추출
+                local buffer = reaper.new_array(totalBlocks * numChannels)
+                buffer.clear()
+                reaper.GetAudioAccessorSamples(accessor, effectiveRate, numChannels, startTime, totalBlocks, buffer)
+                reaper.DestroyAudioAccessor(accessor)
+
+                guide_guard.buffer_cache[cache_key] = {
+                    buffer = buffer,
+                    num_blocks = totalBlocks,
+                    num_channels = numChannels,
+                    downsampling_factor = eff_factor,
+                    sample_rate = sampleRate,
+                    start_time = startTime
+                }
+                return buffer, totalBlocks, numChannels, eff_factor, sampleRate, startTime
+            end
+
+            local function getSilenceTime(item, take, use_cache)
+                if use_cache then
+                    local silenceBuffer, _, numChannels, downsamplingFactor, sampleRate, startTime = GetCachedSilenceBuffer(item, take)
+                    if not silenceBuffer then return nil end
+                    local silences = detectSilences(silenceBuffer, silenceThreshold, minSilenceDuration, sampleRate, downsamplingFactor, numChannels)
+                    return convertSilencesToTime(silences, startTime, sampleRate, downsamplingFactor, numChannels)
+                end
+
                 local isSilence = true
                 local silenceBuffer, numSamplesInBuffer, numChannels, downsamplingFactor, silenceAccessor, sampleRate, startTime = getBufferReady(item, isSilence, take)
                 if not sampleRate then return end
@@ -1659,16 +1770,106 @@ math.randomseed(os.time())
     -- The legacy standalone Peaks & Valleys window has been folded into the
     -- unified Item Splitter UI below. Its detached ImGui context/loop is removed.
     -- Grid Splitter
-        local function GridSplitMain(n_val)
+        local function GetSelectedItemGUIDList()
+            local list = {}
+            local cnt = reaper.CountSelectedMediaItems(0)
+            for i = 0, cnt - 1 do
+                local item = reaper.GetSelectedMediaItem(0, i)
+                local _, guid = reaper.GetSetMediaItemInfo_String(item, "GUID", "", false)
+                list[#list + 1] = guid
+            end
+            return list
+        end
+
+        local function AreGUIDListsEqual(a, b)
+            if not a or not b or #a ~= #b then return false end
+            for i = 1, #a do
+                if a[i] ~= b[i] then return false end
+            end
+            return true
+        end
+
+        local function ResetLiveGridSession()
+            grid_live.snapshot = nil
+            grid_live.output_guids = nil
+        end
+
+        local function CaptureLiveGridSnapshot()
+            local cnt = reaper.CountSelectedMediaItems(0)
+            if cnt == 0 then return nil end
+
+            local entries = {}
+            for i = 0, cnt - 1 do
+                local item = reaper.GetSelectedMediaItem(0, i)
+                local track = reaper.GetMediaItem_Track(item)
+                local take = reaper.GetActiveTake(item)
+                entries[#entries + 1] = {
+                    item = item,
+                    track = track,
+                    pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION"),
+                    len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH"),
+                    fadein = reaper.GetMediaItemInfo_Value(item, "D_FADEINLEN"),
+                    fadeout = reaper.GetMediaItemInfo_Value(item, "D_FADEOUTLEN"),
+                    startoffs = take and reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS") or nil,
+                }
+            end
+            return entries
+        end
+
+        local function RestoreLiveGridSnapshot()
+            if not grid_live.snapshot then return false end
+
+            -- 1. 현재 선택된 분할 조각들 중 원본 포인터가 아닌 조각들 삭제
+            local original_set = {}
+            for _, entry in ipairs(grid_live.snapshot) do
+                if not entry.item or not reaper.ValidatePtr(entry.item, "MediaItem*") then
+                    ResetLiveGridSession()
+                    return false
+                end
+                original_set[entry.item] = true
+            end
+
+            for i = reaper.CountSelectedMediaItems(0) - 1, 0, -1 do
+                local item = reaper.GetSelectedMediaItem(0, i)
+                if not original_set[item] then
+                    local tr = reaper.GetMediaItem_Track(item)
+                    if tr then reaper.DeleteTrackMediaItem(tr, item) end
+                end
+            end
+
+            -- 2. 원본 아이템의 길이·위치·페이드·오프셋 복구
+            for _, entry in ipairs(grid_live.snapshot) do
+                reaper.SetMediaItemInfo_Value(entry.item, "D_POSITION", entry.pos)
+                reaper.SetMediaItemInfo_Value(entry.item, "D_LENGTH", entry.len)
+                reaper.SetMediaItemInfo_Value(entry.item, "D_FADEINLEN", entry.fadein)
+                reaper.SetMediaItemInfo_Value(entry.item, "D_FADEOUTLEN", entry.fadeout)
+                if entry.startoffs then
+                    local take = reaper.GetActiveTake(entry.item)
+                    if take then
+                        reaper.SetMediaItemTakeInfo_Value(take, "D_STARTOFFS", entry.startoffs)
+                    end
+                end
+                reaper.SetMediaItemSelected(entry.item, true)
+            end
+            return true
+        end
+
+        local function GridSplitMain()
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt == 0 then return end
 
-            local _, grid_sec = reaper.GetSetProjectGrid(0, false)
-            if grid_sec <= 0 then return end
+            local slice_interval = 0.0
+            if grid_live.mode == 0 then
+                local _, grid_sec = reaper.GetSetProjectGrid(0, false)
+                if grid_sec <= 0 then return end
+                slice_interval = grid_sec * (grid_slice_n * 2)
+            else
+                slice_interval = grid_live.sec
+            end
 
-            -- 입력값의 2배 그리드 간격 적용
-            local slice_interval = grid_sec * (n_val * 2)
+            if not slice_interval or slice_interval <= 0.001 then return end
 
+            reaper.PreventUIRefresh(1)
             for i = cnt - 1, 0, -1 do
                 local item = reaper.GetSelectedMediaItem(0, i)
                 local item_start = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
@@ -1685,8 +1886,39 @@ math.randomseed(os.time())
                     split_pos = split_pos + slice_interval
                 end
             end
-
+            reaper.PreventUIRefresh(-1)
             reaper.UpdateArrange()
+        end
+
+        local function ExecuteLiveGridSplit()
+            if reaper.CountSelectedMediaItems(0) == 0 then
+                ResetLiveGridSession()
+                return
+            end
+
+            local cur_guids = GetSelectedItemGUIDList()
+            local is_continuing = grid_live.snapshot
+                and grid_live.output_guids
+                and AreGUIDListsEqual(cur_guids, grid_live.output_guids)
+
+            reaper.PreventUIRefresh(1)
+            reaper.Undo_BeginBlock()
+
+            if is_continuing then
+                if not RestoreLiveGridSnapshot() then
+                    grid_live.snapshot = CaptureLiveGridSnapshot()
+                end
+            else
+                grid_live.snapshot = CaptureLiveGridSnapshot()
+            end
+
+            GridSplitMain()
+
+            reaper.Undo_EndBlock(grid_live.undo_label, -1)
+            reaper.PreventUIRefresh(-1)
+            reaper.UpdateArrange()
+
+            grid_live.output_guids = GetSelectedItemGUIDList()
         end
 
 ----------------------------------------------------------
@@ -1698,13 +1930,39 @@ local function GetAvailableWidth(ctx)
 end
 
 local function PushJKKButtonStyle(ctx)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x233C4FFF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x435665FF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x042239FF)
+    if JKK_Theme then
+        JKK_Theme.PushButton(ctx, "primary")
+    else
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x233C4FFF)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x435665FF)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x042239FF)
+    end
 end
 
 local function PopJKKButtonStyle(ctx)
-    reaper.ImGui_PopStyleColor(ctx, 3)
+    if JKK_Theme then
+        JKK_Theme.PopButton(ctx)
+    else
+        reaper.ImGui_PopStyleColor(ctx, 3)
+    end
+end
+
+local function PushJKKConfirmButtonStyle(ctx)
+    if JKK_Theme then
+        JKK_Theme.PushButton(ctx, "confirm")
+    else
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x24866FFF)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x2A9A80FF)
+        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x1F735FFF)
+    end
+end
+
+local function PopJKKConfirmButtonStyle(ctx)
+    if JKK_Theme then
+        JKK_Theme.PopButton(ctx)
+    else
+        reaper.ImGui_PopStyleColor(ctx, 3)
+    end
 end
 
 local function DrawItemBatchController(ctx, selected_item_count, prev_count, current_count)
@@ -1829,18 +2087,33 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
         reaper.Undo_EndBlock("Reset Group Stretch", -1)
     end
 
-    -- Compute the primary action width once. Normalize uses the same width and
-    -- right edge as Render Take so the controller rows form a clean boundary.
+    -- 버튼 적정 최대 크기 및 기본 간격 정의
     local available_width = GetAvailableWidth(ctx)
-    local action_gap = JKK_Scale(6)
-    local nav_button_width = math.max(JKK_Scale(28),
-        math.min(JKK_Scale(48), (available_width - (2 * JKK_Scale(84)) - (action_gap * 4)) / 3))
-    local primary_button_width = math.max(JKK_Scale(68),
-        math.min(JKK_Scale(116), (available_width - (nav_button_width * 3) - (action_gap * 4)) / 2))
+    local max_primary_w = JKK_Scale(130)
+    local max_nav_w = JKK_Scale(50)
+    local nav_gap = JKK_Scale(6)
+    local min_outer_gap = JKK_Scale(6)
+
+    -- 최대 크기 기준 필요 너비 (양쪽 최소 여백 및 내부 간격 포함)
+    local max_buttons_w = (max_primary_w * 2) + (max_nav_w * 3)
+    local base_gaps_w = (min_outer_gap * 2) + (nav_gap * 2)
+    local threshold_w = max_buttons_w + base_gaps_w
+
+    local primary_button_width = max_primary_w
+    local nav_button_width = max_nav_w
+
+    -- 기준 너비보다 좁을 때는 공간에 맞춰 비례 축소 (긴 텍스트 버튼에 여유 비중 배분)
+    if available_width < threshold_w then
+        local usable_for_buttons = math.max(JKK_Scale(120), available_width - base_gaps_w)
+        local ratio = usable_for_buttons / max_buttons_w
+        primary_button_width = math.max(JKK_Scale(64), max_primary_w * math.min(1.0, ratio * 1.06))
+        nav_button_width = math.max(JKK_Scale(26), (usable_for_buttons - (primary_button_width * 2)) / 3)
+        if usable_for_buttons < JKK_Scale(220) then
+            nav_gap = math.max(JKK_Scale(2), nav_gap * ratio)
+        end
+    end
 
     -- Properties and Normalize share one line directly below the sliders.
-    -- Set vertical ItemSpacing to zero for this row so it touches the final
-    -- slider; the horizontal spacing remains unchanged.
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_ItemSpacing(), JKK_Scale(8), 0)
     local checkbox_row_x = reaper.ImGui_GetCursorPosX(ctx)
     local changed_loop, new_loop = reaper.ImGui_Checkbox(ctx, "Loop", item_loop_src)
@@ -1860,7 +2133,7 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
         item_lock = new_lock
         JKK_IT_ApplyItemProperty("C_LOCK", item_lock and 1.0 or 0.0)
     end
-    reaper.ImGui_SameLine(ctx, 0, action_gap)
+    reaper.ImGui_SameLine(ctx)
     reaper.ImGui_SetCursorPosX(ctx, checkbox_row_x + math.max(0, available_width - primary_button_width))
     if reaper.ImGui_Button(ctx, "Normalize", primary_button_width, JKK_Scale(22)) then
         reaper.Main_OnCommand(42460, 0)
@@ -1868,7 +2141,6 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
     reaper.ImGui_PopStyleVar(ctx, 1)
 
     -- Pin the Reverse / take-navigation / FX / Render Take row to the bottom
-    -- of the controller panel. The panel table is full-height in the main UI.
     local footer_cursor_y = reaper.ImGui_GetCursorPosY(ctx)
     local _, footer_available_y = reaper.ImGui_GetContentRegionAvail(ctx)
     local take_action_height = JKK_Scale(22)
@@ -1881,6 +2153,11 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
     local selected_take = selected_item and reaper.GetActiveTake(selected_item) or nil
     local has_take_fx = selected_take and reaper.TakeFX_GetCount(selected_take) > 0 or false
 
+    local footer_row_x = reaper.ImGui_GetCursorPosX(ctx)
+    local center_group_w = (nav_button_width * 3) + (nav_gap * 2)
+    local center_group_x = footer_row_x + math.max(0, (available_width - center_group_w) * 0.5)
+
+    -- 1. 왼쪽 끝: Reverse
     PushJKKButtonStyle(ctx)
     if reaper.ImGui_Button(ctx, "Reverse", primary_button_width, JKK_Scale(22)) then
         reaper.Undo_BeginBlock()
@@ -1889,9 +2166,10 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
     end
     PopJKKButtonStyle(ctx)
 
-    reaper.ImGui_SameLine(ctx, 0, action_gap)
+    -- 2. 가운데 정렬: <, FX, >
+    reaper.ImGui_SameLine(ctx, 0, 0)
+    reaper.ImGui_SetCursorPosX(ctx, center_group_x)
     reaper.ImGui_BeginDisabled(ctx, not has_multiple_takes)
-    -- Previous/next take navigation buttons intentionally keep the default theme color.
     if reaper.ImGui_Button(ctx, "<", nav_button_width, JKK_Scale(22)) then
         reaper.Undo_BeginBlock()
         reaper.Main_OnCommand(42350, 0)
@@ -1899,16 +2177,20 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
     end
     reaper.ImGui_EndDisabled(ctx)
 
-    reaper.ImGui_SameLine(ctx, 0, action_gap)
+    reaper.ImGui_SameLine(ctx, 0, nav_gap)
     PushJKKButtonStyle(ctx)
-    if has_take_fx then reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF) end
+    if has_take_fx then
+        if JKK_Theme then JKK_Theme.PushText(ctx, "accent") else reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Text(), 0xE3DB8EFF) end
+    end
     if reaper.ImGui_Button(ctx, "FX", nav_button_width, JKK_Scale(22)) then
         reaper.Main_OnCommand(40638, 0)
     end
-    if has_take_fx then reaper.ImGui_PopStyleColor(ctx) end
+    if has_take_fx then
+        if JKK_Theme then JKK_Theme.PopText(ctx) else reaper.ImGui_PopStyleColor(ctx) end
+    end
     PopJKKButtonStyle(ctx)
 
-    reaper.ImGui_SameLine(ctx, 0, action_gap)
+    reaper.ImGui_SameLine(ctx, 0, nav_gap)
     reaper.ImGui_BeginDisabled(ctx, not has_multiple_takes)
     if reaper.ImGui_Button(ctx, ">", nav_button_width, JKK_Scale(22)) then
         reaper.Undo_BeginBlock()
@@ -1917,7 +2199,9 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
     end
     reaper.ImGui_EndDisabled(ctx)
 
-    reaper.ImGui_SameLine(ctx, 0, action_gap)
+    -- 3. 오른쪽 끝(Normalize 우측 끝과 일치): Render Take
+    reaper.ImGui_SameLine(ctx, 0, 0)
+    reaper.ImGui_SetCursorPosX(ctx, footer_row_x + math.max(0, available_width - primary_button_width))
     PushJKKButtonStyle(ctx)
     if reaper.ImGui_Button(ctx, "Render Take", primary_button_width, JKK_Scale(22)) then
         reaper.Undo_BeginBlock()
@@ -1941,7 +2225,7 @@ local function DrawItemTakeMetadata(ctx)
         -- Left: Take Channel + Pitch Mode. Both right-side combo edges align.
         reaper.ImGui_TableNextColumn(ctx)
         local controls_width = GetAvailableWidth(ctx)
-        local label_width = JKK_Scale(86)
+        local label_width = JKK_Scale(104)
         local combo_width = math.max(JKK_Scale(60), controls_width - label_width - JKK_Scale(8))
 
         local row_x = reaper.ImGui_GetCursorPosX(ctx)
@@ -2092,17 +2376,13 @@ local function DrawIntervalWidthTools(ctx, layout)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x2A9A80FF)
     reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x1F735FFF)
 
-    if reaper.ImGui_Button(
-        ctx,
-        "Shuffle Order",
-        layout.button_width,
-        button_height
-    ) then
-        -- FIX: Shuffle Order was not recorded in the undo history.
+    PushJKKConfirmButtonStyle(ctx)
+    if reaper.ImGui_Button(ctx, "Shuffle Order", layout.button_width, button_height) then
         reaper.Undo_BeginBlock()
         JKK_IT_shuffle_item_order()
         reaper.Undo_EndBlock("Shuffle Item Order", -1)
     end
+    PopJKKConfirmButtonStyle(ctx)
 
     reaper.ImGui_PopStyleColor(ctx, 3)
 
@@ -2155,10 +2435,7 @@ local function DrawIntervalWidthTools(ctx, layout)
     -- Loopmaker button: second row, right side
     reaper.ImGui_SetCursorPos(ctx, shuffle_x, checkbox_y)
 
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x233C4FFF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x435665FF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x042239FF)
-
+    PushJKKButtonStyle(ctx)
     if reaper.ImGui_Button(
         ctx,
         "Loopmaker",
@@ -2173,7 +2450,7 @@ local function DrawIntervalWidthTools(ctx, layout)
         reaper.Undo_EndBlock("Run Loopmaker Action", -1)
     end
 
-    reaper.ImGui_PopStyleColor(ctx, 3)
+    PopJKKButtonStyle(ctx)
 
     -- Move cursor below the complete two-row layout.
     reaper.ImGui_SetCursorPosY(
@@ -2202,10 +2479,13 @@ local function DrawDynamicItemSplitter(ctx, selected_item_count, is_active_conte
         thres_changed = true
     end
     reaper.ImGui_SameLine(ctx, 0, layout.item_spacing)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x24866FFF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x2A9A80FF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x1F735FFF)
+    PushJKKConfirmButtonStyle(ctx)
     if reaper.ImGui_Button(ctx, "Split Dyn", splitter_button_width, JKK_Scale(22)) then
+        showGuideBox = false
+        guide_guard.pending_update = false
+        guide_guard.warning_msg = nil
+        guide_guard.buffer_cache = {}
+        lastSelectionSignature = ""
         cleanup()
         reaper.Undo_BeginBlock()
         local items = storeSelectedMediaItems()
@@ -2223,7 +2503,7 @@ local function DrawDynamicItemSplitter(ctx, selected_item_count, is_active_conte
         end
         reaper.Undo_EndBlock("Split", -1)
     end
-    reaper.ImGui_PopStyleColor(ctx, 3)
+    PopJKKConfirmButtonStyle(ctx)
 
     -- Minimum silence length + Split & Takes
     row_x = reaper.ImGui_GetCursorPosX(ctx)
@@ -2242,6 +2522,11 @@ local function DrawDynamicItemSplitter(ctx, selected_item_count, is_active_conte
     reaper.ImGui_SameLine(ctx, 0, layout.item_spacing)
     PushJKKButtonStyle(ctx)
     if reaper.ImGui_Button(ctx, "Split & Takes", splitter_button_width, JKK_Scale(22)) then
+        showGuideBox = false
+        guide_guard.pending_update = false
+        guide_guard.warning_msg = nil
+        guide_guard.buffer_cache = {}
+        lastSelectionSignature = ""
         cleanup()
         reaper.Undo_BeginBlock()
         local items = storeSelectedMediaItems()
@@ -2263,7 +2548,7 @@ local function DrawDynamicItemSplitter(ctx, selected_item_count, is_active_conte
     end
     PopJKKButtonStyle(ctx)
 
-    -- Live guide generation: remove the leading spacer and keep breathing room below.
+    -- Live guide generation
     local changed_keep, new_keep = reaper.ImGui_Checkbox(ctx, "Keep Origin When Rendering", shouldKeepOriginal)
     if changed_keep then
         shouldKeepOriginal = new_keep
@@ -2273,54 +2558,211 @@ local function DrawDynamicItemSplitter(ctx, selected_item_count, is_active_conte
     local guide_changed, new_guide = reaper.ImGui_Checkbox(ctx, "Guide", showGuideBox)
     if guide_changed then
         showGuideBox = new_guide
-        if not showGuideBox then clearTemporaryItems() end
+        guide_guard.warning_msg = nil
+        if not showGuideBox then
+            guide_guard.pending_update = false
+            guide_guard.buffer_cache = {}
+            lastSelectionSignature = ""
+            cleanup()
+        end
+    end
+    if guide_guard.warning_msg then
+        reaper.ImGui_SameLine(ctx)
+        reaper.ImGui_TextColored(ctx, 0xFF8844FF, guide_guard.warning_msg)
     end
 
-    local current_signature = GetSelectionHash()
-    if is_active_context and showGuideBox
-        and (thres_changed or dur_changed or guide_changed or current_signature ~= lastSelectionSignature) then
+    -- 아이템 선택이 모두 해제되면 잔여 가이드 아이템 정리
+    if showGuideBox and reaper.CountSelectedMediaItems(0) == 0 and #silenceItems > 0 then
+        guide_guard.buffer_cache = {}
+        lastSelectionSignature = ""
         cleanup()
+    end
+
+    if is_active_context and showGuideBox then
         local items = storeSelectedMediaItems()
+        local sig_parts = {}
+        local total_len = 0.0
         for _, item in ipairs(items) do
             local take = reaper.GetActiveTake(item)
-            local track = reaper.GetMediaItem_Track(item)
-            local item_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
-            local silences = getSilenceTime(item, take)
-            if silences then
-                createTemporaryItems(track, silences, item_pos)
+            local pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+            local len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+            total_len = total_len + len
+            sig_parts[#sig_parts + 1] = string.format("%s:%s:%.3f:%.3f", tostring(item), tostring(take), pos, len)
+        end
+        local current_signature = table.concat(sig_parts, "|")
+        local selection_changed = (current_signature ~= lastSelectionSignature)
+
+        if selection_changed then
+            guide_guard.buffer_cache = {}
+            lastSelectionSignature = current_signature
+        end
+
+        if guide_changed or selection_changed or thres_changed or dur_changed then
+            guide_guard.pending_update = true
+            if guide_changed or selection_changed then
+                guide_guard.last_change_time = 0
+            else
+                guide_guard.last_change_time = reaper.time_precise()
             end
         end
-        lastSelectionSignature = current_signature
+
+        if guide_guard.pending_update
+            and (reaper.time_precise() - guide_guard.last_change_time) >= guide_guard.debounce_delay then
+            guide_guard.pending_update = false
+
+            -- 방지 로직 1: 아이템 개수 또는 총 길이가 너무 길면 연산 차단 후 자동 해제
+            if #items > guide_guard.max_items or total_len > guide_guard.max_total_sec then
+                cleanup()
+                showGuideBox = false
+                guide_guard.buffer_cache = {}
+                lastSelectionSignature = ""
+                guide_guard.warning_msg = string.format(
+                    "(Auto-off: >%d items or >%.0fs)",
+                    guide_guard.max_items,
+                    guide_guard.max_total_sec
+                )
+            else
+                reaper.PreventUIRefresh(1)
+                clearTemporaryItems(true)
+
+                local total_created = 0
+                local was_capped = false
+                for _, item in ipairs(items) do
+                    local remaining = guide_guard.max_guide_items - total_created
+                    if remaining <= 0 then
+                        was_capped = true
+                        break
+                    end
+                    local take = reaper.GetActiveTake(item)
+                    local track = reaper.GetMediaItem_Track(item)
+                    local item_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
+                    local silences = getSilenceTime(item, take, true)
+                    if silences then
+                        local created, capped = createTemporaryItems(track, silences, item_pos, remaining)
+                        total_created = total_created + created
+                        if capped then
+                            was_capped = true
+                            break
+                        end
+                    end
+                end
+
+                reaper.PreventUIRefresh(-1)
+                reaper.UpdateArrange()
+
+                -- 방지 로직 2: 가이드 아이템이 최대 생성 개수에 도달하면 안내 표시
+                if was_capped then
+                    guide_guard.warning_msg = string.format("(Max %d guides)", guide_guard.max_guide_items)
+                else
+                    guide_guard.warning_msg = nil
+                end
+            end
+        end
     end
 end
 
 local function DrawGridSplitter(ctx, layout)
     layout = layout or GetUtilityRowLayout(ctx)
 
+    -- 선택이 해제되거나 다른 아이템으로 변경되면 이전 Live 세션 초기화
+    if grid_live.output_guids then
+        local cur_guids = GetSelectedItemGUIDList()
+        if not AreGUIDListsEqual(cur_guids, grid_live.output_guids) then
+            ResetLiveGridSession()
+        end
+    end
+
     local row_x = reaper.ImGui_GetCursorPosX(ctx)
+    local frame_h = reaper.ImGui_GetFrameHeight(ctx)
+    local inner_x = select(1, reaper.ImGui_GetStyleVar(ctx, reaper.ImGui_StyleVar_ItemInnerSpacing())) or JKK_Scale(4)
+    local live_text_w = select(1, reaper.ImGui_CalcTextSize(ctx, "Live")) or JKK_Scale(24)
+    local live_chk_w = frame_h + inner_x + live_text_w
+    local slice_slider_w = math.max(JKK_Scale(36), layout.slider_width - live_chk_w - layout.item_spacing)
 
     reaper.ImGui_AlignTextToFramePadding(ctx)
     reaper.ImGui_Text(ctx, "Slice Interval")
     reaper.ImGui_SameLine(ctx)
     reaper.ImGui_SetCursorPosX(ctx, row_x + layout.label_width)
-    reaper.ImGui_SetNextItemWidth(ctx, layout.slider_width)
-    local changed_slice, new_slice = reaper.ImGui_SliderInt(ctx, "##GridSliceCount", grid_slice_n, 1, 10, "%d grid")
-    if changed_slice then grid_slice_n = new_slice end
-    if reaper.ImGui_IsItemClicked(ctx, 1) then grid_slice_n = 5 end
+    reaper.ImGui_SetNextItemWidth(ctx, slice_slider_w)
+
+    local slider_changed = false
+    if grid_live.mode == 0 then
+        local changed_slice, new_slice = reaper.ImGui_SliderInt(ctx, "##GridSliceCount", grid_slice_n, 1, 10, "%d grid")
+        if changed_slice then
+            grid_slice_n = new_slice
+            slider_changed = true
+        end
+    else
+        local changed_sec, new_sec = reaper.ImGui_SliderDouble(ctx, "##GridSliceSec", grid_live.sec, 0.01, max_sec, "%.2fs")
+        if changed_sec then
+            grid_live.sec = new_sec
+            slider_changed = true
+        end
+    end
+
+    -- 우클릭 시 Grid <-> Seconds 단위 전환
+    if reaper.ImGui_IsItemClicked(ctx, 1) then
+        grid_live.mode = (grid_live.mode == 0) and 1 or 0
+        if grid_live.enabled then
+            slider_changed = true
+        end
+    end
+
+    if slider_changed and grid_live.enabled then
+        ExecuteLiveGridSplit()
+    end
+
     if reaper.ImGui_IsItemHovered(ctx) then
-        reaper.ImGui_SetTooltip(ctx, "Grid slice interval (1~10)\nRight-click to reset (5)")
+        local mode_name = (grid_live.mode == 0) and "Grid" or "Seconds"
+        reaper.ImGui_SetTooltip(
+            ctx,
+            "Current: " .. mode_name .. "\nRight-click to toggle (Grid <-> Sec)"
+        )
+    end
+
+    -- 슬라이더와 Split Grid 버튼 사이 Live 체크박스
+    reaper.ImGui_SameLine(ctx, 0, layout.item_spacing)
+    local changed_live, new_live = reaper.ImGui_Checkbox(ctx, "Live", grid_live.enabled)
+    if changed_live then
+        grid_live.enabled = new_live
+        ResetLiveGridSession()
+        if grid_live.enabled then
+            ExecuteLiveGridSplit()
+        end
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+        reaper.ImGui_SetTooltip(ctx, "Slice dynamically while adjusting the slider")
     end
 
     reaper.ImGui_SameLine(ctx, 0, layout.item_spacing)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x24866FFF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x2A9A80FF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x1F735FFF)
-    if reaper.ImGui_Button(ctx, "Split Grid", layout.button_width, JKK_Scale(22)) then
-        reaper.Undo_BeginBlock()
-        GridSplitMain(grid_slice_n)
-        reaper.Undo_EndBlock("Grid Split Items", -1)
+    if grid_live.enabled then
+        local can_undo_live = (grid_live.snapshot ~= nil)
+        reaper.ImGui_BeginDisabled(ctx, not can_undo_live)
+        PushJKKButtonStyle(ctx)
+        if reaper.ImGui_Button(ctx, "Undo", layout.button_width, JKK_Scale(22)) then
+            reaper.PreventUIRefresh(1)
+            reaper.Undo_BeginBlock()
+            RestoreLiveGridSnapshot()
+            reaper.Undo_EndBlock("Undo Live Grid Split", -1)
+            reaper.PreventUIRefresh(-1)
+            reaper.UpdateArrange()
+            ResetLiveGridSession()
+        end
+        PopJKKButtonStyle(ctx)
+        reaper.ImGui_EndDisabled(ctx)
+        if reaper.ImGui_IsItemHovered(ctx, reaper.ImGui_HoveredFlags_AllowWhenDisabled()) then
+            reaper.ImGui_SetTooltip(ctx, "Restore items to their state before Live Grid Split")
+        end
+    else
+        PushJKKConfirmButtonStyle(ctx)
+        if reaper.ImGui_Button(ctx, "Split Grid", layout.button_width, JKK_Scale(22)) then
+            ResetLiveGridSession()
+            reaper.Undo_BeginBlock()
+            GridSplitMain()
+            reaper.Undo_EndBlock("Grid Split Items", -1)
+        end
+        PopJKKConfirmButtonStyle(ctx)
     end
-    reaper.ImGui_PopStyleColor(ctx, 3)
 end
 
 function JKK_ItemTool_Draw(ctx, prev_count, current_count, active_context, track_module)
@@ -2375,6 +2817,7 @@ function JKK_ItemTool_DrawEditingUtilities(ctx, is_active_context)
     -- Slice Interval; the main script lines it up with the other panels.
     local function DrawLower()
         DrawGridSplitter(ctx, layout)
+        reaper.ImGui_Spacing(ctx)
         DrawDynamicItemSplitter(
             ctx,
             reaper.CountSelectedMediaItems(0),

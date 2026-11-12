@@ -5,9 +5,24 @@
 --========================================================
 
 local reaper = reaper
+local M = {
+    status_info = {
+        mode = "None",
+        total_count = 0,
+        rename_count = 0,
+        top_level_only = false,
+    }
+}
 
--- UI zoom factor published by JKK_ReaTools (1.0 = original design size).
 local function S(v) return v * (JKK_UI_SCALE or 1) end
+
+-- JKK_ReaTools가 먼저 로드한 SelectionManager 참조 (단독 로드 시 폴백 포함)
+local script_dir = (debug.getinfo(1, "S").source or ""):match("^@(.+[\\/])") or ""
+local sel_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_SelectionManager.lua"
+if not reaper.file_exists(sel_path) then
+    sel_path = script_dir .. "JKK_SelectionManager.lua"
+end
+local sel_mgr = _G.JKK_SelectionManager or (reaper.file_exists(sel_path) and dofile(sel_path))
 
 local ext_section = "JKK_SmartBatchRenamer"
 local use_number = reaper.GetExtState(ext_section, "use_number") == "1"
@@ -28,6 +43,25 @@ local function SaveSettings()
     reaper.SetExtState(ext_section, "number_start", tostring(number_start), true)
 end
 
+-- 스탠드얼론 JKK_Renamer와 실시간 상태 동기화
+local function SyncSharedSettings(number_input_focused)
+    local ext_num = reaper.GetExtState(ext_section, "use_number") == "1"
+    local ext_top = reaper.GetExtState(ext_section, "top_level_only") == "1"
+    local ext_start_raw = reaper.GetExtState(ext_section, "number_start")
+    local ext_start = tonumber(ext_start_raw)
+
+    if ext_num ~= use_number then
+        use_number = ext_num
+    end
+    if ext_top ~= top_level_only then
+        top_level_only = ext_top
+    end
+    if ext_start and ext_start ~= number_start and not number_input_focused then
+        number_start = ext_start
+        number_start_text = tostring(number_start)
+    end
+end
+
 local function GetItemName(item)
     local take = item and reaper.GetActiveTake(item)
     if not take then return "" end
@@ -38,107 +72,21 @@ local function GetItemName(item)
     return name or ""
 end
 
-local function GetTrackName(track)
-    if not track then return "" end
-    local _, name = reaper.GetTrackName(track)
-    return name or ""
-end
-
 local function GetTargets(mode, active)
-    local targets = {}
-    if not active then return targets end
+    if not active or not sel_mgr then return {}, 0 end
 
-    if mode == "Item" then
-        for i = 0, reaper.CountSelectedMediaItems(0) - 1 do
-            local item = reaper.GetSelectedMediaItem(0, i)
-            if item then
-                local track = reaper.GetMediaItem_Track(item)
-                targets[#targets + 1] = {
-                    type = "Item", item = item, track = track,
-                    original_name = GetItemName(item)
-                }
-            end
-        end
-    elseif mode == "Track" then
-        for i = 0, reaper.CountSelectedTracks(0) - 1 do
-            local track = reaper.GetSelectedTrack(0, i)
-            if track then
-                targets[#targets + 1] = {
-                    type = "Track", track = track,
-                    original_name = GetTrackName(track)
-                }
-            end
-        end
-    elseif mode == "Region/Marker" then
-        local selected_regions, selected_markers = {}, {}
-        if reaper.GetNumRegionsOrMarkers and reaper.GetRegionOrMarker
-            and reaper.GetRegionOrMarkerInfo_Value then
-            local marker_count, region_count = reaper.GetNumRegionsOrMarkers(0)
-            for idx = 0, (marker_count or 0) + (region_count or 0) - 1 do
-                local pm = reaper.GetRegionOrMarker(0, idx, "")
-                if pm and reaper.GetRegionOrMarkerInfo_Value(0, pm, "B_UISEL") > 0 then
-                    local is_region = reaper.GetRegionOrMarkerInfo_Value(0, pm, "B_ISREGION") == 1
-                    local pos = reaper.GetRegionOrMarkerInfo_Value(0, pm, "D_STARTPOS")
-                    local region_end = reaper.GetRegionOrMarkerInfo_Value(0, pm, "D_ENDPOS")
-                    local number = math.floor(reaper.GetRegionOrMarkerInfo_Value(0, pm, "I_NUMBER") + 0.5)
-                    local color = math.floor(reaper.GetRegionOrMarkerInfo_Value(0, pm, "I_CUSTOMCOLOR") + 0.5)
-                    local _, name = reaper.GetSetRegionOrMarkerInfo_String(0, pm, "P_NAME", "", false)
-                    local target = {
-                        type = is_region and "Region" or "Marker", pm = pm,
-                        index = number, is_region = is_region, pos = pos,
-                        rgnend = is_region and region_end or 0,
-                        color = color, original_name = name or ""
-                    }
-                    if is_region then
-                        selected_regions[#selected_regions + 1] = target
-                    else
-                        selected_markers[#selected_markers + 1] = target
-                    end
-                end
-            end
-        end
+    local raw_targets = sel_mgr.GetTargets()
+    local total_count = #raw_targets
+    if not top_level_only then return raw_targets, total_count end
 
-        for _, target in ipairs(selected_regions) do targets[#targets + 1] = target end
-        for _, target in ipairs(selected_markers) do targets[#targets + 1] = target end
-
-        -- If no region/marker is explicitly selected, use objects intersecting
-        -- the current time selection, matching the full JKK_Renamer behavior.
-        if #targets == 0 then
-            local ts_start, ts_end = reaper.GetSet_LoopTimeRange(false, false, 0, 0, false)
-            if ts_end > ts_start then
-                local idx = 0
-                while true do
-                    local retval, is_region, pos, region_end, name, number, color = reaper.EnumProjectMarkers3(0, idx)
-                    if retval == 0 then break end
-                    if is_region then
-                        if pos < ts_end and region_end > ts_start then
-                            targets[#targets + 1] = {
-                                type = "Region", index = number, is_region = true,
-                                pos = pos, rgnend = region_end, color = color,
-                                original_name = name or ""
-                            }
-                        end
-                    elseif pos >= ts_start and pos <= ts_end then
-                        targets[#targets + 1] = {
-                            type = "Marker", index = number, is_region = false,
-                            pos = pos, rgnend = 0, color = color,
-                            original_name = name or ""
-                        }
-                    end
-                    idx = idx + 1
-                end
-            end
-        end
-    end
-
-    if not top_level_only then return targets end
-
-    local filtered = {}
-    if mode == "Track" then
+    if mode == "Track" or mode == "Item" then
+        local filtered = {}
         local selected_tracks = {}
-        for _, target in ipairs(targets) do selected_tracks[target.track] = true end
-        for _, target in ipairs(targets) do
-            local parent = reaper.GetParentTrack(target.track)
+        for _, target in ipairs(raw_targets) do
+            if target.track then selected_tracks[target.track] = true end
+        end
+        for _, target in ipairs(raw_targets) do
+            local parent = target.track and reaper.GetParentTrack(target.track)
             local has_selected_parent = false
             while parent do
                 if selected_tracks[parent] then
@@ -147,28 +95,14 @@ local function GetTargets(mode, active)
                 end
                 parent = reaper.GetParentTrack(parent)
             end
-            if not has_selected_parent then filtered[#filtered + 1] = target end
-        end
-        return filtered
-    elseif mode == "Item" then
-        local selected_tracks = {}
-        for _, target in ipairs(targets) do selected_tracks[target.track] = true end
-        for _, target in ipairs(targets) do
-            local parent = reaper.GetParentTrack(target.track)
-            local has_selected_parent = false
-            while parent do
-                if selected_tracks[parent] then
-                    has_selected_parent = true
-                    break
-                end
-                parent = reaper.GetParentTrack(parent)
+            if not has_selected_parent then
+                filtered[#filtered + 1] = target
             end
-            if not has_selected_parent then filtered[#filtered + 1] = target end
         end
-        return filtered
+        return filtered, total_count
     end
 
-    return targets
+    return raw_targets, total_count
 end
 
 local function BuildHierarchyIndices(mode, targets)
@@ -312,8 +246,6 @@ local function SetTargetName(target, new_name)
     end
 end
 
--- FIX: names are inserted as gsub replacement strings, where "%" is special.
--- A name such as "Vox 50%" raised "invalid use of '%' in replacement string".
 local function Plain(text)
     return (tostring(text or ""):gsub("%%", "%%%%"))
 end
@@ -324,7 +256,6 @@ local function EvaluateName(pattern, target, index, hierarchy_indices)
 
     local project_name = reaper.GetProjectName(0, ""):gsub("%.%w+$", "")
     out = out:gsub("%$project", Plain(project_name))
-    -- FIX: $datetime must be expanded before $date, otherwise $date consumes its prefix.
     out = out:gsub("%$datetime", os.date("%Y-%m-%d %H_%M_%S"))
     out = out:gsub("%$date", os.date("%Y-%m-%d"))
     out = out:gsub("%$time", os.date("%H_%M_%S"))
@@ -378,12 +309,11 @@ local function EvaluateName(pattern, target, index, hierarchy_indices)
 end
 
 local function CreateRegionsFromItems(per_item, base_name)
-    local count = reaper.CountSelectedMediaItems(0)
-    if count == 0 then return end
+    local items = sel_mgr and sel_mgr.GetSelectedItems() or {}
+    if #items == 0 then return end
 
     local spans = {}
-    for i = 0, count - 1 do
-        local item = reaper.GetSelectedMediaItem(0, i)
+    for _, item in ipairs(items) do
         local start_pos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
         local end_pos = start_pos + reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
         spans[#spans + 1] = { start_pos = start_pos, end_pos = end_pos, name = GetItemName(item) }
@@ -438,12 +368,21 @@ local function ApplyRename(mode, targets, name_pattern)
     return true
 end
 
-local function DrawRenamerLite(ctx, mode, active, input_font, properties_button_width)
-    local targets = GetTargets(mode, active)
+local number_input_focused = false
+
+local function DrawRenamerLite(ctx, mode, active)
+    SyncSharedSettings(number_input_focused)
+
+    local targets, total_count = GetTargets(mode, active)
+    M.status_info.mode = mode or "None"
+    M.status_info.total_count = total_count
+    M.status_info.rename_count = #targets
+    M.status_info.top_level_only = top_level_only
+
     local target_signature = GetTargetSignature(mode, targets)
     local first_name = (#targets > 0) and (targets[1].original_name or "") or ""
 
-    local is_mouse_down = reaper.JS_Mouse_GetState and (reaper.JS_Mouse_GetState(1) & 1) == 1
+    local is_mouse_down = sel_mgr and sel_mgr.IsMouseDown() or false
 
     if active and #targets > 0 and not is_mouse_down then
         if not was_active or target_signature ~= last_target_signature or mode ~= last_mode then
@@ -461,11 +400,11 @@ local function DrawRenamerLite(ctx, mode, active, input_font, properties_button_
 
     local available_width = select(1, reaper.ImGui_GetContentRegionAvail(ctx))
     local row_start_x = reaper.ImGui_GetCursorPosX(ctx)
-    local apply_width = S(82)
+    local apply_width = S(100)
     local gap = S(6)
     local input_width = math.max(1, available_width - apply_width - gap)
 
-    if input_font then reaper.ImGui_PushFont(ctx, input_font, S(13)) end
+    if JKK_Theme then JKK_Theme.PushFont(ctx, JKK_UI_SCALE or 1.0, "topbar") end
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_FramePadding(), S(8), S(4.5))
     local input_height = reaper.ImGui_GetFrameHeight(ctx)
 
@@ -477,11 +416,9 @@ local function DrawRenamerLite(ctx, mode, active, input_font, properties_button_
 
     reaper.ImGui_SameLine(ctx, 0, gap)
     reaper.ImGui_BeginDisabled(ctx, not active or #targets == 0)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x24866FFF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x2A9A80FF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x2A9A80FF)
+    if JKK_Theme then JKK_Theme.PushButton(ctx, "confirm") end
     local apply_clicked = reaper.ImGui_Button(ctx, "Apply", apply_width, input_height)
-    reaper.ImGui_PopStyleColor(ctx, 3)
+    if JKK_Theme then JKK_Theme.PopButton(ctx) end
 
     local enter_pressed = input_focused and (
         reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Enter())
@@ -493,25 +430,26 @@ local function DrawRenamerLite(ctx, mode, active, input_font, properties_button_
     reaper.ImGui_EndDisabled(ctx)
 
     reaper.ImGui_PopStyleVar(ctx, 1)
-    if input_font then reaper.ImGui_PopFont(ctx) end
+    if JKK_Theme then JKK_Theme.PopFont(ctx) end
 
-    -- Options row (Number, Top-Level Only, Create Regions, Renamer button)
     local options_row_y = reaper.ImGui_GetCursorPosY(ctx)
     local checkbox_height = reaper.ImGui_GetFrameHeight(ctx)
     reaper.ImGui_PushStyleVar(ctx, reaper.ImGui_StyleVar_ItemSpacing(), S(8), 0)
-    
+
     local number_changed, new_number = reaper.ImGui_Checkbox(ctx, "Number (_nn)", use_number)
     if number_changed then
         use_number = new_number
         SaveSettings()
     end
 
+    number_input_focused = false
     if use_number then
         reaper.ImGui_SameLine(ctx, 0, S(4))
         reaper.ImGui_SetNextItemWidth(ctx, S(64))
         local start_changed, new_start = reaper.ImGui_InputText(
             ctx, "##RenamerLiteNumberStart", number_start_text
         )
+        number_input_focused = reaper.ImGui_IsItemFocused(ctx)
         if start_changed then
             number_start_text = new_start
             local parsed = tonumber(number_start_text)
@@ -539,8 +477,8 @@ local function DrawRenamerLite(ctx, mode, active, input_font, properties_button_
         SaveSettings()
     end
 
-    -- Create Regions 버튼 배치 (Top-Level Only와 Renamer 버튼 사이)
-    local item_ready = active and mode == "Item" and reaper.CountSelectedMediaItems(0) > 0
+    local selected_items = sel_mgr and sel_mgr.GetSelectedItems() or {}
+    local item_ready = active and mode == "Item" and #selected_items > 0
     reaper.ImGui_SameLine(ctx, 0, S(8))
     reaper.ImGui_BeginDisabled(ctx, not item_ready)
     local region_btn_width = S(92)
@@ -557,16 +495,13 @@ local function DrawRenamerLite(ctx, mode, active, input_font, properties_button_
         reaper.ImGui_SetTooltip(ctx, "Click: one region around each group of overlapping items (longest extent),\nnamed from the text field\nShift+Click: one region per item, named after the item")
     end
 
-    -- 우측 끝 Renamer 버튼 배치
-    local open_button_width = S(83)
-    local open_button_height = checkbox_height
+    local open_button_width = S(100)
+    local open_button_height = S(22)
     reaper.ImGui_SameLine(ctx, 0, 0)
     reaper.ImGui_SetCursorPosX(ctx, row_start_x + math.max(0, available_width - open_button_width))
     reaper.ImGui_SetCursorPosY(ctx, options_row_y + math.max(0, (checkbox_height - open_button_height) * 0.5))
-    
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x233C4FFF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x435665FF)
-    reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x042239FF)
+
+    if JKK_Theme then JKK_Theme.PushButton(ctx, "primary") end
     if reaper.ImGui_Button(ctx, "Renamer", open_button_width, open_button_height) then
         local command_id = reaper.NamedCommandLookup("_RS2343473a341aa2705a7b16c73d17d2fba2912208")
         if command_id and command_id ~= 0 then
@@ -575,7 +510,7 @@ local function DrawRenamerLite(ctx, mode, active, input_font, properties_button_
             reaper.ShowMessageBox("JKK_Renamer command could not be found. Check the ReaScript action ID.", "JKK_ReaTools", 0)
         end
     end
-    reaper.ImGui_PopStyleColor(ctx, 3)
+    if JKK_Theme then JKK_Theme.PopButton(ctx) end
     reaper.ImGui_PopStyleVar(ctx, 1)
 
     input_was_focused = input_focused
@@ -586,6 +521,5 @@ local function DrawRenamerLite(ctx, mode, active, input_font, properties_button_
     end
 end
 
-return {
-    JKK_RenamerLite_Draw = DrawRenamerLite
-}
+M.JKK_RenamerLite_Draw = DrawRenamerLite
+return M
