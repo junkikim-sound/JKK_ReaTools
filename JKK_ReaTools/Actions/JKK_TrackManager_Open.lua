@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_TrackManager_Open
--- @author Junki Kim (JKK)
--- @version 1.0.1
+-- @author Junki Kim
+-- @version 1.0.2
 --========================================================
 
 local RPR = reaper

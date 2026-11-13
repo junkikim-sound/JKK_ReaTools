@@ -1,10 +1,8 @@
 --========================================================
 -- @title JKK_TrackManager
 -- @author Junki Kim
--- @version 0.9.1
+-- @version 0.9.2
 -- @provides
---   [main] Actions/JKK_TrackManager_Open.lua
---   [main] Actions/JKK_TrackManager_TrackActivation.lua
 --   [nomain] Modules/JKK_TrackManager_Core.lua
 --========================================================
 

@@ -3,7 +3,7 @@
 -- @author Junki Kim
 -- @version 1.0.0
 -- @provides
---     [nomain] Modules/JKK_Theme.lua
+--     [nomain] Modules/JKK_Theme_Core.lua
 --========================================================
 
 local RPR = reaper
