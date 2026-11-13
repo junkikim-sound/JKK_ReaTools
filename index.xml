@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="JKK_ReaTools" commit="5238175fc3705534e02cae4a78b25f66d61c39cf">
+<index version="1" name="JKK_ReaTools" commit="c4645a0e5faffaeffe1d750dc5f29282d6078207">
   <category name="Global Sampler (Origin by BirdBird)">
     <reapack name="BirdBird_Global Sampler (JKK_Edited).lua" type="script" desc="Global Sampler (Edited by JKK)">
       <version name="0.99.8.5" author="BirdBird" time="2026-05-08T13:57:22Z">
@@ -301,9 +301,19 @@
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/5238175fc3705534e02cae4a78b25f66d61c39cf/JKK_ReaTools/JKK_Renderer.lua</source>
       </version>
     </reapack>
+    <reapack name="JKK_Theme.lua" type="script">
+      <version name="1.0.0" author="Junki Kim" time="2026-11-13T14:44:19Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/c4645a0e5faffaeffe1d750dc5f29282d6078207/JKK_ReaTools/JKK_Theme.lua</source>
+        <source file="Modules/JKK_Theme_Core.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/c4645a0e5faffaeffe1d750dc5f29282d6078207/JKK_ReaTools/Modules/JKK_Theme_Core.lua</source>
+      </version>
+    </reapack>
     <reapack name="JKK_TrackManager.lua" type="script">
       <version name="0.9.0" author="Junki Kim" time="2026-11-12T16:59:01Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/cd726fc9b3f8ea8804ee9bc071a6bcfcfc6523d0/JKK_ReaTools/JKK_TrackManager.lua</source>
+      </version>
+      <version name="0.9.2" author="Junki Kim" time="2026-11-13T14:44:19Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/c4645a0e5faffaeffe1d750dc5f29282d6078207/JKK_ReaTools/JKK_TrackManager.lua</source>
+        <source file="Modules/JKK_TrackManager_Core.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/c4645a0e5faffaeffe1d750dc5f29282d6078207/JKK_ReaTools/Modules/JKK_TrackManager_Core.lua</source>
       </version>
     </reapack>
     <reapack name="JKK_XYPad.lua" type="script">
@@ -326,6 +336,9 @@
     <reapack name="JKK_TrackManager_Open.lua" type="script">
       <version name="1.0.1" author="Junki Kim (JKK)" time="2026-11-13T14:36:35Z">
         <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/5238175fc3705534e02cae4a78b25f66d61c39cf/JKK_ReaTools/Actions/JKK_TrackManager_Open.lua</source>
+      </version>
+      <version name="1.0.2" author="Junki Kim" time="2026-11-13T14:44:19Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/c4645a0e5faffaeffe1d750dc5f29282d6078207/JKK_ReaTools/Actions/JKK_TrackManager_Open.lua</source>
       </version>
     </reapack>
     <reapack name="JKK_TrackManager_TrackActivation.lua" type="script">
