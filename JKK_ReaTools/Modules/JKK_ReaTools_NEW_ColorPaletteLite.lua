@@ -364,6 +364,9 @@ local function JKK_ColorPalette_Draw(ctx, mode, is_active)
         reaper.ImGui_SameLine(ctx, 0, spacing_x)
         
         reaper.ImGui_SetNextItemWidth(ctx, combo_width)
+        local item_h = reaper.ImGui_GetTextLineHeightWithSpacing(ctx)
+        local desired_h = math.min(S(650), (#palettes * item_h) + S(16))
+        reaper.ImGui_SetNextWindowSizeConstraints(ctx, math.max(combo_width, S(180)), desired_h, 16384, 16384)
         if reaper.ImGui_BeginCombo(ctx, "##JKKLitePaletteCombo", " " .. GetPaletteName(active_palette), reaper.ImGui_ComboFlags_HeightLargest()) then
             for index, palette in ipairs(palettes) do
                 if reaper.ImGui_Selectable(ctx, GetPaletteName(palette) .. "##pal_" .. index, current_palette_idx == index) then

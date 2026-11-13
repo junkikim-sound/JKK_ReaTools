@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Loopmaker
 -- @author Junki Kim
--- @version 1.2.6
+-- @version 1.2.7
 --========================================================
 
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'
@@ -13,9 +13,9 @@ local RPR = reaper
 -- ==========================================
 local script_path = debug.getinfo(1, "S").source:sub(2):match("(.*[/\\])") or ""
 local theme_paths = {
-    script_path .. "Modules/JKK_Theme.lua",
-    script_path .. "../Modules/JKK_Theme.lua",
-    RPR.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme.lua"
+    script_path .. "Modules/JKK_Theme_Core.lua",
+    script_path .. "../Modules/JKK_Theme_Core.lua",
+    RPR.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme_Core.lua"
 }
 local sel_paths = {
     script_path .. "Modules/JKK_SelectionManager.lua",

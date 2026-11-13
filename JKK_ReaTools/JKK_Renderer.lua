@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Renderer
 -- @author Junki Kim
--- @version 1.1.5
+-- @version 1.1.6
 --========================================================
 
 local r = reaper
@@ -63,9 +63,9 @@ local cached_previews = {}
 -- =======================================================
 -- Theme Module Integration
 -- =======================================================
-local theme_path = r.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme.lua"
+local theme_path = r.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme_Core.lua"
 if not r.file_exists(theme_path) then
-  theme_path = script_path .. "Modules/JKK_Theme.lua"
+  theme_path = script_path .. "Modules/JKK_Theme_Core.lua"
 end
 
 local theme = r.file_exists(theme_path) and dofile(theme_path) or {}
@@ -175,6 +175,40 @@ local fade_shape_names = {
   "Cosine S-curve",
   "Quartic S-curve"
 }
+
+-- =======================================================
+-- Project Directory Resolution Helper
+-- =======================================================
+local function GetCurrentProjectFolder()
+  local _, proj_fn = r.EnumProjects(-1)
+  if proj_fn and proj_fn ~= "" then
+    local dir = proj_fn:match("(.+)[/\\]")
+    if dir and dir ~= "" then return dir end
+  end
+  return r.GetProjectPath("")
+end
+
+local function IsAbsolutePath(path)
+  if not path or path == "" then return false end
+  if path:match("^%a:[/\\]") then return true end
+  if path:match("^[/\\]") then return true end
+  return false
+end
+
+local function ResolveOutputDirectory(raw_dir)
+  local proj_dir = GetCurrentProjectFolder()
+  local trimmed = (raw_dir or ""):match("^%s*(.-)%s*$")
+  if trimmed == "" then
+    return proj_dir .. "\\Rendered", true, false
+  end
+  if IsAbsolutePath(trimmed) then
+    return trimmed, false, false
+  end
+  local rel = trimmed:gsub("^[/\\]+", "")
+  local sep = proj_dir:find("\\") and "\\" or "/"
+  rel = rel:gsub("[/\\]", sep)
+  return proj_dir .. sep .. rel, false, true
+end
 
 -- 탭 기본 데이터 생성
 local function CreateDefaultTabState(name)
@@ -632,8 +666,12 @@ end
 -- =======================================================
 local function ApplyRenderSettingsToProject(tab, p_item)
   local proj = 0
-  local dir = (tab.file_directory == "" or tab.file_directory:match("^%s*$")) and "" or tab.file_directory
-  r.GetSetProjectInfo_String(proj, "RENDER_FILE", dir, true)
+  local resolved_dir, is_empty = ResolveOutputDirectory(tab.file_directory)
+  local dir_to_set = is_empty and "" or resolved_dir
+  if dir_to_set ~= "" then
+    r.RecursiveCreateDirectory(dir_to_set, 0)
+  end
+  r.GetSetProjectInfo_String(proj, "RENDER_FILE", dir_to_set, true)
   r.GetSetProjectInfo_String(proj, "RENDER_PATTERN", tab.file_pattern, true)
   
   local settings_val = 0
@@ -898,7 +936,7 @@ local function ParseWildcards(tab, pattern, sel_track, sel_item, sel_region, fil
   if not out or out == "" then return "" end
 
   local p_name = r.GetProjectName(0, "")
-  p_name = p_name == "" and "Untitled" or p_name:gsub("%.RPP", "")
+  p_name = p_name == "" and "Untitled" or p_name:gsub("%.[rR][pP][pP]$", "")
   
   local track_name = "NoTrack"
   if sel_track then _, track_name = r.GetTrackName(sel_track) end
@@ -1546,17 +1584,8 @@ local function Main()
         r.UpdateArrange()
 
         if tab.open_folder then
-          local rv, proj_fn = r.EnumProjects(-1)
-          local proj_dir = ''
-          if proj_fn ~= '' then proj_dir = proj_fn:match('(.+)[/\\]') or ''
-          else proj_dir = r.GetProjectPath("") end
-          
-          local render_path = tab.file_directory
-          if render_path == '' or render_path:match("^%s*$") then render_path = proj_dir end
-          
-          if not render_path:match('^%a:[/\\]') and not render_path:match('^/') and not render_path:match('^\\\\') then
-            render_path = proj_dir .. '/' .. render_path
-          end
+          local render_path = ResolveOutputDirectory(tab.file_directory)
+          r.RecursiveCreateDirectory(render_path, 0)
           
           if r.CF_ShellExecute then
             r.CF_ShellExecute(render_path)
@@ -1601,7 +1630,8 @@ local function Main()
       PushAccentButtonStyle(ctx)
       if r.ImGui_Button(ctx, 'Browse...', 80) then
         if r.JS_Dialog_BrowseForFolder then
-          local ret, folder = r.JS_Dialog_BrowseForFolder("Output Directory", tab.file_directory)
+          local start_browse_dir = ResolveOutputDirectory(tab.file_directory)
+          local ret, folder = r.JS_Dialog_BrowseForFolder("Output Directory", start_browse_dir)
           if ret == 1 and folder ~= "" then tab.file_directory = folder end
         end
       end
@@ -1616,7 +1646,8 @@ local function Main()
       local open_add_fav_modal = false
       if r.ImGui_BeginPopup(ctx, 'fav_popup') then
         if r.ImGui_MenuItem(ctx, "+ Add Current Directory to Favorites...") then
-          fav_name_buf = tab.file_directory:match("([^\\/]+)$") or "My Favorite"
+          local resolved_fav = ResolveOutputDirectory(tab.file_directory)
+          fav_name_buf = resolved_fav:match("([^\\/]+)$") or "My Favorite"
           open_add_fav_modal = true
         end
         if #favorites > 0 then
@@ -1638,13 +1669,14 @@ local function Main()
       if open_add_fav_modal then r.ImGui_OpenPopup(ctx, "AddFavoriteModal") end
 
       if r.ImGui_BeginPopupModal(ctx, "AddFavoriteModal", nil, r.ImGui_WindowFlags_AlwaysAutoResize()) then
+        local resolved_fav_dir = ResolveOutputDirectory(tab.file_directory)
         r.ImGui_Text(ctx, "Favorite Name:")
         _, fav_name_buf = r.ImGui_InputText(ctx, "##fav_name", fav_name_buf)
-        r.ImGui_TextDisabled(ctx, "Path: " .. SmartShortenPath(ctx, tab.file_directory, 300))
+        r.ImGui_TextDisabled(ctx, "Path: " .. SmartShortenPath(ctx, resolved_fav_dir, 300))
         r.ImGui_Spacing(ctx)
         
         if r.ImGui_Button(ctx, "Save", 80, 0) then
-          if fav_name_buf ~= "" then table.insert(favorites, { name = fav_name_buf, path = tab.file_directory }); SaveAllExtState() end
+          if fav_name_buf ~= "" then table.insert(favorites, { name = fav_name_buf, path = resolved_fav_dir }); SaveAllExtState() end
           r.ImGui_CloseCurrentPopup(ctx)
         end
         r.ImGui_SameLine(ctx)
@@ -1912,9 +1944,9 @@ local function Main()
       local box_h1 = 56
       if r.ImGui_BeginChild(ctx, "dir_box", 0, box_h1, child_flags) then
         local box_w, _ = r.ImGui_GetContentRegionAvail(ctx)
-        local is_empty = (tab.file_directory == "" or tab.file_directory:match("^%s*$"))
-        local dir_title = is_empty and "Target Directory (project default render path):" or "Target Directory:"
-        local full_dir = is_empty and (r.GetProjectPath("") .. "\\Rendered (Default)") or tab.file_directory
+        local full_dir, is_empty, is_relative = ResolveOutputDirectory(tab.file_directory)
+        local dir_title = is_empty and "Target Directory (project default render path):"
+            or (is_relative and "Target Directory (relative to project folder):" or "Target Directory:")
         local display_dir = SmartShortenPath(ctx, full_dir, box_w - 40)
         
         local text_h = r.ImGui_GetTextLineHeight(ctx)

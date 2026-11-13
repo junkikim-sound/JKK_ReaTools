@@ -1,0 +1,1632 @@
+--========================================================
+-- @title JKK_Visualizer
+-- @author Junki Kim
+-- @version 1.5.0
+-- @provides 
+--     [effect] JKK_Visualizer.jsfx
+-- Huge thanks to Tobokegao (Japan) for helping update (to6okegao@gmail.com)
+-- he helped some features(lighter Editor saving, Target FPS setting, Low CPU Mode)
+--========================================================
+local jkk_theme_core_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme_Core.lua"
+local JKK_Theme = (reaper.file_exists(jkk_theme_core_path) and dofile(jkk_theme_core_path)) or nil
+local last_synced_theme_rev = -1
+
+local function apply_jkk_theme_to_visualizer()
+    if not JKK_Theme or not JKK_Theme.GetColorRGBA then return end
+    local function write_col(mem, r, g, b, a)
+        reaper.gmem_write(mem, r); reaper.gmem_write(mem+1, g)
+        reaper.gmem_write(mem+2, b); reaper.gmem_write(mem+3, a)
+    end
+    local function clamp01(v) return math.max(0.0, math.min(1.0, v)) end
+    local function mix(a, b, t) return a + (b - a) * t end
+
+    local bg_r, bg_g, bg_b = JKK_Theme.GetColorRGBA("base_bg")
+        bg_r = clamp01(bg_r - 5 / 255.0)
+        bg_g = clamp01(bg_g - 5 / 255.0)
+        bg_b = clamp01(bg_b - 5 / 255.0)
+    local tx_r, tx_g, tx_b = JKK_Theme.GetColorRGBA("text_main")
+    local ac_r, ac_g, ac_b = JKK_Theme.GetColorRGBA("accent_main")
+    local hl_r, hl_g, hl_b = JKK_Theme.GetColorRGBA("btn_highlight")
+
+    -- 배경 밝기 판별 (0.0 = 어두운 배경, 1.0 = 밝은 배경)
+    local bg_lum = 0.299 * bg_r + 0.587 * bg_g + 0.114 * bg_b
+    local is_light = (bg_lum > 0.5)
+
+    -- 1. Weak (Zero): 배경과 어우러지는 깊은 중간 톤
+    local z_r = mix(bg_r, ac_r, 0.55)
+    local z_g = mix(bg_g, ac_g, 0.55)
+    local z_b = mix(bg_b, ac_b, 0.55)
+
+    -- 2. Normal (Mid): 테마의 핵심 컬러(accent_main) 그대로 사용
+    local m_r, m_g, m_b = ac_r, ac_g, ac_b
+
+    -- 3. Strong (Peak): 다크 테마는 고휘도 하이라이트, 라이트 테마는 고대비 딥 컬러
+    local p_r, p_g, p_b
+    if is_light then
+        p_r = clamp01(ac_r * 0.42)
+        p_g = clamp01(ac_g * 0.42)
+        p_b = clamp01(ac_b * 0.42)
+    else
+        -- accent_main에 btn_highlight와 순백색을 섞어 에너지가 터지는 느낌 부여
+        p_r = clamp01(mix(ac_r, hl_r, 0.55) * 0.8 + 0.25)
+        p_g = clamp01(mix(ac_g, hl_g, 0.55) * 0.8 + 0.25)
+        p_b = clamp01(mix(ac_b, hl_b, 0.55) * 0.8 + 0.20)
+    end
+
+    write_col(1000, bg_r, bg_g, bg_b, 1.0)
+    write_col(1010, tx_r, tx_g, tx_b, 0.22)
+    write_col(1020, tx_r, tx_g, tx_b, 1.0)
+    write_col(1030, z_r,  z_g,  z_b,  0.22)
+    write_col(1040, m_r,  m_g,  m_b,  0.85)
+    write_col(1050, p_r,  p_g,  p_b,  1.00)
+    write_col(1060, tx_r, tx_g, tx_b, 0.85)
+end
+
+options = reaper.gmem_attach('JKK_Visualizer_Mem') 
+
+-- Low CPU mode ("PerfLite", off by default; Editor checkbox / ExtState JKK_Visualizer/PerfLite = "1").
+-- Effects: spectrum scanned once per pixel instead of once per FFT bin (same picture, ~4x fewer iterations),
+-- goniometer stride 2->4, scope stride 2->6, Symbiote vertices 150->90, and no redraw while in standby.
+PERF_LITE = (reaper.GetExtState("JKK_Visualizer", "PerfLite") == "1")
+local function read_perf_lite() PERF_LITE = (reaper.GetExtState("JKK_Visualizer", "PerfLite") == "1") end
+
+local win_w, win_h = 800, 150
+local saved_dock = tonumber(reaper.GetExtState("JKK_Visualizer", "DockState")) or 0
+local layout_mode = tonumber(reaper.GetExtState("JKK_Visualizer", "VerticalLayout")) or 0 -- 0: Horizontal, 1: Vertical
+gfx.init("JKK_Visualizer", win_w, win_h, saved_dock)
+
+-- Dock position memory: remember the home docker's screen position (0=bottom/1=left/2=top/3=right/4=floating)
+-- together with its index, so the window returns to its home docker even when a screenset change
+-- swaps the index <-> position mapping.
+local desired_dock_pos = tonumber(reaper.GetExtState("JKK_Visualizer", "DockPos")) or -1
+local desired_dock_idx = tonumber(reaper.GetExtState("JKK_Visualizer", "DockIdx")) or -1
+local last_dock_check = 0
+local last_user_mouse = 0
+
+local function find_docker_with_pos(pos, prefer_idx)
+    -- Only the remembered docker index is considered; other dockers are not searched
+    -- (with several dockers at the same position the window could end up merged into the wrong one).
+    if prefer_idx and prefer_idx >= 0 and reaper.DockGetPosition(prefer_idx) == pos then
+        return prefer_idx
+    end
+    return -1
+end
+
+local function remember_dock_state()
+    local cur = gfx.dock(-1)
+    if cur > 0 then
+        desired_dock_idx = math.floor(cur / 256)
+        desired_dock_pos = reaper.DockGetPosition(desired_dock_idx)
+    else
+        desired_dock_pos = -1
+    end
+    reaper.SetExtState("JKK_Visualizer", "DockPos", tostring(desired_dock_pos), true)
+    reaper.SetExtState("JKK_Visualizer", "DockIdx", tostring(desired_dock_idx), true)
+end
+
+local function enforce_dock_pos()
+    if desired_dock_pos < 0 or desired_dock_idx < 0 then return end
+    local cur = gfx.dock(-1)
+    local cur_idx = (cur > 0) and math.floor(cur / 256) or -1
+    -- Already in the home docker: nothing to do
+    if cur_idx == desired_dock_idx then return end
+    local home_pos = reaper.DockGetPosition(desired_dock_idx)
+    -- Only re-dock if the home docker still has its remembered position
+    -- (if the position itself changed, leave the window alone)
+    if home_pos == desired_dock_pos then
+        gfx.dock(desired_dock_idx * 256 + 1)
+    end
+end
+
+local function dock_guard()
+    local now = reaper.time_precise()
+    if gfx.mouse_cap % 2 == 1 then last_user_mouse = now end
+    if now - last_dock_check < 1.0 then return end
+    last_dock_check = now
+    -- Do not intervene within 3 s of a mouse drag (avoid fighting the user).
+    -- The home is never re-learned automatically; it only changes via right-click "Set current dock as home".
+    if now - last_user_mouse < 3.0 then return end
+    enforce_dock_pos()
+end
+
+if desired_dock_pos < 0 then
+    if gfx.dock(-1) > 0 then remember_dock_state() end
+else
+    enforce_dock_pos()
+end
+
+-- 사용자 설정 범위
+local g_gain_min, g_gain_max            = 0.0,  2.0
+local s_zoom_min, s_zoom_max            = 0.0,  2.5
+local spec_ceil_min, spec_ceil_max      = 100,  20
+local spec_floor_min, spec_floor_max    = -45, -45
+local spec_offset = 0
+local g_signal_attack = 0.00001
+local g_signal_release = 0.00001
+
+-- 데이터 버퍼 정보
+local buf_len = 100000
+local fft_size = 4096
+local fft_bins = 2048
+local ui_order = {1, 2, 3, 4, 6, 5}
+
+-- Display font, LUFS value size and module size ratios (synced with the Editor via gmem/ExtState)
+local g_font_name = "Arial"
+local g_lufs_val_scale = 1.0
+local module_ratios = {[1]=0.10, [2]=0.12, [3]=0.12, [4]=0.12, [5]=0.39, [6]=0.15}
+local default_ratios = {0.10, 0.12, 0.12, 0.12, 0.39, 0.15}
+
+-- Drag state inside the visualizer window (border resize / module reorder)
+local drag_mode = nil          -- "resize" / "arm_reorder" / "reorder"
+local drag_resize_k = nil
+local drag_src_k = nil
+local drag_start_x, drag_start_y = 0, 0
+local mouse_was_down = false
+g_ui_drag = false
+
+----------------------------------------------------------
+-- UI Values Setting
+----------------------------------------------------------
+    -- 전체 설정
+    local base_title_size = 20
+    local g_font_scale = 1
+    local bg_r, bg_g, bg_b, bg_a = 030/255, 030/255, 030/255, 1.0
+    local line_r, line_g, line_b, line_a = 200/255, 200/255, 200/255, 0.3
+    local text_r, text_g, text_b, text_a = 180/255, 180/255, 180/255, 1.0
+    local midpoint = 0.5
+    local steepness = 1.2
+
+    -- Gonio Color
+    local dot1_r, dot1_g, dot1_b, dot1_a = 006/255, 143/255, 195/255, 0.1
+    local dot2_r, dot2_g, dot2_b, dot2_a = 006/255, 143/255, 195/255, 0.8
+    local dot3_r, dot3_g, dot3_b, dot3_a = 227/255, 219/255, 142/255, 1.0
+    local gr_peak, gg_peak, gb_peak = 255/255, 000/255, 000/255      
+        local gonio_peak_hold_time = 2.0  
+        local gonio_max_peak_dots = 150   
+        local gonio_peaks = {} 
+        local phase_smooth = 0
+
+    -- Symbiote Color
+    local sym1_r, sym1_g, sym1_b, sym1_a = 006/255, 143/255, 195/255, 0.1
+    local sym2_r, sym2_g, sym2_b, sym2_a = 006/255, 143/255, 195/255, 0.8
+    local sym3_r, sym3_g, sym3_b, sym3_a = 227/255, 219/255, 142/255, 1.0
+        local sym_points = 150       
+        local sym_noise_speed = 5.0  
+        local sym_size_ratio = 0.3   
+        local sym_min_scale = 0.1    
+        local sym_max_scale = 1.0    
+        local sym_layers = 25        
+        local sym_time_accum = 0     
+        local s_bass_smooth = 0      
+        local s_width_smooth = 0     
+        local sym_spikiness = 0      
+
+    -- Scope Color
+    local scp1_r, scp1_g, scp1_b, scp1_a = 006/255, 143/255, 195/255, 0.1
+    local scp2_r, scp2_g, scp2_b, scp2_a = 006/255, 143/255, 195/255, 0.8
+    local scp3_r, scp3_g, scp3_b, scp3_a = 227/255, 219/255, 142/255, 1.0
+    local scope_speed = 0.1 
+
+    -- Spectrum & Waterfall Color
+    local sptr1_r, sptr1_g, sptr1_b, sptr1_a = 006/255, 143/255, 195/255, 0.1
+    local sptr2_r, sptr2_g, sptr2_b, sptr2_a = 006/255, 143/255, 195/255, 0.8
+    local sptr3_r, sptr3_g, sptr3_b, sptr3_a = 227/255, 219/255, 142/255, 1.0
+    local peak_r, peak_g, peak_b, peak_a     = 180/255, 180/255, 180/255, 1.0
+        local peak_hold_time = 0.5  
+        local spec_smooth_vals = {}
+        local spec_peaks = {} 
+        local spec_peak_times = {}
+        for i = 1, 4096 do 
+            spec_smooth_vals[i] = -144
+            spec_peaks[i] = -144 
+            spec_peak_times[i] = 0
+        end
+        
+        -- Waterfall 전용 변수
+        local waterfall_canvas_id = 1
+        local w_cursor_idx = 0
+        local w_last_w, w_last_h = 0, 0
+        local w_last_col_data = {}
+        local w_scan_speed = 12
+
+----------------------------------------------------------
+-- Functions: Features (LUFS, Gonio, Symbiote, Scope, Spectrum, Waterfall)
+----------------------------------------------------------
+    function draw_lufs(x, y, w, h)
+        local mom_val = reaper.gmem_read(20)
+        local short_val = reaper.gmem_read(21)
+        local mom_peak = reaper.gmem_read(22)
+        local short_peak = reaper.gmem_read(23)
+
+        local base_label_size = 17
+        local base_val_size = 35 * g_lufs_val_scale
+        local base_peak_size = 20 * g_lufs_val_scale
+
+        gfx.set(bg_r, bg_g, bg_b, bg_a)
+        gfx.rect(x, y, w, h, 1)
+        
+        -- MOMENTARY / SHORT-TERM side by side as two columns
+        local unit_w = w / 2
+        local m_cx = x + unit_w * 0.5
+        local s_cx = x + unit_w * 1.5
+
+        local m_str = (mom_val <= -100) and "- Inf" or string.format("%.1f", mom_val)
+        local s_str = (short_val <= -100) and "- Inf" or string.format("%.1f", short_val)
+        local mp_str = (mom_peak <= -100) and "- Inf" or string.format("%.1f", mom_peak)
+        -- an older JSFX never writes gmem[23] (stays 0) -> show "- Inf"
+        local sp_str = (short_peak <= -100 or short_peak == 0) and "- Inf" or string.format("%.1f", short_peak)
+
+        -- Labels (top)
+        gfx.setfont(1, g_font_name, base_label_size * g_font_scale)
+        gfx.set(text_r, text_g, text_b, text_a)
+        local lw, lab_h = gfx.measurestr("MOMENTARY")
+        local label_y = y + 6
+        gfx.x, gfx.y = m_cx - lw * 0.5, label_y
+        gfx.drawstr("MOMENTARY")
+        local slw = gfx.measurestr("SHORT-TERM")
+        gfx.x, gfx.y = s_cx - slw * 0.5, label_y
+        gfx.drawstr("SHORT-TERM")
+
+        -- Fit the value text as large as possible; the peak text is kept at <= 60% of the value size
+        -- (shrinking the peak frees height for the value, so this converges in a few passes)
+        local avail_top = label_y + lab_h + 2
+        local peak_size = base_peak_size * g_font_scale
+        local val_size, vh, peak_y
+        for pass = 1, 3 do
+            gfx.setfont(1, g_font_name, peak_size, "b")
+            local _, peak_h = gfx.measurestr(mp_str)
+            peak_y = y + h - peak_h - 6
+            local avail_h = peak_y - 4 - avail_top
+            val_size = base_val_size * g_font_scale
+            while true do
+                gfx.setfont(2, g_font_name, val_size, "b")
+                local mw2, mh2 = gfx.measurestr(m_str)
+                local sw2 = gfx.measurestr(s_str)
+                vh = mh2
+                if val_size <= 8 or (mh2 <= avail_h and math.max(mw2, sw2) <= unit_w - 10) then break end
+                val_size = val_size - 1
+            end
+            local max_peak = math.max(8, val_size * 0.6)
+            if peak_size > max_peak then peak_size = max_peak else break end
+        end
+        local avail_h = peak_y - 4 - avail_top
+        local val_y = avail_top + math.max(0, (avail_h - vh) * 0.5)
+
+        gfx.set(scp2_r, scp2_g, scp2_b, scp2_a)
+        local mw = gfx.measurestr(m_str)
+        gfx.x, gfx.y = m_cx - mw * 0.5, val_y
+        gfx.drawstr(m_str)
+        local sw = gfx.measurestr(s_str)
+        gfx.x, gfx.y = s_cx - sw * 0.5, val_y
+        gfx.drawstr(s_str)
+
+        -- Peak values, both columns
+        gfx.setfont(1, g_font_name, peak_size, "b")
+        gfx.set(scp3_r, scp3_g, scp3_b, scp3_a )
+        local mpw = gfx.measurestr(mp_str)
+        gfx.x, gfx.y = m_cx - mpw * 0.5, peak_y
+        gfx.drawstr(mp_str)
+        local spw = gfx.measurestr(sp_str)
+        gfx.x, gfx.y = s_cx - spw * 0.5, peak_y
+        gfx.drawstr(sp_str)
+
+        -- Center divider
+        gfx.set(line_r, line_g, line_b, line_a)
+        gfx.line(x + unit_w, y + 12, x + unit_w, y + h - 12)
+
+        gfx.setfont(1, g_font_name, base_title_size * g_font_scale)
+
+        if gfx.mouse_cap == 1 and not g_ui_drag then
+            if gfx.mouse_x >= x and gfx.mouse_x <= x + w and
+               gfx.mouse_y >= y + 24 and gfx.mouse_y <= y + h then
+                reaper.gmem_write(30, 1) 
+                gfx.set(1, 1, 1, 0.15)
+                gfx.rect(x, y, w, h, 1)
+            end
+        end
+    end
+
+    function draw_gonio(x, y, w, h, gain)
+        local srate = reaper.gmem_read(1)
+        if srate <= 0 then srate = 44100 end
+        
+        local base_trail = 2000 * (srate / 44100) 
+        local trail_len = math.floor(base_trail / (g_signal_release / 2))
+
+        local is_hover = (gfx.mouse_x >= x and gfx.mouse_x <= x + w and
+                          gfx.mouse_y >= y and gfx.mouse_y <= y + h)
+        if is_hover then
+            trail_len = trail_len * 3
+        end
+
+        local cx, cy = x + w * 0.5, y + h * 0.45
+        local dim_limit = math.min(w, h)
+        local guide_size = dim_limit * 0.37
+        local dot_size = dim_limit * 0.25 * gain 
+        local now = reaper.time_precise()            
+
+        local true_zero_limit = 1.0 
+        local visual_limit = guide_size / (2 * dot_size)
+
+        gfx.set(line_r, line_g, line_b, line_a * 3 / 2)
+        gfx.line(cx - guide_size, cy - guide_size, cx + guide_size, cy + guide_size)
+        gfx.line(cx + guide_size, cy - guide_size, cx - guide_size, cy + guide_size)            
+
+        local write_idx = reaper.gmem_read(0)            
+
+        local gonio_stride = PERF_LITE and 4 or 2
+        for i = 0, trail_len, gonio_stride do
+            local idx = (write_idx - i - 1) % buf_len
+            local l, r = reaper.gmem_read(10000 + idx), reaper.gmem_read(110000 + idx)
+
+            local exp = 0.8
+            local l_scaled = (l >= 0 and 1 or -1) * (math.abs(l) ^ exp)
+            local r_scaled = (r >= 0 and 1 or -1) * (math.abs(r) ^ exp)
+
+            local peak_intensity = math.max(math.abs(l), math.abs(r))
+            
+            if peak_intensity >= true_zero_limit and #gonio_peaks < gonio_max_peak_dots then
+                local l_p_scaled = (l >= 0 and 1 or -1) * (math.abs(l) ^ exp)
+                local r_p_scaled = (r >= 0 and 1 or -1) * (math.abs(r) ^ exp)
+
+                local cl = math.max(-visual_limit, math.min(visual_limit, l_p_scaled))
+                local cr = math.max(-visual_limit, math.min(visual_limit, r_p_scaled))
+                local px, py = cx + (cr - cl) * dot_size, cy - (cr + cl) * dot_size
+                table.insert(gonio_peaks, {px = px, py = py, time = now})
+            end
+
+            local t = math.min(1.0, peak_intensity / visual_limit)
+            local gonio_r, gonio_g, gonio_b, gonio_a
+
+            if t < midpoint then
+                local local_t = t / midpoint 
+                local curve = local_t ^ steepness                    
+                gonio_r = dot1_r + (dot2_r - dot1_r) * curve
+                gonio_g = dot1_g + (dot2_g - dot1_g) * curve
+                gonio_b = dot1_b + (dot2_b - dot1_b) * curve
+                gonio_a = dot1_a + (dot2_a - dot1_a) * curve
+            else
+                local local_t = (t - midpoint) / (1 - midpoint)
+                local curve = local_t ^ steepness                    
+                gonio_r = dot2_r + (dot3_r - dot2_r) * curve
+                gonio_g = dot2_g + (dot3_g - dot2_g) * curve
+                gonio_b = dot2_b + (dot3_b - dot2_b) * curve
+                gonio_a = dot2_a + (dot3_a - dot2_a) * curve
+            end
+
+            local cl = math.max(-visual_limit, math.min(visual_limit, l_scaled))
+            local cr = math.max(-visual_limit, math.min(visual_limit, r_scaled))
+            local px, py = cx + (cr - cl) * dot_size, cy - (cr + cl) * dot_size
+
+            gfx.set(gonio_r, gonio_g, gonio_b, (1 - (i / trail_len)))
+            gfx.x, gfx.y = px, py
+            gfx.setpixel(gonio_r, gonio_g, gonio_b)
+        end            
+
+        for i = #gonio_peaks, 1, -1 do
+            local p = gonio_peaks[i]
+            if (now - p.time) > gonio_peak_hold_time then
+                table.remove(gonio_peaks, i)
+            else
+                gfx.set(gr_peak, gg_peak, gb_peak, 1.0)
+                gfx.rect(p.px - 1, p.py - 1, 2, 2) 
+            end
+        end
+
+        local idx = (write_idx - 1) % buf_len
+        local l = reaper.gmem_read(10000 + idx)
+        local r = reaper.gmem_read(110000 + idx)
+
+        local dot_product = l * r
+        local mag_l = l * l
+        local mag_r = r * r
+        local denom = math.sqrt(mag_l * mag_r)            
+
+        local current_phase = 0
+        if denom > 0.000001 then current_phase = dot_product / denom end
+
+        phase_smooth = phase_smooth + (current_phase - phase_smooth) * 0.1            
+
+        -- Phase bar: match the guide width and align to the bottom edge
+        local bar_h = 4
+        local bar_w = math.min(w * 0.6, guide_size * 2)
+        local bar_x = x + (w - bar_w) * 0.5
+        local bar_y = y + h - bar_h - 8
+
+        gfx.set(line_r, line_g, line_b, line_a)
+        gfx.rect(bar_x, bar_y, bar_w, bar_h, 0)
+        gfx.line(bar_x + bar_w * 0.5, bar_y - 2, bar_x + bar_w * 0.5, bar_y + bar_h + 2)            
+
+        local indicator_x = bar_x + (bar_w * 0.5) + (phase_smooth * (bar_w * 0.5))
+
+        if phase_smooth >= 0 then
+            gfx.set(dot2_r, dot2_g, dot2_b, 0.8) 
+        else
+            gfx.set(1, 0, 0, 0.8) 
+        end            
+
+        gfx.rect(indicator_x - 1, bar_y - 2, 3, bar_h + 4, 1)
+
+        gfx.setfont(1, g_font_name, (base_title_size - 4) * g_font_scale) 
+        local label_padding = 5 
+
+        local tw_minus, th_minus = gfx.measurestr("-1")
+        gfx.x = bar_x - tw_minus - label_padding
+        gfx.y = bar_y + (bar_h * 1) - (th_minus * 0.5)
+        gfx.drawstr("-1")
+
+        local tw_plus, th_plus = gfx.measurestr("+1")
+        gfx.x = bar_x + bar_w + label_padding
+        gfx.y = bar_y + (bar_h * 1) - (th_plus * 0.5)
+        gfx.drawstr("+1")
+
+        gfx.set(line_r, line_g, line_b, line_a)
+        gfx.setfont(1, g_font_name, base_title_size * g_font_scale)
+        gfx.x, gfx.y = x + 5, y + 5
+        gfx.drawstr("Gonio")
+    end
+
+    function draw_symbiote(x, y, w, h, gain)
+        local sym_points = PERF_LITE and 90 or sym_points
+        local base_attack = 0.3
+        local base_release = 0.3
+
+        local sym_base_radius = math.min(w, h) * 0.45 * sym_size_ratio
+        local fixed_cx, fixed_cy = x + w * 0.5, y + h * 0.5
+        
+        local time = reaper.time_precise()
+        local drift_radius = 10.0 
+        local drift_speed = 0.7   
+        
+        local drift_x = math.sin(time * drift_speed) * drift_radius 
+                      + math.cos(time * drift_speed * 1.3) * (drift_radius * 0.5)
+        local drift_y = math.cos(time * drift_speed * 0.8) * drift_radius 
+                      + math.sin(time * drift_speed * 1.7) * (drift_radius * 0.5)
+
+        local cx, cy = fixed_cx + drift_x, fixed_cy + drift_y
+        
+        local write_idx = reaper.gmem_read(0)
+        local idx = (write_idx - 1) % buf_len
+        local l = reaper.gmem_read(10000 + idx)
+        local r = reaper.gmem_read(110000 + idx)
+        
+        local target_vol = (math.abs(l) + math.abs(r)) * 0.5 * gain
+        local target_width = math.abs(l - r) * gain
+        s_width_smooth = s_width_smooth + (target_width - s_width_smooth) * 0.1
+
+        local bass_sum = 0
+        for k = 2, 16 do 
+            bass_sum = bass_sum + reaper.gmem_read(300000 + k)
+        end
+        local current_bass = (bass_sum / 16) * gain * 0.032
+        local size_attack = base_attack * g_signal_attack
+        local size_release = base_release * g_signal_release
+        
+        local smoothing = (current_bass > s_bass_smooth) and size_attack or size_release
+        s_bass_smooth = s_bass_smooth + (current_bass - s_bass_smooth) * smoothing
+        
+        local spike_raw = 0
+        if current_bass > 1.7 then spike_raw = (current_bass - 0.25) * 2 end
+        spike_raw = math.min(0.5, spike_raw)
+
+        local spike_attack = size_attack * 1.5 
+        local spike_release = size_release * 1.0
+
+        local spike_smoothing = (spike_raw > sym_spikiness) and spike_attack or spike_release
+        sym_spikiness = sym_spikiness + (spike_raw - sym_spikiness) * math.min(1.0, spike_smoothing)
+
+        local cur_time = reaper.time_precise()
+        if not last_time then last_time = cur_time end
+        sym_time_accum = sym_time_accum + (cur_time - last_time) * (0.3 + target_vol * 12.0)
+        last_time = cur_time
+
+        local max_allowed_r = (math.min(w, h) * 0.5) - 5
+        local raw_r_dyn = sym_base_radius * (1 + s_bass_smooth * 0.5)
+        local clamped_r = math.min(max_allowed_r * 0.8, raw_r_dyn)
+        clamped_r = math.max(sym_base_radius * sym_min_scale, clamped_r)
+
+        local shape_points = {}
+        local stretch = 1.0 + (s_width_smooth * 2.0)
+
+        for i = 0, sym_points do
+            local angle = (i / sym_points) * 2 * math.pi
+            local n1 = math.sin(angle * 3 + sym_time_accum * sym_noise_speed)
+            local n2 = math.cos(angle * 5 - sym_time_accum * (sym_noise_speed * 0.2))
+            local wobble = (n1 + n2) * 0.12
+            local spike = math.sin(angle * 8 + sym_time_accum) * sym_spikiness * 0.3
+            local r_final = raw_r_dyn * (1 + wobble + spike)
+            
+            local dx = math.cos(angle) * r_final * stretch
+            local dy = math.sin(angle) * r_final * stretch
+            
+            local abs_dx = dx + drift_x
+            local abs_dy = dy + drift_y
+            local dist_from_fixed = math.sqrt(abs_dx*abs_dx + abs_dy*abs_dy)
+
+            if dist_from_fixed > max_allowed_r then
+                local scale = max_allowed_r / dist_from_fixed
+                local constrained_abs_dx = abs_dx * scale
+                local constrained_abs_dy = abs_dy * scale
+                dx = constrained_abs_dx - drift_x
+                dy = constrained_abs_dy - drift_y
+            end
+            shape_points[i] = { dx = dx, dy = dy }
+        end
+        
+        local t_col = math.min(1.0, clamped_r / (max_allowed_r * 0.8))
+
+        for j = sym_layers, 1, -1 do
+            local layer_t = j / sym_layers
+            local cur_r, cur_g, cur_b, cur_a
+            if layer_t < midpoint then
+                local local_t = (layer_t / midpoint) ^ steepness
+                cur_r = sym1_r + (sym2_r - sym1_r) * local_t
+                cur_g = sym1_g + (sym2_g - sym1_g) * local_t
+                cur_b = sym1_b + (sym2_b - sym1_b) * local_t
+                cur_a = sym1_a + (sym2_a - sym1_a) * local_t
+            else
+                local local_t = ((layer_t - midpoint) / (1 - midpoint)) ^ steepness
+                cur_r = sym2_r + (sym3_r - sym2_r) * local_t
+                cur_g = sym2_g + (sym3_g - sym2_g) * local_t
+                cur_b = sym2_b + (sym3_b - sym2_b) * local_t
+                cur_a = sym2_a + (sym3_a - sym2_a) * local_t
+            end
+            gfx.set(cur_r, cur_g, cur_b, cur_a)
+            local first_x, first_y, prev_x, prev_y
+            for i = 0, sym_points do
+                local p = shape_points[i]
+                local px, py = cx + p.dx * layer_t, cy + p.dy * layer_t
+                if i==0 then first_x,first_y=px,py; prev_x,prev_y=px,py else gfx.triangle(cx,cy,prev_x,prev_y,px,py); prev_x,prev_y=px,py end
+            end
+            gfx.triangle(cx, cy, prev_x, prev_y, first_x, first_y)
+        end
+        
+        gfx.set(sym3_r, sym3_g, sym3_b, 1.0)
+        local pp = shape_points[0]
+        for i = 1, sym_points do
+            local cp = shape_points[i]
+            gfx.line(cx+pp.dx, cy+pp.dy, cx+cp.dx, cy+cp.dy)
+            gfx.line(cx+pp.dx, cy+pp.dy+1, cx+cp.dx, cy+cp.dy+1)
+            pp = cp
+        end
+        gfx.line(cx+pp.dx, cy+pp.dy, cx+shape_points[0].dx, cy+shape_points[0].dy)
+
+        gfx.set(line_r, line_g, line_b, line_a)
+        gfx.x, gfx.y = x + 5, y + 5
+        gfx.drawstr("Symbiote")
+    end
+
+    function draw_scope(x, y, w, h, zoom)
+        local cy = y + h * 0.5
+        
+        local is_hover = (gfx.mouse_x >= x and gfx.mouse_x <= x + w and 
+                          gfx.mouse_y >= y and gfx.mouse_y <= y + h)
+        local is_user_frozen = is_hover and (gfx.mouse_cap & 1 == 1) and not g_ui_drag
+        local is_frozen = is_user_frozen or g_is_standby
+
+        if not scope_last_idx then scope_last_idx = reaper.gmem_read(0) end
+        local write_idx = is_frozen and scope_last_idx or reaper.gmem_read(0)
+        if not is_frozen then scope_last_idx = write_idx end
+        
+        local srate = reaper.gmem_read(1)
+        if srate <= 0 then srate = 44100 end
+        local scope_speed_scaled = scope_speed * (srate / 44100)
+        local step = (buf_len / w) * scope_speed_scaled
+
+        if is_hover then
+            step = (buf_len / w) * 0.3 * (srate / 44100)
+        end
+        local scan_stride = PERF_LITE and 6 or 2
+
+        for m = 0, w - 1 do
+            local start_pos = (write_idx - (w - m) * step)
+            
+            local max_v = -100 
+            local min_v = 100  
+            local abs_peak = 0 
+            
+            for s = 0, step - 1, scan_stride do
+                local read_ptr = math.floor(start_pos + s) % buf_len
+                local raw_val = reaper.gmem_read(10000 + read_ptr) 
+                
+                if raw_val > max_v then max_v = raw_val end
+                if raw_val < min_v then min_v = raw_val end
+                
+                local abs_v = math.abs(raw_val)
+                if abs_v > abs_peak then abs_peak = abs_v end
+            end
+            
+            local draw_max = max_v * zoom * 0.5
+            local draw_min = min_v * zoom * 0.5
+            
+            local y_top = cy - (draw_max * h)
+            local y_bottom = cy - (draw_min * h)
+            
+            y_top = math.max(y, math.min(y + h, y_top))
+            y_bottom = math.max(y, math.min(y + h, y_bottom))
+            
+            local t = math.min(1.0, abs_peak * zoom)
+            local local_t = t ^ steepness
+            local scp_r, scp_g, scp_b, scp_a
+
+            if t < midpoint then
+                local local_t = t / midpoint
+                local curve = local_t ^ steepness
+                scp_r = scp1_r + (scp2_r - scp1_r) * curve
+                scp_g = scp1_g + (scp2_g - scp1_g) * curve
+                scp_b = scp1_b + (scp2_b - scp1_b) * curve
+                scp_a = scp1_a + (scp2_a - scp1_a) * curve
+            else
+                local local_t = (t - midpoint) / (1 - midpoint)
+                local curve = local_t ^ steepness
+                scp_r = scp2_r + (scp3_r - scp2_r) * curve
+                scp_g = scp2_g + (scp3_g - scp2_g) * curve
+                scp_b = scp2_b + (scp3_b - scp2_b) * curve
+                scp_a = scp2_a + (scp3_a - scp2_a) * curve
+            end
+            
+            gfx.set(scp_r, scp_g, scp_b, scp_a)
+
+            if math.abs(y_bottom - y_top) < 1 then
+                gfx.rect(x + m, y_top, 1, 1)
+            else
+                gfx.line(x + m, y_top, x + m, y_bottom)
+            end
+        end
+        
+        gfx.set(line_r, line_g, line_b, line_a)
+        gfx.x, gfx.y = x + 5, y + 5
+        gfx.drawstr("Scope")
+
+        if is_user_frozen then
+            gfx.set(227/255, 219/255, 142/255, 1.0)
+            local fw, fh = gfx.measurestr("FREEZE")
+            gfx.x, gfx.y = x + w - fw - 5, y + 5
+            gfx.drawstr("FREEZE")
+        end
+    end
+
+    local function freq_to_note(freq)
+        if freq <= 0 then return "N/A" end
+        local n = 12 * (math.log(freq / 440, 2)) + 69
+        local midi_int = math.floor(n + 0.5)
+        local names = {"C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"}
+        local note_idx = (midi_int % 12) + 1
+        local octave = math.floor(midi_int / 12) - 1
+        return names[note_idx] .. octave
+    end
+
+    function draw_spectrum(x, y, w, h, ceil, floor)
+        local base_area_decay = 2.0 
+        local base_peak_decay = 1.0 
+        local area_decay_rate = base_area_decay * g_signal_release
+        local peak_decay_rate = base_peak_decay * g_signal_release
+        
+        local is_hover = (gfx.mouse_x >= x and gfx.mouse_x <= x + w and 
+                      gfx.mouse_y >= y and gfx.mouse_y <= y + h)
+        local is_user_frozen = is_hover and (gfx.mouse_cap & 1 == 1) and not g_ui_drag
+        local is_frozen = is_user_frozen or g_is_standby
+        if is_hover and not is_frozen then
+            area_decay_rate = 1.0 * g_signal_release
+        end
+
+        local range = ceil - floor
+        local srate = reaper.gmem_read(1)
+        if srate == 0 then srate = 48000 end
+        local now = reaper.time_precise()
+        local target_max_hz = 48000
+        local max_k = target_max_hz * fft_size / srate
+        local k_max_log = math.log(max_k)
+        
+        gfx.set(line_r, line_g, line_b, line_a)
+        
+        local ox, oy = x, y + h
+        local pox, poy = x, y + h
+        local k = 1
+        local spec_px_mult = math.exp(k_max_log / math.max(1, w)) - 1  -- k increment ratio needed to advance one pixel
+        while k <= max_k do
+            local k_int = math.floor(k)
+            local k_frac = k - k_int
+            
+            local k_idx = math.floor(k * 10)
+            
+            local mag1 = reaper.gmem_read(300000 + k_int)
+            local mag2 = reaper.gmem_read(300000 + k_int + 1)
+            local mag = mag1 + (mag2 - mag1) * k_frac
+
+            local pure_db = 20 * math.log(mag + 0.0000001, 10)
+            local raw_db = pure_db - spec_offset
+            if pure_db < -120 then 
+                raw_db = floor - 10 
+            end
+
+            local db = raw_db
+
+            local smooth_db = spec_smooth_vals[k_idx] or (floor - 10)
+            
+            if not is_frozen then 
+                if raw_db >= smooth_db then
+                    local attack_coef = math.min(1.0, 0.8 * g_signal_attack) 
+                    smooth_db = smooth_db + (raw_db - smooth_db) * attack_coef
+                else
+                    smooth_db = smooth_db - area_decay_rate
+                end
+                spec_smooth_vals[k_idx] = smooth_db
+            end
+
+            local current_peak = spec_peaks[k_idx] or -144
+            local last_time = spec_peak_times[k_idx] or 0
+            
+            if not is_frozen then 
+                if db >= current_peak then
+                    spec_peaks[k_idx] = db
+                    spec_peak_times[k_idx] = now
+                else
+                    if (now - last_time) > peak_hold_time then
+                        spec_peaks[k_idx] = current_peak - peak_decay_rate
+                    end
+                end
+            end
+            local peak_db = spec_peaks[k_idx]
+
+            local t_raw = (smooth_db - floor) / range
+            t_raw = math.max(0, math.min(1, t_raw))
+            local t = t_raw ^ 1.5 
+            
+            local dy = y + h - (t * h)
+            
+            local pt_raw = (peak_db - floor) / range
+            local pt = math.max(0, math.min(1, pt_raw)) ^ 1.5
+            local pdy = y + h - (pt * h)
+
+            local x_norm = math.log(k) / k_max_log
+            local dx = x + (x_norm * w)
+            
+            if t < midpoint then
+                local local_t = t / midpoint 
+                local curve = local_t ^ steepness
+                sptr_r = sptr1_r + (sptr2_r - sptr1_r) * curve
+                sptr_g = sptr1_g + (sptr2_g - sptr1_g) * curve
+                sptr_b = sptr1_b + (sptr2_b - sptr1_b) * curve
+                sptr_a = sptr1_a + (sptr2_a - sptr1_a) * curve
+            else
+                local local_t = (t - midpoint) / (1 - midpoint)
+                local curve = local_t ^ steepness
+                sptr_r = sptr2_r + (sptr3_r - sptr2_r) * curve
+                sptr_g = sptr2_g + (sptr3_g - sptr2_g) * curve
+                sptr_b = sptr2_b + (sptr3_b - sptr2_b) * curve
+                sptr_a = sptr2_a + (sptr3_a - sptr2_a) * curve
+            end
+            
+            gfx.set(sptr_r, sptr_g, sptr_b, sptr_a)
+            if k > 1 then
+                gfx.triangle(ox, y + h, ox, oy, dx, dy, dx, y + h)
+            end
+            
+            gfx.set(peak_r, peak_g, peak_b, peak_a)
+            if k > 1 then
+                gfx.line(pox, poy, dx, pdy)
+            end
+            
+            ox, oy = dx, dy
+            pox, poy = dx, pdy
+            
+            local step = 1
+            if PERF_LITE then
+                step = k * spec_px_mult
+                if step < 0.25 then step = 0.25 end
+            elseif k <= 200 then
+                step = 0.2
+            else
+                step = k * 0.005
+            end
+            k = k + step
+        end
+        
+        gfx.set(line_r, line_g, line_b, line_a)
+        local freqs = {100, 1000, 10000}
+        local labels = {"100", "1k", "10k"}
+        for i, freq in ipairs(freqs) do
+            local k = freq * (fft_size) / srate
+            if k > 0 then
+                local x_norm = math.log(k) / k_max_log
+                if x_norm > 0 and x_norm < 1 then
+                    local gx = x + x_norm * w
+                    gfx.line(gx, y, gx, y + h)
+                    gfx.x, gfx.y = gx + 2, y + h - 22
+                    gfx.drawstr(labels[i])
+                end
+            end
+        end
+        
+        if gfx.mouse_x >= x and gfx.mouse_x <= x + w and gfx.mouse_y >= y and gfx.mouse_y <= y + h then
+            local x_norm = (gfx.mouse_x - x) / w
+            local k_val = math.exp(x_norm * k_max_log)
+            local hz = k_val * srate / fft_size
+            
+            local note = freq_to_note(hz)
+            local info_text = string.format("%.0f Hz (%s)", hz, note)
+            
+            gfx.setfont(1, g_font_name, (base_title_size) * g_font_scale)
+            local tw, th = gfx.measurestr(info_text)
+            local tx, ty = gfx.mouse_x + 10, gfx.mouse_y - 20
+            
+            if tx + tw > gfx.w then tx = gfx.mouse_x - tw - 10 end
+            if ty < 0 then ty = gfx.mouse_y + 20 end
+            
+            gfx.set(bg_r, bg_g, bg_b, 0.9) 
+            gfx.rect(tx - 4, ty - 2, tw + 8, th + 4, 1)
+            
+            gfx.set(line_r, line_g, line_b, 0.5)
+            gfx.rect(tx - 4, ty - 2, tw + 8, th + 4, 0)
+
+            gfx.set(1, 1, 1, 1) 
+            gfx.x, gfx.y = tx, ty
+            gfx.drawstr(info_text)
+            
+            gfx.set(line_r, line_g, line_b, 0.3)
+            gfx.line(gfx.mouse_x, y, gfx.mouse_x, y + h)
+            
+            gfx.setfont(1, g_font_name, base_title_size * g_font_scale)
+        end
+
+        gfx.set(line_r, line_g, line_b, line_a)
+        gfx.x, gfx.y = x + 5, y + 5
+        gfx.drawstr("Spectrum")
+
+        if is_user_frozen then
+            gfx.set(227/255, 219/255, 142/255, 1.0)
+            local fw, fh = gfx.measurestr("FREEZE")
+            gfx.x, gfx.y = x + w - fw - 5, y + 5
+            gfx.drawstr("FREEZE")
+        end
+    end
+
+    function draw_spectrogram(x, y, w, h, gain, floor_db)
+        local is_hover = (gfx.mouse_x >= x and gfx.mouse_x <= x + w and 
+                          gfx.mouse_y >= y and gfx.mouse_y <= y + h)
+        local is_user_frozen = is_hover and (gfx.mouse_cap & 1 == 1) and not g_ui_drag
+        local is_frozen = is_user_frozen or g_is_standby
+
+        local current_scan_speed = w_scan_speed
+        if is_hover and not is_frozen then
+            current_scan_speed = math.max(1, math.floor(w_scan_speed * 0.25)) 
+        end
+
+        if w ~= w_last_w or h ~= w_last_h then
+            gfx.dest = waterfall_canvas_id
+            gfx.setimgdim(waterfall_canvas_id, -1, -1)
+            gfx.setimgdim(waterfall_canvas_id, w, h)
+            gfx.set(bg_r, bg_g, bg_b, 1) 
+            gfx.rect(0, 0, w, h, 1)
+            w_last_w, w_last_h = w, h
+            w_last_col_data = {}
+            w_cursor_idx = 0
+        end
+
+        local RES_W = math.floor(w) * 2
+        local RES_H = math.floor(h)
+        if RES_H < 10 then RES_H = 10 end
+        local block_w = w / RES_W
+        local block_h = h / RES_H
+        local scale_exponent = 3.0 
+
+        local srate = reaper.gmem_read(1)
+        if srate <= 0 then srate = 48000 end
+        local min_hz = 50
+        local min_bin = min_hz * fft_size / srate
+        local num_bins = fft_size / 2
+        local bin_range = num_bins - min_bin
+
+        local val_threshold = 1.0
+        local val_gain = 0.25
+        local thresh_db = -100 + (val_threshold * 80)
+        local gain_boost = val_gain * 60
+
+        if not is_frozen then
+            local col_data = {}
+            for y_px = 0, RES_H - 1 do
+                local norm_y = (RES_H - 1 - y_px) / RES_H
+                local idx_float = min_bin + (bin_range * (norm_y ^ scale_exponent))
+                local i1 = math.floor(idx_float)
+                local t = idx_float - i1
+                local i2 = math.min(num_bins - 1, i1 + 1)
+                
+                local p1 = reaper.gmem_read(300000 + i1)
+                local p2 = reaper.gmem_read(300000 + i2)
+                
+                local raw = p1 + (p2 - p1) * t
+                if raw < 1e-10 then raw = 1e-10 end
+                col_data[y_px] = 20 * math.log(raw, 10)
+            end
+
+            if w_last_col_data[0] == nil then 
+                w_last_col_data = col_data 
+            end
+
+            gfx.dest = waterfall_canvas_id
+            for s = 0, current_scan_speed - 1 do
+                local current_idx = (w_cursor_idx + s) % RES_W
+                local screen_x = current_idx * block_w
+                local horiz_t = s / current_scan_speed
+                
+                gfx.set(bg_r, bg_g, bg_b, 1)
+                gfx.rect(screen_x, 0, block_w + 1, h, 1)
+
+                for y_px = 0, RES_H - 1 do
+                    local prev_db = w_last_col_data[y_px] or col_data[y_px]
+                    local interp_db = prev_db * (1 - horiz_t) + col_data[y_px] * horiz_t
+                    
+                    if interp_db >= thresh_db then
+                        local effective_db = (interp_db - thresh_db) + gain_boost
+                        local intensity = effective_db / 60.0
+                        if intensity > 0.05 then
+                            if intensity > 1 then intensity = 1 end
+                            local c_r, c_g, c_b, c_a
+                            local w_sptr2_a = sptr2_a * 0.7
+                            if intensity < 0.5 then
+                                local t_c = intensity * 2.0
+                                c_r = sptr1_r + (sptr2_r - sptr1_r) * t_c
+                                c_g = sptr1_g + (sptr2_g - sptr1_g) * t_c
+                                c_b = sptr1_b + (sptr2_b - sptr1_b) * t_c
+                                c_a = sptr1_a + (w_sptr2_a - sptr1_a) * t_c
+                            else
+                                local t_c = (intensity - 0.5) * 2.0
+                                c_r = sptr2_r + (sptr3_r - sptr2_r) * t_c
+                                c_g = sptr2_g + (sptr3_g - sptr2_g) * t_c
+                                c_b = sptr2_b + (sptr3_b - sptr2_b) * t_c
+                                c_a = w_sptr2_a + (sptr3_a - w_sptr2_a) * t_c
+                            end
+                            gfx.set(c_r, c_g, c_b, c_a)
+                            gfx.rect(screen_x, y_px * block_h, block_w + 0.5, block_h + 0.1, 1)
+                        end
+                    end
+                end
+            end
+            w_last_col_data = col_data
+        end
+
+        gfx.dest = -1
+        gfx.set(1, 1, 1, 1)
+        
+        local advance = is_frozen and 0 or current_scan_speed
+        local split_x = (w_cursor_idx + advance) * block_w
+        
+        gfx.blit(waterfall_canvas_id, 1, 0, split_x, 0, w - split_x, h, x, y, w - split_x, h)
+        gfx.blit(waterfall_canvas_id, 1, 0, 0, 0, split_x, h, x + w - split_x, y, split_x, h)
+
+        local function draw_freq_line(hz_val, label_text)
+            local target_bin = hz_val * fft_size / srate
+            if target_bin < min_bin then return end
+            local norm_y = ((target_bin - min_bin) / bin_range) ^ (1 / scale_exponent)
+            local line_y = y + (1 - norm_y) * h
+            
+            gfx.set(line_r, line_g, line_b, line_a / 2) 
+            gfx.line(x, line_y, x + w, line_y)
+            
+            gfx.set(text_r, text_g, text_b, text_a / 3)
+            gfx.x = x + 5; gfx.y = line_y - 12
+            gfx.drawstr(label_text)
+        end
+        
+        draw_freq_line(10000, "10k")
+        draw_freq_line(1000, "1k")
+        draw_freq_line(100, "100")
+
+        if is_hover then
+            local norm_y = 1 - ((gfx.mouse_y - y) / h)
+            local idx_float = min_bin + (bin_range * (norm_y ^ scale_exponent))
+            local hz = idx_float * srate / fft_size
+            local note = freq_to_note(hz)
+            local info_text = string.format("%.0f Hz (%s)", hz, note)
+            
+            gfx.setfont(1, g_font_name, base_title_size * g_font_scale)
+            local tw, th = gfx.measurestr(info_text)
+            local tx, ty = gfx.mouse_x + 10, gfx.mouse_y - 20
+            if tx + tw > gfx.w then tx = gfx.mouse_x - tw - 10 end
+            if ty < 0 then ty = gfx.mouse_y + 20 end
+            
+            gfx.set(bg_r, bg_g, bg_b, 0.9) 
+            gfx.rect(tx - 4, ty - 2, tw + 8, th + 4, 1)
+            gfx.set(line_r, line_g, line_b, 0.5)
+            gfx.rect(tx - 4, ty - 2, tw + 8, th + 4, 0)
+
+            gfx.set(text_r, text_g, text_b, text_a)
+            gfx.x, gfx.y = tx, ty
+            gfx.drawstr(info_text)
+            
+            gfx.set(line_r, line_g, line_b, 0.3)
+            gfx.line(x, gfx.mouse_y, x + w, gfx.mouse_y)
+        end
+
+        gfx.set(line_r, line_g, line_b, line_a)
+        gfx.x, gfx.y = x + 5, y + 5
+        gfx.drawstr("Spectrogram")
+
+        if is_user_frozen then
+            gfx.set(227/255, 219/255, 142/255, 1.0)
+            local fw, fh = gfx.measurestr("FREEZE")
+            gfx.x, gfx.y = x + w - fw - 5, y + 5
+            gfx.drawstr("FREEZE")
+        elseif not is_frozen then
+            w_cursor_idx = (w_cursor_idx + current_scan_speed) % RES_W
+        end
+    end
+
+----------------------------------------------------------
+-- Functions: Color Setting
+----------------------------------------------------------
+    local MEM_BG    = 1000
+    local MEM_LINE  = 1010
+    local MEM_TEXT  = 1020
+    local MEM_ZERO  = 1030
+    local MEM_MID   = 1040
+    local MEM_PEAK  = 1050
+
+    local SECTION = "JKK_Visualizer"
+
+    function LoadSettingsFromExtState()
+        for i = 1000, 1100 do
+            local key = "MEM_" .. i
+            if reaper.HasExtState(SECTION, key) then
+                local val = tonumber(reaper.GetExtState(SECTION, key))
+                reaper.gmem_write(i, val)
+            end
+        end
+
+        if reaper.HasExtState(SECTION, "FontScale") then
+            local val = tonumber(reaper.GetExtState(SECTION, "FontScale"))
+            reaper.gmem_write(1300, val)
+        end
+
+        if reaper.HasExtState(SECTION, "LufsValScale") then
+            local val = tonumber(reaper.GetExtState(SECTION, "LufsValScale"))
+            if val then reaper.gmem_write(1301, val) end
+        end
+
+        if reaper.HasExtState(SECTION, "ModuleRatios") then
+            local idx = 1
+            for val in string.gmatch(reaper.GetExtState(SECTION, "ModuleRatios"), '([^,]+)') do
+                local n = tonumber(val)
+                if n and n > 0 and idx <= 6 then reaper.gmem_write(1200 + idx, n) end
+                idx = idx + 1
+            end
+        end
+
+        if reaper.HasExtState(SECTION, "ModuleOrder") then
+            local order_str = reaper.GetExtState(SECTION, "ModuleOrder")
+            local idx = 1
+            for val in string.gmatch(order_str, '([^,]+)') do
+                local n = tonumber(val)
+                if n then
+                    ui_order[idx] = n
+                    reaper.gmem_write(1100 + idx, n)
+                    idx = idx + 1
+                end
+            end
+        end
+    end
+
+    function init_default_colors()
+        reaper.gmem_write(1000, 030/255); reaper.gmem_write(1001, 030/255); reaper.gmem_write(1002, 030/255); reaper.gmem_write(1003, 1.0) 
+        reaper.gmem_write(1010, 200/255); reaper.gmem_write(1011, 200/255); reaper.gmem_write(1012, 200/255); reaper.gmem_write(1013, 0.3) 
+        reaper.gmem_write(1020, 180/255); reaper.gmem_write(1021, 180/255); reaper.gmem_write(1022, 180/255); reaper.gmem_write(1023, 1.0) 
+
+        reaper.gmem_write(1030, 006/255); reaper.gmem_write(1031, 143/255); reaper.gmem_write(1032, 195/255); reaper.gmem_write(1033, 0.1) 
+        reaper.gmem_write(1040, 006/255); reaper.gmem_write(1041, 143/255); reaper.gmem_write(1042, 195/255); reaper.gmem_write(1043, 0.8) 
+        reaper.gmem_write(1050, 227/255); reaper.gmem_write(1051, 219/255); reaper.gmem_write(1052, 142/255); reaper.gmem_write(1053, 1.0) 
+        reaper.gmem_write(1060, 180/255); reaper.gmem_write(1061, 180/255); reaper.gmem_write(1062, 180/255); reaper.gmem_write(1063, 1.0) 
+
+        reaper.gmem_write(2, 0.5) 
+        reaper.gmem_write(6, 0.5) 
+        reaper.gmem_write(7, 0.5) 
+        reaper.gmem_write(8, 0.5) 
+        reaper.gmem_write(9, 0.5) -- Waterfall Default
+        reaper.gmem_write(1300, 1.0)
+        reaper.gmem_write(1301, 1.0)
+        reaper.gmem_write(4, 1.0)
+        reaper.gmem_write(5, 1.0)
+
+        for i=1, 6 do reaper.gmem_write(1100 + i, i) end
+        for i=1, 6 do reaper.gmem_write(1200 + i, default_ratios[i]) end
+    end
+
+    local standby_frames, standby_sig = 0, nil
+    
+    function update_settings_from_gmem()
+        if reaper.GetExtState("JKK_Visualizer", "FollowJKKTheme") == "1" then
+            local rev = tonumber(reaper.GetExtState("JKK_Theme", "revision")) or 0
+            if rev ~= last_synced_theme_rev then
+                last_synced_theme_rev = rev
+                if reaper.file_exists(jkk_theme_core_path) then
+                    JKK_Theme = dofile(jkk_theme_core_path)
+                end
+                apply_jkk_theme_to_visualizer()
+                standby_frames = 0
+                w_last_w = 0
+            end
+        end
+
+        if reaper.gmem_read(1003) == 0 then
+            LoadSettingsFromExtState()
+            if reaper.gmem_read(1003) == 0 then
+                init_default_colors()
+            end
+        end
+            local att = reaper.gmem_read(4)
+            local rel = reaper.gmem_read(5)
+            if att > 0 then g_signal_attack = att else g_signal_attack = 1.0 end
+            if rel > 0 then g_signal_release = rel else g_signal_release = 1.0 end
+
+            local lufs_scale = reaper.gmem_read(1301)
+            g_lufs_val_scale = (lufs_scale > 0) and lufs_scale or 1.0
+            for i = 1, 6 do
+                local rv = reaper.gmem_read(1200 + i)
+                if rv > 0.001 then module_ratios[i] = rv end
+            end
+            local fn = reaper.GetExtState(SECTION, "FontName")
+            g_font_name = (fn ~= "") and fn or "Arial"
+
+        if reaper.gmem_read(1100) > 0 then
+            reaper.gmem_write(1100, 0)
+        end
+        if reaper.gmem_read(1000 + 3) == 0 then return end
+
+            bg_r = reaper.gmem_read(1000); bg_g = reaper.gmem_read(1001); bg_b = reaper.gmem_read(1002); bg_a = reaper.gmem_read(1003)
+            line_r = reaper.gmem_read(1010); line_g = reaper.gmem_read(1011); line_b = reaper.gmem_read(1012); line_a = reaper.gmem_read(1013)
+            text_r = reaper.gmem_read(1020); text_g = reaper.gmem_read(1021); text_b = reaper.gmem_read(1022); text_a = reaper.gmem_read(1023)
+
+            local c1_r = reaper.gmem_read(1030); local c1_g = reaper.gmem_read(1031); local c1_b = reaper.gmem_read(1032); local c1_a = reaper.gmem_read(1033)
+            local c2_r = reaper.gmem_read(1040); local c2_g = reaper.gmem_read(1041); local c2_b = reaper.gmem_read(1042); local c2_a = reaper.gmem_read(1043)
+            local c3_r = reaper.gmem_read(1050); local c3_g = reaper.gmem_read(1051); local c3_b = reaper.gmem_read(1052); local c3_a = reaper.gmem_read(1053)
+            local c4_r = reaper.gmem_read(1060); local c4_g = reaper.gmem_read(1061); local c4_b = reaper.gmem_read(1062); local c4_a = reaper.gmem_read(1063)
+
+            dot1_r, dot1_g, dot1_b, dot1_a = c1_r, c1_g, c1_b, c1_a
+            dot2_r, dot2_g, dot2_b, dot2_a = c2_r, c2_g, c2_b, c2_a
+            dot3_r, dot3_g, dot3_b, dot3_a = c3_r, c3_g, c3_b, c3_a
+            gr_peak, gg_peak, gb_peak      = c3_r, c3_g, c3_b 
+
+            sym1_r, sym1_g, sym1_b, sym1_a = c1_r, c1_g, c1_b, c1_a
+            sym2_r, sym2_g, sym2_b, sym2_a = c2_r, c2_g, c2_b, c2_a
+            sym3_r, sym3_g, sym3_b, sym3_a = c3_r, c3_g, c3_b, c3_a
+
+            scp1_r, scp1_g, scp1_b, scp1_a = c1_r, c1_g, c1_b, c1_a
+            scp2_r, scp2_g, scp2_b, scp2_a = c2_r, c2_g, c2_b, c2_a
+            scp3_r, scp3_g, scp3_b, scp3_a = c3_r, c3_g, c3_b, c3_a
+
+            sptr1_r, sptr1_g, sptr1_b, sptr1_a = c1_r, c1_g, c1_b, c1_a
+            sptr2_r, sptr2_g, sptr2_b, sptr2_a = c2_r, c2_g, c2_b, c2_a
+            sptr3_r, sptr3_g, sptr3_b, sptr3_a = c3_r, c3_g, c3_b, c3_a
+            peak_r, peak_g, peak_b, peak_a = c4_r, c4_g, c4_b, c4_a
+
+            for i=1, 6 do
+                local order_val = reaper.gmem_read(1100 + i)
+                if order_val > 0 then ui_order[i] = order_val end
+            end
+
+            local scale_val = reaper.gmem_read(1300)
+            if scale_val > 0 then 
+                g_font_scale = scale_val 
+            else
+                g_font_scale = 1.0
+            end
+    end
+
+    local function Initialize_System()
+        local function load_color(mem_idx, ext_key)
+            if reaper.HasExtState(SECTION, "MEM_"..mem_idx) then
+                reaper.gmem_write(mem_idx, tonumber(reaper.GetExtState(SECTION, "MEM_"..mem_idx)))
+                return true
+            end
+            return false
+        end
+
+        local loaded = load_color(1000, "MEM_1000")
+        if reaper.gmem_read(1003) == 0 then
+            reaper.gmem_write(2, 0.5) 
+            reaper.gmem_write(4, 1.0) 
+            reaper.gmem_write(5, 1.0) 
+            reaper.gmem_write(1300, 1.0) 
+        end
+
+        if reaper.HasExtState(SECTION, "ModuleOrder") then
+            local order_str = reaper.GetExtState(SECTION, "ModuleOrder")
+            local idx = 1
+            for val in string.gmatch(order_str, '([^,]+)') do
+                reaper.gmem_write(1100 + idx, tonumber(val))
+                idx = idx + 1
+            end
+        else
+            for i=1, 6 do reaper.gmem_write(1100 + i, i) end
+        end
+
+        if reaper.HasExtState(SECTION, "ModuleActive") then
+            local active_str = reaper.GetExtState(SECTION, "ModuleActive")
+            local idx = 1
+            for val in string.gmatch(active_str, '([^,]+)') do
+                reaper.gmem_write(1150 + idx, (val == "1" and 1 or 0))
+                idx = idx + 1
+            end
+        else
+            for i=1, 6 do reaper.gmem_write(1150 + i, 1) end
+        end
+
+        if reaper.HasExtState(SECTION, "ModuleRatios") then
+            local idx = 1
+            for val in string.gmatch(reaper.GetExtState(SECTION, "ModuleRatios"), '([^,]+)') do
+                local n = tonumber(val)
+                if n and n > 0 and idx <= 6 then reaper.gmem_write(1200 + idx, n) end
+                idx = idx + 1
+            end
+        else
+            for i=1, 6 do reaper.gmem_write(1200 + i, default_ratios[i]) end
+        end
+
+        if reaper.HasExtState(SECTION, "LufsValScale") then
+            local val = tonumber(reaper.GetExtState(SECTION, "LufsValScale"))
+            if val then reaper.gmem_write(1301, val) end
+        end
+    end
+    Initialize_System()
+
+----------------------------------------------------------
+-- UI Loops
+----------------------------------------------------------
+    local last_signal_time = reaper.time_precise()
+    local g_is_standby = false
+    -- Redraw rate: ExtState TargetFps (effective fps, default 30 = every tick). defer() runs at ~30 Hz,
+    -- so we render once every N ticks (30->1, 15->2, 10->3). The ExtState is re-read about every 2 s.
+    local function read_render_every()
+        local fps = tonumber(reaper.GetExtState("JKK_Visualizer", "TargetFps")) or 30
+        local n = math.floor(30 / fps + 0.5)
+        if n < 1 then n = 1 elseif n > 6 then n = 6 end
+        return n
+    end
+    local render_every = read_render_every()
+    local tick_count = 0
+
+    function run()
+        local char = gfx.getchar()
+        if char == 27 then return end 
+        if char == 32 then
+            reaper.Main_OnCommand(40044, 0) 
+        end
+
+        tick_count = tick_count + 1
+        if tick_count % 60 == 0 then render_every = read_render_every(); read_perf_lite() end
+        if tick_count % render_every ~= 0 then
+            reaper.defer(run)
+            return
+        end
+        local current_time = reaper.time_precise()
+
+        update_settings_from_gmem()
+        dock_guard()
+
+        if gfx.mouse_cap == 2 then 
+            gfx.x, gfx.y = gfx.mouse_x, gfx.mouse_y
+            
+            local current_dock_state = gfx.dock(-1) 
+            local is_docked = current_dock_state > 0
+            
+            local follow_jkk = (reaper.GetExtState("JKK_Visualizer", "FollowJKKTheme") == "1")
+            local menu_str = (is_docked and "!" or "") .. "Dock to Docker|"
+            menu_str = menu_str .. (layout_mode == 1 and "!" or "") .. "Vertical Layout|"
+            menu_str = menu_str .. "Set current dock as home|"
+            menu_str = menu_str .. (follow_jkk and "!" or "") .. "Sync Colors with JKK_Theme|"
+            menu_str = menu_str .. "#For editing theme, run 'JKK_Visualizer Editor' from Action List"
+            
+            local selection = gfx.showmenu(menu_str)
+            
+            if selection == 1 then
+                if is_docked then
+                    gfx.dock(0)
+                else
+                    local target = find_docker_with_pos((desired_dock_pos >= 0) and desired_dock_pos or 2, desired_dock_idx)
+                    gfx.dock((target >= 0) and (target * 256 + 1) or 513)
+                end
+                remember_dock_state()
+            elseif selection == 2 then
+                layout_mode = 1 - layout_mode
+            elseif selection == 3 then
+                remember_dock_state()
+            elseif selection == 4 then
+                local next_state = follow_jkk and "0" or "1"
+                reaper.SetExtState("JKK_Visualizer", "FollowJKKTheme", next_state, true)
+                last_synced_theme_rev = -1
+            end
+        end
+
+        local wheel_val = gfx.mouse_wheel
+        gfx.mouse_wheel = 0
+
+        if wheel_val ~= 0 and gfx.mouse_y < 30 then
+            local sensitivity = 0.02
+            local change = (wheel_val / 120) * sensitivity 
+            if math.abs(change) < 0.01 then change = (wheel_val > 0) and 0.02 or -0.02 end
+            
+            local target_gmems = {2, 6, 7, 8, 9}
+            for _, mem in ipairs(target_gmems) do
+                local current_gain = reaper.gmem_read(mem)
+                current_gain = math.max(0.0, math.min(1.0, current_gain + change))
+                reaper.gmem_write(mem, current_gain)
+            end
+        end
+
+        local current_time = reaper.time_precise()
+        local mom_val = reaper.gmem_read(20)
+        local is_mouse_in = (gfx.mouse_x >= 0 and gfx.mouse_x <= gfx.w and gfx.mouse_y >= 0 and gfx.mouse_y <= gfx.h)
+        
+        if mom_val > -100 or is_mouse_in then
+            last_signal_time = current_time
+        end
+        
+        g_is_standby = (current_time - last_signal_time) > 2.0
+
+        -- While in standby keep the last frame and skip drawing (resumes on window size/dock change or mouse activity)
+        local wnd_sig = gfx.w * 7919 + gfx.h * 31 + gfx.dock(-1)
+        if PERF_LITE and g_is_standby and standby_frames >= 2 and wnd_sig == standby_sig
+           and not is_mouse_in and gfx.mouse_cap == 0 and drag_mode == nil then
+            reaper.defer(run)
+            return
+        end
+        if g_is_standby then standby_frames = standby_frames + 1 else standby_frames = 0 end
+        standby_sig = wnd_sig
+
+        gfx.set(bg_r, bg_g, bg_b, bg_a)
+        gfx.rect(0, 0, gfx.w, gfx.h)
+
+        local vert = (layout_mode == 1)
+        local BORDER_HIT = 5   -- hit width for border drag (px)
+        local HEADER_H = 24    -- header height that starts a reorder drag (px)
+        local MIN_PX = 40      -- minimum module size (px)
+
+        -- Layout: compute every module rectangle before drawing
+        local function compute_layout()
+            local total_ratio = 0
+            local active_count = 0
+            for i = 1, 6 do
+                local mod_id = ui_order[i]
+                if reaper.gmem_read(1150 + mod_id) == 1 then
+                    total_ratio = total_ratio + module_ratios[mod_id]
+                    active_count = active_count + 1
+                end
+            end
+            if total_ratio == 0 then total_ratio = 1 end
+
+            local rects = {}
+            local cur = 0
+            local drawn = 0
+            for i = 1, 6 do
+                local mod_id = ui_order[i]
+                if reaper.gmem_read(1150 + mod_id) == 1 then
+                    drawn = drawn + 1
+                    local ratio = module_ratios[mod_id] / total_ratio
+                    local x, y, w, h
+                    if vert then
+                        x, y, w = 0, cur, gfx.w
+                        h = math.floor(gfx.h * ratio)
+                        if drawn == active_count then h = gfx.h - cur end
+                        cur = cur + h
+                    else
+                        x, y, h = cur, 0, gfx.h
+                        w = math.floor(gfx.w * ratio)
+                        if drawn == active_count then w = gfx.w - cur end
+                        cur = cur + w
+                    end
+                    rects[drawn] = {order_pos = i, mod_id = mod_id, x = x, y = y, w = w, h = h}
+                end
+            end
+            return rects
+        end
+
+        local rects = compute_layout()
+
+        local mx, my = gfx.mouse_x, gfx.mouse_y
+        local mouse_down = (gfx.mouse_cap & 1) == 1
+        local in_window = (mx >= 0 and mx <= gfx.w and my >= 0 and my <= gfx.h)
+
+        -- Hover test for borders / headers (borders take priority)
+        local hover_border = nil
+        local hover_header = nil
+        if in_window then
+            for k = 1, #rects - 1 do
+                local bpos = vert and rects[k+1].y or rects[k+1].x
+                local mpos = vert and my or mx
+                if math.abs(mpos - bpos) <= BORDER_HIT then
+                    hover_border = k
+                    break
+                end
+            end
+            if not hover_border then
+                for k = 1, #rects do
+                    local r = rects[k]
+                    if mx >= r.x and mx < r.x + r.w and my >= r.y and my < r.y + HEADER_H then
+                        hover_header = k
+                        break
+                    end
+                end
+            end
+        end
+
+        -- Drag state transitions
+        if mouse_down and not mouse_was_down then
+            if hover_border then
+                drag_mode = "resize"
+                drag_resize_k = hover_border
+            elseif hover_header then
+                drag_mode = "arm_reorder"
+                drag_src_k = hover_header
+                drag_start_x, drag_start_y = mx, my
+            end
+        elseif mouse_down and drag_mode == "arm_reorder" then
+            if math.abs(mx - drag_start_x) + math.abs(my - drag_start_y) > 6 then
+                drag_mode = "reorder"
+            end
+        end
+
+        -- Resizing: redistribute the ratio between the two adjacent modules
+        if drag_mode == "resize" and mouse_down then
+            local k = drag_resize_k
+            local r1, r2 = rects[k], rects[k+1]
+            if r1 and r2 then
+                local span = vert and (r1.h + r2.h) or (r1.w + r2.w)
+                if span > MIN_PX * 2 then
+                    local origin = vert and r1.y or r1.x
+                    local mpos = vert and my or mx
+                    local new1 = math.max(MIN_PX, math.min(span - MIN_PX, mpos - origin))
+                    local combined = module_ratios[r1.mod_id] + module_ratios[r2.mod_id]
+                    module_ratios[r1.mod_id] = combined * (new1 / span)
+                    module_ratios[r2.mod_id] = combined - module_ratios[r1.mod_id]
+                    reaper.gmem_write(1200 + r1.mod_id, module_ratios[r1.mod_id])
+                    reaper.gmem_write(1200 + r2.mod_id, module_ratios[r2.mod_id])
+                    rects = compute_layout()
+                end
+            end
+        end
+
+        -- Button released: commit the reorder / save the ratios
+        if not mouse_down and mouse_was_down then
+            if drag_mode == "reorder" then
+                local target_k = nil
+                for k = 1, #rects do
+                    local r = rects[k]
+                    if mx >= r.x and mx < r.x + r.w and my >= r.y and my < r.y + r.h then
+                        target_k = k
+                        break
+                    end
+                end
+                if target_k and drag_src_k and target_k ~= drag_src_k and rects[drag_src_k] then
+                    local item = table.remove(ui_order, rects[drag_src_k].order_pos)
+                    table.insert(ui_order, rects[target_k].order_pos, item)
+                    for k = 1, 6 do reaper.gmem_write(1100 + k, ui_order[k]) end
+                    reaper.SetExtState("JKK_Visualizer", "ModuleOrder", table.concat(ui_order, ","), true)
+                    rects = compute_layout()
+                end
+            elseif drag_mode == "resize" then
+                local t = {}
+                for i = 1, 6 do t[i] = string.format("%.4f", module_ratios[i]) end
+                reaper.SetExtState("JKK_Visualizer", "ModuleRatios", table.concat(t, ","), true)
+            end
+            drag_mode = nil
+        end
+        mouse_was_down = mouse_down
+        g_ui_drag = (drag_mode ~= nil)
+
+        -- Draw the modules
+        local s2 = reaper.gmem_read(3)
+
+        for k = 1, #rects do
+            local r = rects[k]
+            local mod_id, x, y, w, h = r.mod_id, r.x, r.y, r.w, r.h
+
+            if wheel_val ~= 0 and my >= y + 30 and mx >= x and mx <= x + w and my <= y + h then
+                local target_gmem = nil
+                if mod_id == 2 then target_gmem = 2
+                elseif mod_id == 3 then target_gmem = 6
+                elseif mod_id == 4 then target_gmem = 7
+                elseif mod_id == 5 then target_gmem = 8
+                elseif mod_id == 6 then target_gmem = 9
+                end
+
+                if target_gmem then
+                    local current_gain = reaper.gmem_read(target_gmem)
+                    local sensitivity = 0.02
+                    local change = (wheel_val / 120) * sensitivity
+                    if math.abs(change) < 0.01 then change = (wheel_val > 0) and 0.02 or -0.02 end
+
+                    current_gain = math.max(0.0, math.min(1.0, current_gain + change))
+                    reaper.gmem_write(target_gmem, current_gain)
+                end
+            end
+
+            local mod_raw_gain = 0.5
+            if mod_id == 2 then mod_raw_gain = reaper.gmem_read(2)
+            elseif mod_id == 3 then mod_raw_gain = reaper.gmem_read(6)
+            elseif mod_id == 4 then mod_raw_gain = reaper.gmem_read(7)
+            elseif mod_id == 5 then mod_raw_gain = reaper.gmem_read(8)
+            elseif mod_id == 6 then mod_raw_gain = reaper.gmem_read(9)
+            end
+
+            local specific_gain = g_gain_min + (g_gain_max - g_gain_min) * mod_raw_gain
+            local specific_zoom = s_zoom_min + (s_zoom_max - s_zoom_min) * mod_raw_gain
+            local specific_ceil = spec_ceil_min + (spec_ceil_max - spec_ceil_min) * mod_raw_gain
+            local floor = spec_floor_min + (spec_floor_max - spec_floor_min) * s2
+
+            if mod_id == 1 then draw_lufs(x, y, w, h)
+            elseif mod_id == 2 then draw_gonio(x, y, w, h, specific_gain)
+            elseif mod_id == 3 then draw_symbiote(x, y, w, h, specific_gain)
+            elseif mod_id == 4 then draw_scope(x, y, w, h, specific_zoom)
+            elseif mod_id == 5 then draw_spectrum(x, y, w, h, specific_ceil, floor)
+            elseif mod_id == 6 then draw_spectrogram(x, y, w, h, mod_raw_gain, floor)
+            end
+
+            if k > 1 then
+                gfx.set(line_r, line_g, line_b, line_a)
+                if vert then
+                    gfx.line(0, y, gfx.w, y)
+                else
+                    gfx.line(x, 0, x, gfx.h)
+                end
+            end
+        end
+
+        -- Drag overlays
+        if drag_mode == "reorder" then
+            gfx.setcursor(32646, "")
+            for k = 1, #rects do
+                local r = rects[k]
+                if k ~= drag_src_k and mx >= r.x and mx < r.x + r.w and my >= r.y and my < r.y + r.h then
+                    gfx.set(1, 1, 1, 0.08)
+                    gfx.rect(r.x, r.y, r.w, r.h, 1)
+                    gfx.set(1, 1, 1, 0.5)
+                    gfx.rect(r.x, r.y, r.w - 1, r.h - 1, 0)
+                end
+            end
+            local sr = rects[drag_src_k]
+            if sr then
+                gfx.set(0, 0, 0, 0.35)
+                gfx.rect(sr.x, sr.y, sr.w, sr.h, 1)
+                local module_names = {"LUFS", "Gonio", "Symbiote", "Scope", "Spectrum", "Spectrogram"}
+                local label = module_names[sr.mod_id] or "?"
+                gfx.setfont(1, g_font_name, base_title_size * g_font_scale)
+                local tw, th = gfx.measurestr(label)
+                local bx, by = mx + 12, my - th - 12
+                gfx.set(bg_r, bg_g, bg_b, 0.9)
+                gfx.rect(bx - 6, by - 4, tw + 12, th + 8, 1)
+                gfx.set(1, 1, 1, 0.9)
+                gfx.rect(bx - 6, by - 4, tw + 12, th + 8, 0)
+                gfx.x, gfx.y = bx, by
+                gfx.drawstr(label)
+            end
+        elseif hover_border or drag_mode == "resize" then
+            gfx.setcursor(vert and 32645 or 32644, "")
+            local k = (drag_mode == "resize") and drag_resize_k or hover_border
+            local r2 = rects[k + 1]
+            if r2 then
+                gfx.set(1, 1, 1, 0.25)
+                if vert then
+                    gfx.rect(0, r2.y - 1, gfx.w, 3, 1)
+                else
+                    gfx.rect(r2.x - 1, 0, 3, gfx.h, 1)
+                end
+            end
+        elseif hover_header then
+            gfx.setcursor(32646, "")
+            local r = rects[hover_header]
+            gfx.set(1, 1, 1, 0.06)
+            gfx.rect(r.x, r.y, r.w, HEADER_H, 1)
+        end
+
+        gfx.update()
+        reaper.defer(run)
+    end
+
+    local function exit_cleanup()
+        local current_dock = gfx.dock(-1)
+        reaper.SetExtState("JKK_Visualizer", "DockState", tostring(current_dock), true)
+        reaper.SetExtState("JKK_Visualizer", "VerticalLayout", tostring(layout_mode), true)
+    end
+
+reaper.atexit(exit_cleanup)
+run()

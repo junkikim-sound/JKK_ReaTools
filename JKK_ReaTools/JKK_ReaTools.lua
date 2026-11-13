@@ -1,13 +1,12 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.9.91
+-- @version 0.9.92
 -- @provides
 --     [nomain] Modules/JKK_ReaTools_NEW_ItemTool.lua
 --     [nomain] Modules/JKK_ReaTools_NEW_TrackTool.lua
 --     [nomain] Modules/JKK_ReaTools_NEW_RenamerLite.lua
 --     [nomain] Modules/JKK_ReaTools_NEW_ColorPaletteLite.lua
---     [nomain] Modules/JKK_Theme.lua
 --     [nomain] Modules/JKK_SelectionManager.lua
 --========================================================
 
@@ -142,7 +141,7 @@ local function ResolveModulePath(file_name)
     return installed_dir .. "Modules/" .. file_name
 end
 
-local theme_path = ResolveModulePath("JKK_Theme.lua")
+local theme_path = ResolveModulePath("JKK_Theme_Core.lua")
 local Theme = (RPR.file_exists(theme_path) and dofile(theme_path)) or {
     ApplyTheme       = function() return 0, 0 end,
     PushButton       = function() end,
@@ -747,104 +746,131 @@ end
 local SETTINGS_POPUP_ID = "##JKK_ReaTools_Settings"
 
 local function DrawSettingsPopup()
-    if not RPR.ImGui_BeginPopup(ctx, SETTINGS_POPUP_ID) then return end
-
-    RPR.ImGui_TextDisabled(ctx, "Panels")
-    local panels_changed = false
-    for _, id in ipairs(panel_ids) do
-        local changed, value = RPR.ImGui_Checkbox(ctx, panel_titles[id] .. "##Show_" .. id, panel_visible[id])
-        if changed then panel_visible[id] = value; panels_changed = true end
-        if id == "D" and RPR.ImGui_IsItemHovered(ctx) then
-            RPR.ImGui_SetTooltip(ctx, "Shown only while items are the active selection.")
-        end
-    end
-    if panels_changed then SavePanelVisibility() end
-    if RPR.ImGui_Button(ctx, "Reset Layout##JKK_ResetLayout") then ResetLayout() end
-    if RPR.ImGui_IsItemHovered(ctx) then
-        RPR.ImGui_SetTooltip(ctx, "Default panels, order and widths.")
+    if not RPR.ImGui_BeginPopup(ctx, SETTINGS_POPUP_ID) then
+        return
     end
 
-    if sel_mgr and sel_mgr.GetSettings then
-        RPR.ImGui_Separator(ctx)
-        RPR.ImGui_TextDisabled(ctx, "Selection Detection")
-        local det = sel_mgr.GetSettings()
-
-        local c1, v1 = RPR.ImGui_Checkbox(ctx, "Arrange click selects Track", det.arrange_selects_track)
-        if c1 then sel_mgr.SetSetting("arrange_selects_track", v1) end
-        if RPR.ImGui_IsItemHovered(ctx) then
-            RPR.ImGui_SetTooltip(ctx, "Switch to Track mode even when clicking inside the Arrange area\n(instead of only TCP/MCP).")
-        end
-
-        local c2, v2 = RPR.ImGui_Checkbox(ctx, "Include Loop Points as Time Selection", det.include_loop_points)
-        if c2 then sel_mgr.SetSetting("include_loop_points", v2) end
-        if RPR.ImGui_IsItemHovered(ctx) then
-            RPR.ImGui_SetTooltip(ctx, "Use Loop Points when Time Selection and Loop Points are unlinked.")
-        end
-
-        local c3, v3 = RPR.ImGui_Checkbox(ctx, "Auto-target Regions in Time Selection", det.ts_auto_targets_regions)
-        if c3 then sel_mgr.SetSetting("ts_auto_targets_regions", v3) end
-        if RPR.ImGui_IsItemHovered(ctx) then
-            RPR.ImGui_SetTooltip(ctx, "Automatically target regions/markers overlapping the active Time Selection.")
-        end
-
-        if RPR.ImGui_Button(ctx, "Reset Detection##JKK_ResetDetection") then
-            sel_mgr.ResetSettings()
-        end
-    end
-
+    -- 1. Selection & Range Detection
+    RPR.ImGui_TextDisabled(ctx, "Selection & Range Detection")
     RPR.ImGui_Separator(ctx)
+
+    local range_mode_items = { "Ignore", "Regions / Markers", "Items in Range" }
+
+    RPR.ImGui_AlignTextToFramePadding(ctx)
+    RPR.ImGui_Text(ctx, "Time Selection")
+    RPR.ImGui_SameLine(ctx, S(115))
+    RPR.ImGui_SetNextItemWidth(ctx, S(155))
+    local ts_mode = sel_mgr and sel_mgr.GetTimeSelectionMode() or 1
+    RPR.ImGui_SetNextWindowSizeConstraints(ctx, 0, S(80), 16384, 16384)
+    if RPR.ImGui_BeginCombo(ctx, "##TimeSelDetectMode", range_mode_items[ts_mode + 1] or "Ignore", RPR.ImGui_ComboFlags_HeightLarge()) then
+        for i, label in ipairs(range_mode_items) do
+            local idx = i - 1
+            if RPR.ImGui_Selectable(ctx, label, ts_mode == idx) and sel_mgr then
+                sel_mgr.SetTimeSelectionMode(idx)
+            end
+        end
+        RPR.ImGui_EndCombo(ctx)
+    end
+    if RPR.ImGui_IsItemHovered(ctx) then
+        RPR.ImGui_SetTooltip(ctx, "Choose what to target when Time Selection changes:\n- Ignore: Do not change target mode\n- Regions / Markers: Target regions & markers inside range\n- Items in Range: Auto-select media items overlapping range")
+    end
+
+    RPR.ImGui_AlignTextToFramePadding(ctx)
+    RPR.ImGui_Text(ctx, "Loop Points")
+    RPR.ImGui_SameLine(ctx, S(115))
+    RPR.ImGui_SetNextItemWidth(ctx, S(155))
+    local loop_mode = sel_mgr and sel_mgr.GetLoopPointsMode() or 0
+    RPR.ImGui_SetNextWindowSizeConstraints(ctx, 0, S(80), 16384, 16384)
+    if RPR.ImGui_BeginCombo(ctx, "##LoopPointsDetectMode", range_mode_items[loop_mode + 1] or "Ignore", RPR.ImGui_ComboFlags_HeightLarge()) then
+        for i, label in ipairs(range_mode_items) do
+            local idx = i - 1
+            if RPR.ImGui_Selectable(ctx, label, loop_mode == idx) and sel_mgr then
+                sel_mgr.SetLoopPointsMode(idx)
+            end
+        end
+        RPR.ImGui_EndCombo(ctx)
+    end
+    if RPR.ImGui_IsItemHovered(ctx) then
+        RPR.ImGui_SetTooltip(ctx, "Choose what to target when Loop Points change:\n- Ignore: Do not change target mode\n- Regions / Markers: Target regions & markers inside loop\n- Items in Range: Auto-select media items overlapping loop")
+    end
+
+    if sel_mgr then
+        local sel_settings = sel_mgr.GetSettings()
+        local arr_changed, new_arr = RPR.ImGui_Checkbox(ctx, "Arrange Click Selects Track", sel_settings.arrange_selects_track)
+        if arr_changed then
+            sel_mgr.SetSetting("arrange_selects_track", new_arr)
+        end
+    end
+
+    -- 2. Panels Visibility & Layout
+    RPR.ImGui_Spacing(ctx)
+    RPR.ImGui_TextDisabled(ctx, "Panels")
+    RPR.ImGui_Separator(ctx)
+
+    for i, id in ipairs(panel_ids) do
+        local vis_changed, new_vis = RPR.ImGui_Checkbox(ctx, panel_titles[id] .. "##Vis_" .. id, panel_visible[id])
+        if vis_changed then
+            panel_visible[id] = new_vis
+            SavePanelVisibility()
+        end
+        if i % 2 == 1 and i < #panel_ids then
+            RPR.ImGui_SameLine(ctx, S(145))
+        end
+    end
+
+    if RPR.ImGui_Button(ctx, "Reset Layout", S(110), 0) then
+        ResetLayout()
+    end
+
+    -- 3. UI Zoom
+    RPR.ImGui_Spacing(ctx)
     RPR.ImGui_TextDisabled(ctx, "UI Zoom")
-    local zoom_changed = false
-    local value_changed, new_value
+    RPR.ImGui_Separator(ctx)
 
-    value_changed, new_value = RPR.ImGui_Checkbox(ctx, "Auto", ui_zoom.auto)
-    if value_changed then ui_zoom.auto = new_value; zoom_changed = true end
-    if RPR.ImGui_IsItemHovered(ctx) then
-        RPR.ImGui_SetTooltip(ctx, "Zoom the whole UI so all panels fit the window.\nOff: fixed size, set by the slider.")
+    local auto_changed, new_auto = RPR.ImGui_Checkbox(ctx, "Auto Fit Width", ui_zoom.auto)
+    if auto_changed then
+        ui_zoom.auto = new_auto
+        SaveZoomSettings()
     end
-    RPR.ImGui_SameLine(ctx)
-    RPR.ImGui_BeginDisabled(ctx, not ui_zoom.auto)
-    value_changed, new_value = RPR.ImGui_Checkbox(ctx, "Fit height", ui_zoom.follow_height)
-    if value_changed then ui_zoom.follow_height = new_value; zoom_changed = true end
-    if RPR.ImGui_IsItemHovered(ctx, RPR.ImGui_HoveredFlags_AllowWhenDisabled()) then
-        RPR.ImGui_SetTooltip(ctx, "Also shrink when the window is too short for the rows.")
-    end
-    RPR.ImGui_EndDisabled(ctx)
 
-    RPR.ImGui_SetNextItemWidth(ctx, S(140))
-    local percent = math.floor((ui_zoom.pending_size or ui_zoom.size) * 100 + 0.5)
-    value_changed, new_value = RPR.ImGui_SliderInt(ctx, "##JKK_UIZoomSize", percent, 60, 200, "Size %d%%")
-    if value_changed then ui_zoom.pending_size = new_value / 100 end
-    if RPR.ImGui_IsItemDeactivated(ctx) and ui_zoom.pending_size then
-        ui_zoom.size = ui_zoom.pending_size
-        ui_zoom.pending_size = nil
-        zoom_changed = true
+    if ui_zoom.auto then
+        RPR.ImGui_SameLine(ctx, S(145))
+        local height_changed, new_height = RPR.ImGui_Checkbox(ctx, "Fit Height", ui_zoom.follow_height)
+        if height_changed then
+            ui_zoom.follow_height = new_height
+            SaveZoomSettings()
+        end
     end
-    if RPR.ImGui_IsItemClicked(ctx, 1) then
-        ui_zoom.size = UI_ZOOM_DEFAULTS.size
-        ui_zoom.pending_size = nil
-        zoom_changed = true
+
+    RPR.ImGui_AlignTextToFramePadding(ctx)
+    RPR.ImGui_Text(ctx, "Scale")
+    RPR.ImGui_SameLine(ctx, S(55))
+    RPR.ImGui_SetNextItemWidth(ctx, S(145))
+    local size_changed, new_size = RPR.ImGui_SliderDouble(ctx, "##UIZoomSize", ui_zoom.size, 0.5, 1.8, "%.2fx")
+    if size_changed then
+        ui_zoom.size = new_size
+        SaveZoomSettings()
     end
-    if RPR.ImGui_IsItemHovered(ctx) then
-        RPR.ImGui_SetTooltip(ctx, "Personal size on top of the automatic zoom.\nRight-click: 100%")
-    end
-    RPR.ImGui_SameLine(ctx)
-    RPR.ImGui_TextDisabled(ctx, string.format("%.1fpx", ui_font_size))
-    if RPR.ImGui_Button(ctx, "Reset Zoom##JKK_ResetZoom") then
+    RPR.ImGui_SameLine(ctx, 0, S(6))
+    if RPR.ImGui_Button(ctx, "Reset##ZoomReset", S(52), 0) then
         ui_zoom.auto = UI_ZOOM_DEFAULTS.auto
         ui_zoom.follow_height = UI_ZOOM_DEFAULTS.follow_height
         ui_zoom.size = UI_ZOOM_DEFAULTS.size
-        ui_zoom.pending_size = nil
-        zoom_changed = true
+        SaveZoomSettings()
     end
-    if zoom_changed then SaveZoomSettings() end
 
+    -- 4. Tools & Theme
+    RPR.ImGui_Spacing(ctx)
+    RPR.ImGui_TextDisabled(ctx, "Tools & Theme")
     RPR.ImGui_Separator(ctx)
+
     if RPR.ImGui_MenuItem(ctx, "Theme & Font Manager...") then
-        Theme.OpenEditor()
+        if Theme and Theme.OpenEditor then
+            Theme.OpenEditor()
+        end
     end
-    if RPR.ImGui_MenuItem(ctx, "Peaks Display Settings") then
-        RPR.Main_OnCommand(42074, 0)
+    if RPR.ImGui_MenuItem(ctx, "Peak Display Settings...") then
+        RPR.Main_OnCommand(42074, 0) -- Peaks: Show peaks display settings
     end
     if RPR.ImGui_MenuItem(ctx, "Open Project Directory") then
         local _, proj_path = RPR.EnumProjects(-1)
@@ -874,9 +900,62 @@ local function DrawSettingsPopup()
     RPR.ImGui_EndPopup(ctx)
 end
 
+local HOME_ACTION_HASH = "_RSdcfdfdea965740c8abfe7db7c4421aca369f442f"
+local home_cmd_id_cache = nil
+local home_cmd_checked_time = 0
+
+local function GetValidHomeCommandId()
+    local now = RPR.time_precise and RPR.time_precise() or os.clock()
+    if home_cmd_id_cache ~= nil and (now - home_cmd_checked_time) < 2.0 then
+        return home_cmd_id_cache
+    end
+    home_cmd_checked_time = now
+
+    local cmd_id = RPR.NamedCommandLookup(HOME_ACTION_HASH)
+    if not cmd_id or cmd_id == 0 then
+        home_cmd_id_cache = 0
+        return 0
+    end
+
+    local res_path = RPR.GetResourcePath()
+    local kb_path = res_path .. "/reaper-kb.ini"
+    local f = io.open(kb_path, "r")
+    if f then
+        local target_key = HOME_ACTION_HASH:gsub("^_", "")
+        local script_rel_path = nil
+        for line in f:lines() do
+            if line:find(target_key, 1, true) then
+                -- SCR 라인의 마지막 따옴표 안의 경로 추출
+                script_rel_path = line:match('"([^"]+)"%s*$')
+                break
+            end
+        end
+        f:close()
+
+        -- kb.ini에 기록이 없거나 경로가 비어있으면 숨김
+        if not script_rel_path or script_rel_path == "" then
+            home_cmd_id_cache = 0
+            return 0
+        end
+
+        -- 절대 경로, 리소스 루트 기준 경로, Scripts/ 폴더 기준 경로 모두 확인
+        local exists = RPR.file_exists(script_rel_path)
+            or RPR.file_exists(res_path .. "/" .. script_rel_path)
+            or RPR.file_exists(res_path .. "/Scripts/" .. script_rel_path)
+
+        if not exists then
+            home_cmd_id_cache = 0
+            return 0
+        end
+    end
+
+    home_cmd_id_cache = cmd_id
+    return cmd_id
+end
+
 local function DrawTopBar()
     Theme.PushFont(ctx, JKK_UI_SCALE, "topbar")
-    local home_cmd_id = RPR.NamedCommandLookup("_RS7df81f4a0eea01208f22396bdf933be8c6a3fa28")
+    local home_cmd_id = GetValidHomeCommandId()
     if home_cmd_id ~= 0 then
         RPR.ImGui_SameLine(ctx, 0, S(4))
         Theme.PushButton(ctx, "highlight")

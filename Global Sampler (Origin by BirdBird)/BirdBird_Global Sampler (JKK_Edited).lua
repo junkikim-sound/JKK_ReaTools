@@ -1,13 +1,11 @@
 -- @description Global Sampler (Edited by JKK)
--- @version 0.99.8.51
+-- @version 0.99.8.52
 -- @author BirdBird
 -- @provides
 --    [nomain]global_sampler_libraries/global_resampler_lib.lua
 --    [nomain]global_sampler_libraries/json.lua
---    [nomain]global_sampler_libraries/themes.lua
 --    [main]BirdBird_Sample Last Playthrough.lua
 --    [main]BirdBird_Sample Last X Seconds.lua
---    [main]BirdBird_Global Sampler Theme Editor.lua
 --    [effect]BirdBird_Global Sampler (JKK_Edited).jsfx
 
 reaper_version = tonumber((reaper.GetAppVersion()):match("^[0-9]+%.?[0-9]*"))
@@ -32,7 +30,7 @@ if not reaper.APIExists('CF_GetSWSVersion') then
 end
 
 if not reaper.APIExists('JS_ReaScriptAPI_Version') then
-    local text = 'Global Sampler requires the js_ReaScriptAPI to to run, however it is unable to find it. \nWould you like to be redirected to the extensions forum thread for installation?'
+    local text = 'Global Sampler requires the js_ReaScriptAPI to run, however it is unable to find it. \nWould you like to be redirected to the extensions forum thread for installation?'
     local ret = reaper.ShowMessageBox(text, 'Global Sampler - Dependency Error', 4)
     if ret == 6 then
         open_url('https://forum.cockos.com/showthread.php?t=212174')
@@ -45,8 +43,14 @@ function p(msg) reaper.ShowConsoleMsg(tostring(msg) .. ' \n') end
 function reaper_do_file(file) local info = debug.getinfo(1,'S'); path = info.source:match[[^@?(.*[\/])[^\/]-$]]; dofile(path .. file); end
 reaper_do_file('global_sampler_libraries/global_resampler_lib.lua')
 reaper_do_file('json.lua')
-reaper_do_file('themes.lua')
 reaper.gmem_write(16, 0)
+
+-- LOAD JKK_THEME
+local jkk_theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme_Core.lua"
+local JKK_Theme = nil
+if reaper.file_exists(jkk_theme_path) then
+    JKK_Theme = dofile(jkk_theme_path)
+end
 
 local settings = load_settings()
 if not settings then 
@@ -55,43 +59,82 @@ if not settings then
 end
 if not settings.waveform_zoom then
     settings.waveform_zoom = 1
-    save_settings(st)
-end
-
---THEMES
-local themes = get_themes()
-local theme = themes[settings.theme]
-function swap_theme(theme_name)
-    local new_theme = themes[theme_name]
-    settings.theme = theme_name
     save_settings(settings)
-
-    theme = new_theme
-    gfx.clear = rgb2num(30, 30, 30)
 end
 
---https://iquilezles.org/www/articles/palettes/palettes.htm
-function palette(t)
-    local a = {r = 0.5, g = 0.5, b = 0.5}
-    local b = {r = 0.5, g = 0.5, b = 0.5}
-    local c = {r = 1, g = 1, b = 1}
-    local d = {r = 0, g = 0.33, b = 0.67}
-
-    local brightness = 0.2
-    
-    local col = {}
-    col.r = a.r + brightness + math.cos((c.r*t + d.r)*6.28318)*b.r
-    col.g = a.g + brightness + math.cos((c.g*t + d.g)*6.28318)*b.g
-    col.b = a.b + brightness + math.cos((c.b*t + d.b)*6.28318)*b.b
-    return col
-end
-
---To convert RBG to the GFX variable
+--To convert RGB to the GFX variable
 function rgb2num(red, green, blue) 
     green = green * 256
     blue = blue * 256 * 256
     return red + green + blue 
 end
+
+-- JKK_THEME DYNAMIC PALETTE (Visualizer와 동일한 3단계 고대비 색상 로직)
+local jkk_pal = {
+    bg     = {r = 25/255,  g = 25/255,  b = 25/255},
+    text   = {r = 220/255, g = 220/255, b = 220/255},
+    accent = {r = 6/255,   g = 143/255, b = 195/255},
+    c_zero = {r = 6/255,   g = 143/255, b = 195/255},
+    c_mid  = {r = 6/255,   g = 143/255, b = 195/255},
+    c_peak = {r = 227/255, g = 219/255, b = 142/255},
+    border_margin = 5,
+    wave_fade_len = 20,
+    wave_fade_alpha_intensity = 0.5,
+    crop_region_alpha = 0.22,
+    trail_len = 50,
+    trail_pow = 4,
+    trail_alpha = 0.25,
+}
+
+local function sync_jkk_theme()
+    if not JKK_Theme or not JKK_Theme.GetColorRGBA then return end
+    local function clamp01(v) return math.max(0.0, math.min(1.0, v)) end
+    local function mix(a, b, t) return a + (b - a) * t end
+
+    local bg_r, bg_g, bg_b = JKK_Theme.GetColorRGBA("base_bg")
+    bg_r = clamp01(bg_r - 5 / 255.0)
+    bg_g = clamp01(bg_g - 5 / 255.0)
+    bg_b = clamp01(bg_b - 5 / 255.0)
+
+    local tx_r, tx_g, tx_b = JKK_Theme.GetColorRGBA("text_main")
+    local ac_r, ac_g, ac_b = JKK_Theme.GetColorRGBA("accent_main")
+    local hl_r, hl_g, hl_b = JKK_Theme.GetColorRGBA("btn_highlight")
+
+    local bg_lum = 0.299 * bg_r + 0.587 * bg_g + 0.114 * bg_b
+    local is_light = (bg_lum > 0.5)
+
+    -- 1. Weak (Zero)
+    local z_r = mix(bg_r, ac_r, 0.55)
+    local z_g = mix(bg_g, ac_g, 0.55)
+    local z_b = mix(bg_b, ac_b, 0.55)
+
+    -- 2. Normal (Mid)
+    local m_r, m_g, m_b = ac_r, ac_g, ac_b
+
+    -- 3. Strong (Peak)
+    local p_r, p_g, p_b
+    if is_light then
+        p_r = clamp01(ac_r * 0.42)
+        p_g = clamp01(ac_g * 0.42)
+        p_b = clamp01(ac_b * 0.42)
+    else
+        p_r = clamp01(mix(ac_r, hl_r, 0.55) * 0.8 + 0.25)
+        p_g = clamp01(mix(ac_g, hl_g, 0.55) * 0.8 + 0.25)
+        p_b = clamp01(mix(ac_b, hl_b, 0.55) * 0.8 + 0.20)
+    end
+
+    jkk_pal.bg     = {r = bg_r, g = bg_g, b = bg_b}
+    jkk_pal.text   = {r = tx_r, g = tx_g, b = tx_b}
+    jkk_pal.accent = {r = ac_r, g = ac_g, b = ac_b}
+    jkk_pal.c_zero = {r = z_r,  g = z_g,  b = z_b}
+    jkk_pal.c_mid  = {r = m_r,  g = m_g,  b = m_b}
+    jkk_pal.c_peak = {r = p_r,  g = p_g,  b = p_b}
+
+    gfx.clear = rgb2num(math.floor(bg_r * 255 + 0.5), math.floor(bg_g * 255 + 0.5), math.floor(bg_b * 255 + 0.5))
+end
+
+local last_jkk_rev = -1
+sync_jkk_theme()
 
 --https://forum.cockos.com/showpost.php?p=2157010&postcount=22
 function set_font(font, size, flagStr)
@@ -124,10 +167,12 @@ local draw_state = {cs = 0, cw = 0, bw = 0, bh = 0, offset = 0, start_offset = 0
 draw_state.waveform_zoom = settings.waveform_zoom
 local simulations = {}
 local custom_zoom = 1.0
+local particles = {}
+
 function draw(m, mouse_state, drag_info)
     local w = gfx.w
     local h = gfx.h
-    local margin = theme.border_margin
+    local margin = jkk_pal.border_margin
     local bw = w - 2*margin
     local bh = h - 2*margin    
     
@@ -137,7 +182,6 @@ function draw(m, mouse_state, drag_info)
     gfx.line(margin, margin, margin, margin + bh)
     gfx.line(margin, margin + bh, margin + bw, margin + bh)
     gfx.line(margin + bw, margin, margin + bw, margin + bh)
-
 
     --OFFSET
     local norm_offset = draw_state.offset
@@ -149,12 +193,10 @@ function draw(m, mouse_state, drag_info)
     writer_pos_n = writer_pos_n + norm_offset
     if writer_pos_n < 0 then writer_pos_n = writer_pos_n + 1 elseif writer_pos_n > 1 then writer_pos_n = writer_pos_n - 1 end
     local wxp = math.floor((writer_pos_n * bw) + 0.5) + margin   
-    
 
     --FIRST TIME TEXT
     local jsfx_existed = reaper.gmem_read(5)
     local width_str, height_str
-    local t_start, t_end
     if jsfx_existed == 0 then
         local t_str = "~ Insert the Global Sampler JSFX plugin to start recording ~"
         local font_size = 22
@@ -166,17 +208,14 @@ function draw(m, mouse_state, drag_info)
         width_str, height_str = gfx.measurestr(t_str)
         gfx.x = w/2 - width_str/2
         gfx.y = h/2 - font_size/2
-        t_start = gfx.x
-        t_end   = gfx.y
 
-        gfx.set(theme.writer_col.r/256, theme.writer_col.g/256, theme.writer_col.b/256)
+        gfx.set(jkk_pal.text.r, jkk_pal.text.g, jkk_pal.text.b, 0.85)
         gfx.drawstr(t_str, 9)
     end
 
-
     --WAVEFORM
-    local wave_fade_len = theme.wave_fade_len
-    local wave_fade_alpha_intensity = theme.wave_fade_alpha_intensity
+    local wave_fade_len = jkk_pal.wave_fade_len
+    local wave_fade_alpha_intensity = jkk_pal.wave_fade_alpha_intensity
     local draw_len = bw - 2
     reaper.gmem_write(8, draw_len)
     local disp_buf_index = reaper.gmem_read(9)
@@ -186,9 +225,7 @@ function draw(m, mouse_state, drag_info)
         local t = i/draw_len
         t = t - norm_offset
         if t < 0 then t = t + 1 elseif t > 1 then t = t - 1 end
-        local t2 = t
-
-        local t2 = math.floor(t2*draw_len)
+        local t2 = math.floor(t*draw_len)
         
         -- L/R 분리 읽기 (JSFX에서 R채널은 draw_len(disp_buf_size) 오프셋만큼 뒤에 저장됨)
         local raw_L = math.abs(reaper.gmem_read(t2 + disp_buf_index))
@@ -201,10 +238,8 @@ function draw(m, mouse_state, drag_info)
         if f_val_L > 1 then f_val_L = 1 end
         if f_val_R > 1 then f_val_R = 1 end
 
-        local alpha_mul_starter = 1
         if buf.len_in_secs == 0 then
             f_val_L, f_val_R = 0, 0
-            alpha_mul_starter = 0
         end
         
         local x = margin + i + 1
@@ -223,7 +258,6 @@ function draw(m, mouse_state, drag_info)
         local y1_R = bot_mid + height_R
         local y2_R = bot_mid - height_R
         
-        local alpha_mul_writehead = 1
         local dist_to_writehead = x - wxp
         if dist_to_writehead < 0 then
             dist_to_writehead = x + draw_len - wxp
@@ -233,16 +267,15 @@ function draw(m, mouse_state, drag_info)
         if dist_to_writehead > 0 and dist_to_writehead <= wave_fade_len then
             local n_fade = dist_to_writehead/wave_fade_len
             n_fade = (n_fade * wave_fade_alpha_intensity) + 1 - wave_fade_alpha_intensity
-            alpha_mul_writehead = n_fade
         end
 
         -- [JKK Style Color Logic] 
-        local raw_amp = math.max(raw_L, raw_R) -- 양쪽 채널 중 더 큰 진폭을 기준으로 컬러 계산
+        local raw_amp = math.max(raw_L, raw_R)
         if raw_amp > 1.0 then raw_amp = 1.0 end
 
-        local c_zero = {r=6/255,   g=143/255, b=195/255} 
-        local c_mid  = {r=6/255,   g=143/255, b=195/255} 
-        local c_peak = {r=227/255, g=219/255, b=142/255} 
+        local c_zero = jkk_pal.c_zero
+        local c_mid  = jkk_pal.c_mid
+        local c_peak = jkk_pal.c_peak
         
         local midpoint = 0.5 
         local r, g, b
@@ -259,10 +292,8 @@ function draw(m, mouse_state, drag_info)
             b = c_mid.b + (c_peak.b - c_mid.b) * t_col
         end
 
-        local waveform_line_col = {r = r, g = g, b = b}
-        
         if jsfx_existed > 0 then
-            gfx.set(waveform_line_col.r, waveform_line_col.g, waveform_line_col.b, 1.0)
+            gfx.set(r, g, b, 1.0)
             
             -- L 채널 파형 (상단)
             if height_L >= 1 then
@@ -287,104 +318,86 @@ function draw(m, mouse_state, drag_info)
         lx_L = x1; ly_L = y1_L; lx2_L = x1; ly2_L = y2_L
         lx_R = x1; ly_R = y1_R; lx2_R = x1; ly2_R = y2_R
     end
-        -- 1. 마우스 휠 굴림 (파형 확대/축소)
-            if gfx.mouse_wheel ~= 0 then
-                -- 휠 변화량(보통 1틱당 120)에 비례해 부드럽게 줌 비율 변경
-                -- 트랙패드 같은 고해상도 스크롤에도 자연스럽게 반응합니다.
-                custom_zoom = custom_zoom * (1 + (gfx.mouse_wheel / 1200))
-                
-                -- 너무 작아지거나(0.1배) 너무 커지는(10배) 것을 방지
-                if custom_zoom < 0.1 then custom_zoom = 0.1 end
-                if custom_zoom > 10.0 then custom_zoom = 10.0 end
-                
-                -- 조작 후 휠 값을 반드시 초기화해야 계속 스크롤되는 것을 막습니다.
-                gfx.mouse_wheel = 0 
-            end
 
-            -- 2. 스크롤 휠 클릭 (미들 클릭 시 기본 크기로 초기화)
-            -- REAPER gfx에서 미들 클릭은 마우스 상태값(mouse_cap) 64를 갖습니다.
-            if (gfx.mouse_cap & 64) == 64 then
-                custom_zoom = 1.0
-                draw_state.waveform_zoom = 1.0
-            end
-        -- ---------------------------------------------------------
-        -- [추가] 파티클 생성 (라이트헤드 wxp 기준)
-        -- ---------------------------------------------------------
-        if not particles then particles = {} end
+    -- 1. 마우스 휠 굴림 (파형 확대/축소)
+    if gfx.mouse_wheel ~= 0 then
+        custom_zoom = custom_zoom * (1 + (gfx.mouse_wheel / 1200))
+        if custom_zoom < 0.1 then custom_zoom = 0.1 end
+        if custom_zoom > 10.0 then custom_zoom = 10.0 end
+        gfx.mouse_wheel = 0 
+    end
 
-        if jsfx_existed > 0 and wxp then
-            
-            local q_y = bh / 4
-            local top_mid = margin + q_y
-            local bot_mid = margin + q_y * 3
+    -- 2. 스크롤 휠 클릭 (미들 클릭 시 기본 크기로 초기화)
+    if (gfx.mouse_cap & 64) == 64 then
+        custom_zoom = 1.0
+        draw_state.waveform_zoom = 1.0
+    end
 
-            -- [수정 1] 화면 높이(bh)에 비례하여 파티클 생성 개수 조절
-            -- 기본 2개 + 높이가 50픽셀 커질 때마다 최대 개수 증가
-            local min_p = 2
-            local max_p = 2 + math.floor(bh / 50) 
-            local spawn_count = math.random(min_p, max_p)
+    -- 파티클 생성 (라이트헤드 wxp 기준)
+    if jsfx_existed > 0 and wxp then
+        local q_y = bh / 4
+        local top_mid = margin + q_y
+        local bot_mid = margin + q_y * 3
 
-            for p_i = 1, spawn_count do 
-                local is_top = (math.random() > 0.5)
-                local base_y = is_top and top_mid or bot_mid
-                
-                -- [수정 2] 화면 높이에 비례하여 Y축 흩뿌림 범위 조절
-                -- 전체 높이의 1/4(q_y)에 해당하는 범위만큼 위아래로 분산
-                local spread_range = q_y * 1.8
-                local spawn_y = base_y + (math.random() * spread_range - (spread_range / 2))
+        local min_p = 2
+        local max_p = 2 + math.floor(bh / 50) 
+        local spawn_count = math.random(min_p, max_p)
 
-                table.insert(particles, {
-                    x = wxp,
-                    y = spawn_y,
-                    vx = -(math.random() * 3 + 1),  
-                    vy = (math.random() * 2 - 1),   
-                    size = math.random(1, 3),       
-                    life = math.random(10, 40),     
-                    max_life = 35,
-                    r = 227/255, g = 219/255, b = 142/255 
-                })
-            end
+        for p_i = 1, spawn_count do 
+            local is_top = (math.random() > 0.5)
+            local base_y = is_top and top_mid or bot_mid
+            local spread_range = q_y * 1.8
+            local spawn_y = base_y + (math.random() * spread_range - (spread_range / 2))
+
+            table.insert(particles, {
+                x = wxp,
+                y = spawn_y,
+                vx = -(math.random() * 3 + 1),  
+                vy = (math.random() * 2 - 1),   
+                size = math.random(1, 3),       
+                life = math.random(10, 40),     
+                max_life = 35,
+                r = jkk_pal.c_peak.r, g = jkk_pal.c_peak.g, b = jkk_pal.c_peak.b
+            })
         end
+    end
 
-        -- ---------------------------------------------------------
-        -- [추가] 파티클 이동 및 화면에 그리기
-        -- ---------------------------------------------------------
-        local p_limit_top = margin + 8 
-        local p_limit_bottom = margin + bh - 8 
+    -- 파티클 이동 및 화면에 그리기
+    local p_limit_top = margin + 8 
+    local p_limit_bottom = margin + bh - 8 
 
-        for p_i = #particles, 1, -1 do
-            local p = particles[p_i]
-            p.x = p.x + p.vx
-            p.y = p.y + p.vy
-            p.life = p.life - 1
+    for p_i = #particles, 1, -1 do
+        local pt = particles[p_i]
+        pt.x = pt.x + pt.vx
+        pt.y = pt.y + pt.vy
+        pt.life = pt.life - 1
 
-            if p.y < p_limit_top then p.y = p_limit_top end
-            if p.y > p_limit_bottom then p.y = p_limit_bottom end
+        if pt.y < p_limit_top then pt.y = p_limit_top end
+        if pt.y > p_limit_bottom then pt.y = p_limit_bottom end
 
-            if p.life <= 0 then
-                table.remove(particles, p_i)
-            else
-                local alpha = (p.life / p.max_life) * 0.4
-                gfx.set(p.r, p.g, p.b, alpha)
-                gfx.circle(p.x, p.y, p.size, 1, 1) 
-            end
+        if pt.life <= 0 then
+            table.remove(particles, p_i)
+        else
+            local alpha = (pt.life / pt.max_life) * 0.4
+            gfx.set(pt.r, pt.g, pt.b, alpha)
+            gfx.circle(pt.x, pt.y, pt.size, 1, 1) 
         end
+    end
+
     --WRITEHEAD DRAWING
     if jsfx_existed > 0 then
-        -- [수정] 헤드 선 색상 (R: 227, G: 219, B: 142)
-        local r, g, b = 227/255, 219/255, 142/255
+        local r, g, b = jkk_pal.c_peak.r, jkk_pal.c_peak.g, jkk_pal.c_peak.b
         gfx.set(r, g, b, 1.0)
         gfx.line(wxp, margin, wxp, bh + margin)
 
         --TRAIL (잔상)
-        local trail_len   = theme.trail_len   
-        local trail_pow   = theme.trail_pow   
-        local trail_alpha = theme.trail_alpha 
+        local trail_len   = jkk_pal.trail_len   
+        local trail_pow   = jkk_pal.trail_pow   
+        local trail_alpha = jkk_pal.trail_alpha 
         for i = math.max(wxp - trail_len, margin), wxp - 1 do 
             local alpha = 1 - ((wxp - 1) - i)/trail_len
             alpha = (alpha ^ trail_pow) * trail_alpha
             
-            -- [수정] 잔상에도 동일한 색상 적용 (투명도만 조절)
             gfx.set(r, g, b, alpha)
             gfx.line(i, margin, i, bh + margin)
         end
@@ -404,7 +417,6 @@ function draw(m, mouse_state, drag_info)
                     
                     local col
                     if pause_state == 0 then
-                        --PAUSING
                         col = {r = 219/256, g = 13/256, b = 68/256}
                     else 
                         col = {r = 154/256, g = 227/256, b = 82/256}
@@ -415,14 +427,12 @@ function draw(m, mouse_state, drag_info)
                 elseif m.alt then
                     draw_state.preview = true
                     
-                    --NORMALIZED MOUSE
                     local nmx = ((m.x - margin)/bw) - norm_offset
                     nmx = wmod(nmx, 1)
                     reaper.gmem_write(10,1)
                     reaper.gmem_write(11,nmx)
 
-                    --CURSOR
-                    local cursor = reaper.JS_Mouse_LoadCursor(32515) --CROSSHAIR
+                    local cursor = reaper.JS_Mouse_LoadCursor(32515)
                     reaper.JS_Mouse_SetCursor(cursor)
                 else
                     draw_state.hit_time = reaper.time_precise()
@@ -454,7 +464,6 @@ function draw(m, mouse_state, drag_info)
                     local menu = "Insert at edit cursor"
                     local option = gfx.showmenu(menu)
                     if option == 1 then
-                        --UNSELECT ALL ITEMS - FOCUS ARRANGE
                         local sel_item_count = reaper.CountSelectedMediaItems(0)
                         for i = 0, sel_item_count - 1 do
                             local item = reaper.GetSelectedMediaItem(0, sel_item_count - (i+1))
@@ -462,7 +471,6 @@ function draw(m, mouse_state, drag_info)
                         end
                         reaper.SetCursorContext(1)
                         
-                        --INSERT MEDIA
                         local start_time, end_time = reaper.GetSet_ArrangeView2(0, false, 0, 0)
                         pos =  reaper.GetCursorPosition()
 
@@ -478,22 +486,10 @@ function draw(m, mouse_state, drag_info)
                 else
                     gfx.x = m.x 
                     gfx.y = m.y
-                    local menu = "Dock Window||#- Themes -||Carbon|REAPER Default|Rainbow|Violet|BirdBird Classic"
+                    local menu = "Dock Window"
                     local option = gfx.showmenu(menu)
-                    if option > 0 then
-                        if option == 1 then
-                            gfx.dock(513)
-                        elseif option == 3 then
-                            swap_theme('theme_carbon')
-                        elseif option == 4 then
-                            swap_theme('theme_reaper_default')
-                        elseif option == 5 then
-                            swap_theme('theme_rainbow')
-                        elseif option == 6 then
-                            swap_theme('theme_violet')
-                        elseif option == 7 then
-                            swap_theme('theme_classic')
-                        end
+                    if option == 1 then
+                        gfx.dock(513)
                     end
                 end
             end
@@ -503,7 +499,6 @@ function draw(m, mouse_state, drag_info)
                 draw_state.draw_crop_region = false
             elseif draw_state.drag_sample then
                 draw_state.drag_sample = false
-                --ADD LENGTH CHECK
                 local dist = math.sqrt((m.x - drag_info.start_x)*(m.x - drag_info.start_x) + (m.y - drag_info.start_y)*(m.y - drag_info.start_y))
                 if reaper.time_precise() - draw_state.hit_time < 0.19 and dist < 60 then
                     draw_state.cs = -1
@@ -511,7 +506,6 @@ function draw(m, mouse_state, drag_info)
                 else
                     local window, segment, details = reaper.BR_GetMouseCursorContext()
                     if window == 'arrange' then
-                        --UNSELECT ALL ITEMS - FOCUS ARRANGE
                         local sel_item_count = reaper.CountSelectedMediaItems(0)
                         for i = 0, sel_item_count - 1 do
                             local item = reaper.GetSelectedMediaItem(0, sel_item_count - (i+1))
@@ -519,7 +513,6 @@ function draw(m, mouse_state, drag_info)
                         end
                         reaper.SetCursorContext(1)
                         
-                        --INSERT MEDIA
                         local start_time, end_time = reaper.GetSet_ArrangeView2(0, false, 0, 0)
                         local pos = reaper.BR_GetMouseCursorContext_Position()
                         pos = reaper.SnapToGrid(0, pos)
@@ -539,7 +532,6 @@ function draw(m, mouse_state, drag_info)
                     end
                 end
             elseif draw_state.offset_buffer then
-                --IDLE
                 draw_state.offset_buffer = false
                 draw_state.start_offset = 0
                 draw_state.start_cs = -1
@@ -581,7 +573,6 @@ function draw(m, mouse_state, drag_info)
     elseif draw_state.offset_buffer then
         draw_state.offset = draw_state.offset + m.dx/bw
         
-        --OFFSET CROP REGION
         draw_state.cs = draw_state.cs + m.dx
         local ce = draw_state.cs + draw_state.cw
         if draw_state.cs <= margin then
@@ -600,14 +591,8 @@ function draw(m, mouse_state, drag_info)
         local preview_pos = reaper.gmem_read(12)
         if preview_pos > 0 then
             preview_pos = wmod(preview_pos + norm_offset, 1)
-            
-            local col = {r = theme.waveform_line.r/256, g = theme.waveform_line.g/256, b = theme.waveform_line.b/256}
-            if theme.rainbow_waveform_col then
-                col = palette(preview_pos*3)
-            end
-
             local xp = preview_pos*bw + margin
-            gfx.set(col.r, col.g, col.b, 0.8)
+            gfx.set(jkk_pal.c_peak.r, jkk_pal.c_peak.g, jkk_pal.c_peak.b, 0.85)
             gfx.line(xp, margin, xp, margin + bh)
         end
     else --IDLE 
@@ -658,8 +643,7 @@ function draw(m, mouse_state, drag_info)
         ::continue::
     end
 
-    gfx.set(theme.crop_region.r/256,
-    theme.crop_region.g/256,theme.crop_region.b/256, theme.crop_region_alpha)
+    gfx.set(jkk_pal.accent.r, jkk_pal.accent.g, jkk_pal.accent.b, jkk_pal.crop_region_alpha)
     if jsfx_existed > 0 then
         gfx.rect(draw_state.cs, margin, draw_state.cw, bh)
     end
@@ -668,12 +652,11 @@ function draw(m, mouse_state, drag_info)
     local pause_state = reaper.gmem_read(13)
     if pause_state == 1 then
       gfx.setfont(0)
-      gfx.set(theme.writer_col.r/256, theme.writer_col.g/256, theme.writer_col.b/256)
+      gfx.set(jkk_pal.text.r, jkk_pal.text.g, jkk_pal.text.b, 1.0)
       gfx.x = 10
       gfx.y = 10
       gfx.drawstr("Paused")
     end
-
 
     --STORE STATE--
     draw_state.bw = bw
@@ -683,7 +666,7 @@ end
 function window_resize()
     local w = gfx.w
     local h = gfx.h
-    local margin = theme.border_margin   
+    local margin = jkk_pal.border_margin   
     local bw = w - 2*margin
     local bh = h - 2*margin    
 
@@ -700,7 +683,6 @@ local drag_info = {}
 local m_lock = ''
 local last_project = reaper.EnumProjects(-1)
 
-local particles = {}
 function main()
     --PROJECT HANDLING
     local current_project = reaper.EnumProjects(-1)
@@ -792,37 +774,17 @@ function main()
         draw(m, 'IDLE', drag_info)
     end
 
-    --THEME SWITCHING
-    local sel_id = reaper.gmem_read(16)
-    if sel_id ~= 0 then
-      themes = get_themes()
-      local sel_name = theme_index_name[sel_id]
-      if sel_name then
-        swap_theme(sel_name)
-      end
-      reaper.gmem_write(16, 0)
+    -- JKK_THEME REALTIME SYNC
+    local cur_rev = tonumber(reaper.GetExtState("JKK_Theme", "revision")) or 0
+    if cur_rev ~= last_jkk_rev then
+        sync_jkk_theme()
+        last_jkk_rev = cur_rev
     end
     
     char = gfx.getchar()
-    if char == 49 then 
-        swap_theme('theme_carbon')
-    elseif char == 50 then
-        swap_theme('theme_reaper_default')
-    elseif char == 51 then
-        swap_theme('theme_rainbow')
-    elseif char == 52 then
-        swap_theme('theme_violet')
-    elseif char == 53 then
-        swap_theme('theme_classic')
-    end
     if char == 32 then 
-        -- 스페이스바 (32)
         reaper.Main_OnCommand(40044, 0) -- Transport: Play/stop
-        
     elseif char == 26 then 
-        -- Ctrl + Z (gfx 라이브러리에서 Ctrl+Z는 26으로 인식됩니다)
-        
-        -- Shift 키가 같이 눌려있는지 확인 (mouse_cap의 8은 Shift를 의미)
         if (gfx.mouse_cap & 8) == 8 then 
             reaper.Main_OnCommand(40030, 0) -- Edit: Redo (Ctrl+Shift+Z)
         else
@@ -846,12 +808,10 @@ function exit()
 end
 
 --WINDOW STUFF---------------------------
-theme.bg = {r = 30, g = 30, b = 30}
-gfx.clear = rgb2num(theme.bg.r, theme.bg.g, theme.bg.b)
 local w = 1000 local h = 100
 local _, _, sw, sh = reaper.my_getViewport(0, 0, 0, 0, 0, 0, 0, 0, 1)
 last_w = gfx.w --window width
-last_h = gfx.h --window width
+last_h = gfx.h --window height
 gfx.init("Global Sampler", w, h, 0, sw/2 - w/2, sh/2 - h/2)
 if settings.window_state then
     gfx.dock(settings.window_state)

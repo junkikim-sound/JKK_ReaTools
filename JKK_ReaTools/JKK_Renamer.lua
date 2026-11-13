@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Renamer
 -- @author Junki Kim
--- @version 1.1.2
+-- @version 1.1.3
 -- @provides 
 --     [nomain] Modules/JKK_Renamer_UCSList.lua
 --     [nomain] Modules/JKK_Renamer_WildcardList.lua
@@ -17,9 +17,9 @@ local ucs_list = dofile(script_path .. "Modules/JKK_Renamer_UCSList.lua")
 local sel_mgr = _G.JKK_SelectionManager or dofile(script_path .. "Modules/JKK_SelectionManager.lua")
 
 -- JKK_Theme.lua 안전 로드
-local theme_path = r.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme.lua"
+local theme_path = r.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme_Core.lua"
 if not r.file_exists(theme_path) then
-    theme_path = script_path .. "Modules/JKK_Theme.lua"
+    theme_path = script_path .. "Modules/JKK_Theme_Core.lua"
 end
 
 local theme = r.file_exists(theme_path) and dofile(theme_path) or {}

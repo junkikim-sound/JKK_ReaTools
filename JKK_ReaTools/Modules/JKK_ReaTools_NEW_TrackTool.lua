@@ -46,7 +46,7 @@ local width_val = 1.0
 local track_channels = 2
 
 -- 프로젝트 전체 적용 여부를 저장하는 변수
-local apply_all_tracks = false
+local apply_all_tracks = (reaper.GetExtState("JKK_TrackTool", "apply_all_tracks") == "1")
 
 local function ReadSelectedTrackValues()
     local track = reaper.GetSelectedTrack(0, 0)
@@ -337,8 +337,11 @@ local function DrawTrackBatchController(ctx)
 
     -- 0.5dB 버튼 오른쪽 프로젝트 전체 적용 체크박스
     reaper.ImGui_SameLine(ctx, 0, row_gap)
-    local _, new_chk = reaper.ImGui_Checkbox(ctx, "##ApplyAllTracksChk", apply_all_tracks)
-    apply_all_tracks = new_chk
+    local changed_chk, new_chk = reaper.ImGui_Checkbox(ctx, "##ApplyAllTracksChk", apply_all_tracks)
+    if changed_chk then
+        apply_all_tracks = new_chk
+        reaper.SetExtState("JKK_TrackTool", "apply_all_tracks", apply_all_tracks and "1" or "0", true)
+    end
     if reaper.ImGui_IsItemHovered(ctx) then
         reaper.ImGui_SetTooltip(ctx, "Check to apply 0.5dB rounding to all tracks in the project")
     end

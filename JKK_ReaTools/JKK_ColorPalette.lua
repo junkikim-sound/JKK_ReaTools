@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ColorPalette
 -- @author Junki Kim
--- @version 1.0.8
+-- @version 1.0.9
 -- @provides
 --     [nomain] Modules/JKK_ColorPalette_Data.lua
 --     [nomain] Modules/JKK_ColorPalette_UI.lua
@@ -42,7 +42,7 @@ local function load_module(filename)
     return nil
 end
 
-local theme_module = load_module("JKK_Theme.lua")
+local theme_module = load_module("JKK_Theme_Core.lua")
 local ApplyTheme = theme_module and theme_module.ApplyTheme or function(c) return 0, 0 end
 
 local ui_module = load_module("JKK_ColorPalette_UI.lua")

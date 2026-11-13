@@ -951,7 +951,7 @@ math.randomseed(os.time())
         local shouldKeepOriginal = (keep_original_state == "" or keep_original_state == "true")
         local grid_slice_n = 5
         local grid_live = {
-            enabled = false,
+            enabled = (reaper.GetExtState("JKK_ItemTool", "grid_live_enabled") == "1"),
             mode = 0,          -- 0: Grid, 1: Seconds
             sec = 0.5,         -- Seconds 모드 기본값 (0.01 ~ 5.0초)
             snapshot = nil,    -- 원본 아이템 상태 스냅샷
@@ -2308,29 +2308,37 @@ local function DrawIntervalWidthTools(ctx, layout)
         row_y
     )
 
-    local format_str, cur_max, cur_min = "", 0, 0
-
-    if spacing_mode == 0 then
-        format_str = string.format("%.0f grid", width)
-        cur_min, cur_max = 0.0, max_grid
-    elseif spacing_mode == 1 then
-        format_str = string.format("%.2fs", width)
-        cur_min, cur_max = 0.0, max_sec
-    elseif spacing_mode == 2 then
-        format_str = string.format("%.1f RPM", width)
-        cur_min, cur_max = min_rpm, max_rpm
-    end
-
     reaper.ImGui_SetNextItemWidth(ctx, layout.slider_width)
 
-    local changed_width, new_width = reaper.ImGui_SliderDouble(
-        ctx,
-        "##IntervalWidth",
-        width,
-        cur_min,
-        cur_max,
-        format_str
-    )
+    local changed_width, new_width
+    if spacing_mode == 0 then
+        changed_width, new_width = reaper.ImGui_SliderInt(
+            ctx,
+            "##IntervalWidthGrid",
+            math.floor(width + 0.5),
+            0,
+            math.floor(max_grid),
+            "%d grid"
+        )
+    elseif spacing_mode == 1 then
+        changed_width, new_width = reaper.ImGui_SliderDouble(
+            ctx,
+            "##IntervalWidthSec",
+            width,
+            0.0,
+            max_sec,
+            string.format("%.2fs", width)
+        )
+    else
+        changed_width, new_width = reaper.ImGui_SliderDouble(
+            ctx,
+            "##IntervalWidthRPM",
+            width,
+            min_rpm,
+            max_rpm,
+            string.format("%.1f RPM", width)
+        )
+    end
 
     if changed_width then
         JKK_ItemSliderUndoBegin()
@@ -2725,10 +2733,8 @@ local function DrawGridSplitter(ctx, layout)
     local changed_live, new_live = reaper.ImGui_Checkbox(ctx, "Live", grid_live.enabled)
     if changed_live then
         grid_live.enabled = new_live
+        reaper.SetExtState("JKK_ItemTool", "grid_live_enabled", grid_live.enabled and "1" or "0", true)
         ResetLiveGridSession()
-        if grid_live.enabled then
-            ExecuteLiveGridSplit()
-        end
     end
     if reaper.ImGui_IsItemHovered(ctx) then
         reaper.ImGui_SetTooltip(ctx, "Slice dynamically while adjusting the slider")
