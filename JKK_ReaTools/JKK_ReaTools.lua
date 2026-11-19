@@ -1,10 +1,8 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 1.0.1
+-- @version 1.0.11
 -- @provides
---     [main] Actions/JKK_Action_Track Visualizer FX Chain.lua
---     [main] Actions/JKK_Action_Volume Rounder.lua
 --     [main] Actions/JKK_TrackManager_Open.lua
 --     [main] Actions/JKK_TrackManager_TrackActivation.lua
 --     [main] JKK_ColorPalette.lua
