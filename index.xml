@@ -1,5 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
-<index version="1" name="JKK_ReaTools" commit="086b3839e45a01b63cf93a3389931ed089c54111">
+<index version="1" name="JKK_ReaTools" commit="ba9979cdcd6f96cd7d8b61e746f4fca47583a555">
   <category name="Global Sampler (Origin by BirdBird)">
     <reapack name="BirdBird_Global Sampler (JKK_Edited).lua" type="script" desc="Global Sampler (Edited by JKK)">
       <version name="0.99.8.5" author="BirdBird" time="2026-05-08T13:57:22Z">
@@ -200,6 +200,31 @@
         <source file="Modules/JKK_ReaTools_NEW_ColorPaletteLite.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/b9c35b0742dab7e930cd559c0ada30d2e9acd48a/JKK_ReaTools/Modules/JKK_ReaTools_NEW_ColorPaletteLite.lua</source>
         <source file="Modules/JKK_SelectionManager.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/b9c35b0742dab7e930cd559c0ada30d2e9acd48a/JKK_ReaTools/Modules/JKK_SelectionManager.lua</source>
         <source file="Modules/JKK_TakeMarker_Peaks.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/b9c35b0742dab7e930cd559c0ada30d2e9acd48a/JKK_ReaTools/Modules/JKK_TakeMarker_Peaks.lua</source>
+      </version>
+      <version name="1.0.12" author="Junki Kim" time="2026-11-19T16:14:21Z">
+        <source main="main">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/JKK_ReaTools.lua</source>
+        <source main="main" file="Actions/JKK_TrackManager_Open.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/Actions/JKK_TrackManager_Open.lua</source>
+        <source main="main" file="Actions/JKK_TrackManager_TrackActivation.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/Actions/JKK_TrackManager_TrackActivation.lua</source>
+        <source main="main" file="JKK_ColorPalette.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/JKK_ColorPalette.lua</source>
+        <source main="main" file="JKK_Loopmaker.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/JKK_Loopmaker.lua</source>
+        <source main="main" file="JKK_Renamer.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/JKK_Renamer.lua</source>
+        <source main="main" file="JKK_Renderer.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/JKK_Renderer.lua</source>
+        <source main="main" file="JKK_Theme.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/JKK_Theme.lua</source>
+        <source main="main" file="JKK_TrackManager.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/JKK_TrackManager.lua</source>
+        <source main="main" file="JKK_XYPad.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/JKK_XYPad.lua</source>
+        <source file="Modules/JKK_ColorPalette_Data.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/Modules/JKK_ColorPalette_Data.lua</source>
+        <source file="Modules/JKK_ColorPalette_UI.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/Modules/JKK_ColorPalette_UI.lua</source>
+        <source file="Modules/JKK_ReaTools_NEW_ItemTool.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/Modules/JKK_ReaTools_NEW_ItemTool.lua</source>
+        <source file="Modules/JKK_ReaTools_NEW_TrackTool.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/Modules/JKK_ReaTools_NEW_TrackTool.lua</source>
+        <source file="Modules/JKK_ReaTools_NEW_RenamerLite.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/Modules/JKK_ReaTools_NEW_RenamerLite.lua</source>
+        <source file="Modules/JKK_ReaTools_NEW_ColorPaletteLite.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/Modules/JKK_ReaTools_NEW_ColorPaletteLite.lua</source>
+        <source file="Modules/JKK_Renamer_UCSList.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/Modules/JKK_Renamer_UCSList.lua</source>
+        <source file="Modules/JKK_Renamer_WildcardList.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/Modules/JKK_Renamer_WildcardList.lua</source>
+        <source file="Modules/JKK_SelectionManager.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/Modules/JKK_SelectionManager.lua</source>
+        <source file="Modules/JKK_TakeMarker_Peaks.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/Modules/JKK_TakeMarker_Peaks.lua</source>
+        <source file="Modules/JKK_Theme_Core.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/Modules/JKK_Theme_Core.lua</source>
+        <source file="Modules/JKK_TrackManager_Core.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/Modules/JKK_TrackManager_Core.lua</source>
+        <source file="Modules/JKK_TrackManager_UI.lua">https://github.com/junkikim-sound/JKK_ReaTools/raw/ba9979cdcd6f96cd7d8b61e746f4fca47583a555/JKK_ReaTools/Modules/JKK_TrackManager_UI.lua</source>
       </version>
     </reapack>
     <reapack name="JKK_ReaTools_OLD.lua" type="script">
