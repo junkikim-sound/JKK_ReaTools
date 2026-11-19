@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Renderer
 -- @author Junki Kim
--- @version 1.1.6
+-- @version 1.1.7
 --========================================================
 
 local r = reaper
@@ -104,7 +104,6 @@ end
 -- Format Lists
 local src_list = " Master mix\0 Selected tracks (stems)\0 Selected Regions (Matrix)\0 Selected Regions (Time Selection)\0 Selected media items (Grouped)\0 Selected media items (Separately)\0"
 local bnd_list = " Entire project\0 Time selection\0"
-local sr_items = {"8000", "11025", "16000", "22050", "32000", "44100", "48000", "88200", "96000", "176400", "192000"}
 local sr_values = {8000, 11025, 16000, 22050, 32000, 44100, 48000, 88200, 96000, 176400, 192000}
 local format_list = " WAV\0 AIFF\0 FLAC\0 MP3\0 OGG Opus\0 OGG Vorbis\0 Video (MP4)\0"
 
@@ -1707,7 +1706,7 @@ local function Main()
         select_all_on_initial_file_focus = false
       end
 
-      local file_input_min_x, file_input_min_y = r.ImGui_GetCursorScreenPos(ctx)
+      local file_input_min_x = r.ImGui_GetCursorScreenPos(ctx)
       local file_name_changed, new_file_pattern = r.ImGui_InputText(
         ctx, '##fn', tab.file_pattern, file_input_flags, completion_callback)
       if file_name_changed then
@@ -1717,7 +1716,7 @@ local function Main()
       
       local file_input_focused = r.ImGui_IsItemFocused(ctx)
       local is_input_hovered = r.ImGui_IsItemHovered(ctx)
-      local file_input_max_x, file_input_max_y = r.ImGui_GetItemRectMax(ctx)
+      local file_input_max_y = select(2, r.ImGui_GetItemRectMax(ctx))
       if file_input_set_focus then file_input_set_focus = false end
 
       local tab_requested = r.ImGui_Function_GetValue(completion_callback, "tab_requested") == 1

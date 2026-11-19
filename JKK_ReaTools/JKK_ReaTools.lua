@@ -1,13 +1,14 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 0.9.92
+-- @version 1.0.0
 -- @provides
 --     [nomain] Modules/JKK_ReaTools_NEW_ItemTool.lua
 --     [nomain] Modules/JKK_ReaTools_NEW_TrackTool.lua
 --     [nomain] Modules/JKK_ReaTools_NEW_RenamerLite.lua
 --     [nomain] Modules/JKK_ReaTools_NEW_ColorPaletteLite.lua
 --     [nomain] Modules/JKK_SelectionManager.lua
+--     [nomain] Modules/JKK_TakeMarker_Peaks.lua
 --========================================================
 
 local RPR = reaper
@@ -181,6 +182,22 @@ local item_module          = load_module("JKK_ReaTools_NEW_ItemTool.lua")
 local track_module         = load_module("JKK_ReaTools_NEW_TrackTool.lua")
 local renamer_lite_module  = load_module("JKK_ReaTools_NEW_RenamerLite.lua")
 local color_palette_module = load_module("JKK_ReaTools_NEW_ColorPaletteLite.lua")
+local track_manager_core   = load_module("JKK_TrackManager_Core.lua")
+_G.JKK_TrackManagerCore = track_manager_core
+local track_manager_ui_lib = load_module("JKK_TrackManager_UI.lua")
+local track_manager_view   = (track_manager_ui_lib and track_manager_ui_lib.Create and track_manager_core)
+    and track_manager_ui_lib.Create({core = track_manager_core, theme = Theme}) or nil
+
+local function OpenStandaloneTrackManager()
+    local action_path = script_dir .. "Actions/JKK_TrackManager_Open.lua"
+    if RPR.file_exists(action_path) then
+        -- Reuse the existing action: focus the standalone window if already open.
+        local ok, err = pcall(dofile, action_path)
+        if not ok then RPR.MB(tostring(err), "Track Manager", 0) end
+    else
+        RPR.MB("Track Manager open action was not found: " .. action_path, "JKK_ReaTools", 0)
+    end
+end
 
 ---------------------------------------------------------
 -- Project Memo
@@ -666,7 +683,9 @@ local pending_panel_swap = nil
 
 local function DrawPanelHeader(panel_id)
     local available_width = select(1, RPR.ImGui_GetContentRegionAvail(ctx))
-    local label = panel_titles[panel_id] .. "##PanelHeader_" .. panel_id
+    local header_title = (panel_id == "D" and current_mode == "Track")
+        and "Track Manager" or panel_titles[panel_id]
+    local label = header_title .. "##PanelHeader_" .. panel_id
 
     RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Button(), 0x00000000)
     RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_ButtonHovered(), 0x00000000)
@@ -690,7 +709,7 @@ local function DrawPanelHeader(panel_id)
 
     if RPR.ImGui_BeginDragDropSource(ctx) then
         RPR.ImGui_SetDragDropPayload(ctx, "JKK_REATOOLS_PANEL", panel_id)
-        RPR.ImGui_Text(ctx, "Move " .. panel_titles[panel_id])
+        RPR.ImGui_Text(ctx, "Move " .. header_title)
         RPR.ImGui_EndDragDropSource(ctx)
     end
 
@@ -752,7 +771,6 @@ local function DrawSettingsPopup()
 
     -- 1. Selection & Range Detection
     RPR.ImGui_TextDisabled(ctx, "Selection & Range Detection")
-    RPR.ImGui_Separator(ctx)
 
     local range_mode_items = { "Ignore", "Regions / Markers", "Items in Range" }
 
@@ -804,8 +822,8 @@ local function DrawSettingsPopup()
 
     -- 2. Panels Visibility & Layout
     RPR.ImGui_Spacing(ctx)
-    RPR.ImGui_TextDisabled(ctx, "Panels")
     RPR.ImGui_Separator(ctx)
+    RPR.ImGui_TextDisabled(ctx, "Panels")
 
     for i, id in ipairs(panel_ids) do
         local vis_changed, new_vis = RPR.ImGui_Checkbox(ctx, panel_titles[id] .. "##Vis_" .. id, panel_visible[id])
@@ -824,8 +842,8 @@ local function DrawSettingsPopup()
 
     -- 3. UI Zoom
     RPR.ImGui_Spacing(ctx)
-    RPR.ImGui_TextDisabled(ctx, "UI Zoom")
     RPR.ImGui_Separator(ctx)
+    RPR.ImGui_TextDisabled(ctx, "UI Zoom")
 
     local auto_changed, new_auto = RPR.ImGui_Checkbox(ctx, "Auto Fit Width", ui_zoom.auto)
     if auto_changed then
@@ -861,8 +879,8 @@ local function DrawSettingsPopup()
 
     -- 4. Tools & Theme
     RPR.ImGui_Spacing(ctx)
-    RPR.ImGui_TextDisabled(ctx, "Tools & Theme")
     RPR.ImGui_Separator(ctx)
+    RPR.ImGui_TextDisabled(ctx, "Tools & Theme")
 
     if RPR.ImGui_MenuItem(ctx, "Theme & Font Manager...") then
         if Theme and Theme.OpenEditor then
@@ -1072,6 +1090,20 @@ local function DrawPanelC()
 end
 
 local function DrawPanelD()
+    if current_mode == "Track" then
+        -- Embedded Track Manager owns the entire toolbar including the launcher.
+        if track_manager_view then
+            track_manager_view.Draw(ctx, {
+                embedded = true,
+                scale = JKK_UI_SCALE,
+                onOpenStandalone = OpenStandaloneTrackManager,
+            })
+        else
+            RPR.ImGui_TextDisabled(ctx, "Track Manager UI is unavailable.")
+        end
+        return
+    end
+
     if item_module and item_module.JKK_ItemTool_DrawEditingUtilities then
         local item_active = (current_mode == "Item") and IsCurrentModeActive()
         RPR.ImGui_BeginDisabled(ctx, not item_active)
@@ -1153,6 +1185,11 @@ end
 -- Main UI Loop
 ---------------------------------------------------------
 local function Main()
+    -- Maintain inactive track invariants in either Item or Track mode.
+    if track_manager_core then
+        local hide_tcp, hide_mcp = track_manager_core.GetHideFlags()
+        track_manager_core.EnforceInactive(hide_tcp, hide_mcp)
+    end
     prev_project_state_count = current_project_state_count
     current_project_state_count = RPR.GetProjectStateChangeCount(0)
 

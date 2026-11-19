@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools_OLD
 -- @author Junki Kim
--- @version 0.9.65
+-- @version 0.9.66
 -- @provides 
 --     [nomain] Modules/JKK_ReaTools_OLD_ItemTools.lua
 --     [nomain] Modules/JKK_ReaTools_OLD_TrackTools.lua
@@ -19,7 +19,7 @@ local selected_tool = 1
 local prev_project_state_count = reaper.GetProjectStateChangeCount(0) 
 local current_project_state_count = prev_project_state_count
 
-local theme_path = RPR.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme.lua"
+local theme_path = RPR.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme_Core.lua"
 local ApplyTheme = (RPR.file_exists(theme_path) and dofile(theme_path).ApplyTheme) 
                    or function(ctx) return 0, 0 end
 
@@ -58,19 +58,12 @@ tools[3] = { name = "Timeline Tools", module = load_module("/Scripts/JKK_ReaTool
         project_note = ""
     end
 
-    -- [자동 탭 전환을 위한 상태 추적 변수]
-    local prev_sel_item = nil
-    local prev_sel_track = nil
-    local prev_edit_cursor = -1
-    local force_tab = nil
 
 ---------------------------------------------------------
 -- UI
 ---------------------------------------------------------
 local function Main()
     current_project_state_count = reaper.GetProjectStateChangeCount(0)
-    local textcol_title = 0xE3DB8EFF
-    local textcol_gray = 0x808080FF
 
     local current_project_ptr, _ = reaper.EnumProjects(-1)
     if current_project_ptr ~= last_project_ptr then
@@ -83,48 +76,6 @@ local function Main()
         last_project_ptr = current_project_ptr
     end
     
-    -- [자동 탭 전환 로직 시작]
-    local cur_sel_items_count = reaper.CountSelectedMediaItems(0)
-    local cur_sel_tracks_count = reaper.CountSelectedTracks(0)
-    local cur_sel_item = cur_sel_items_count > 0 and reaper.GetSelectedMediaItem(0, 0) or nil
-    local cur_sel_track = cur_sel_tracks_count > 0 and reaper.GetSelectedTrack(0, 0) or nil
-    local cur_edit_cursor = reaper.GetCursorPosition()
-
-    local item_count_changed = (cur_sel_items_count ~= (prev_sel_items_count or 0))
-    local track_count_changed = (cur_sel_tracks_count ~= (prev_sel_tracks_count or 0))
-
-    local item_changed = (cur_sel_item ~= prev_sel_item) or item_count_changed
-    local track_changed = (cur_sel_track ~= prev_sel_track) or track_count_changed
-    local cursor_changed = (cur_edit_cursor ~= prev_edit_cursor)
-
-    local item_gained = item_changed and (cur_sel_items_count > 0)
-    local item_lost = item_changed and (cur_sel_items_count == 0)
-    local track_gained = track_changed and (cur_sel_tracks_count > 0)
-
-    -- 우선순위에 따른 탭 전환 분기
-    force_tab = nil
-    ---if item_gained then
-    ---    force_tab = 1 
-    ---    
-    ---elseif track_gained and not item_changed then
-    ---    force_tab = 2 
-    ---    
-    ---elseif item_lost and cur_sel_tracks_count > 0 then
-    ---    force_tab = 2
-    ---    
-    ---elseif cursor_changed then
-    ---    force_tab = 3
-    ---    
-    ---else
-    ---    force_tab = nil
-    ---end
-
-    -- 상태 업데이트
-    prev_sel_item = cur_sel_item
-    prev_sel_track = cur_sel_track
-    prev_edit_cursor = cur_edit_cursor
-    prev_sel_items_count = cur_sel_items_count
-    prev_sel_tracks_count = cur_sel_tracks_count
         
     reaper.ImGui_SetNextWindowSize(ctx, 1900, 220, reaper.ImGui_Cond_Once())
     style_pop_count, color_pop_count = ApplyTheme(ctx)
@@ -197,9 +148,6 @@ local function Main()
                 if RPR.ImGui_BeginTabBar(ctx, "ToolTabs") then
                     for i, tool in ipairs(tools) do
                         local flags = 0
-                        if force_tab == i then
-                            flags = reaper.ImGui_TabItemFlags_SetSelected()
-                        end
 
                         local is_selected, _ = RPR.ImGui_BeginTabItem(ctx, tool.name, nil, flags)
                         if is_selected then

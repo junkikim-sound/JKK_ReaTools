@@ -752,7 +752,14 @@ local function EditorLoop()
 
         RPR.ImGui_Spacing(editor_ctx); RPR.ImGui_Separator(editor_ctx); RPR.ImGui_Spacing(editor_ctx)
 
-        -- 5. Fluid Bottom Buttons
+        -- 5. Bottom buttons: stay flush with the content area's bottom,
+        -- regardless of theme-manager window height. If content is taller
+        -- than the window, keep normal document flow/scrolling.
+        local current_y = RPR.ImGui_GetCursorPosY(editor_ctx)
+        local _, remain_h = RPR.ImGui_GetContentRegionAvail(editor_ctx)
+        local _, item_gap_y = RPR.ImGui_GetStyleVar(editor_ctx, RPR.ImGui_StyleVar_ItemSpacing())
+        local button_block_h = 24 + 26 + (item_gap_y or 8) * 2 + 3
+        RPR.ImGui_SetCursorPosY(editor_ctx, math.max(current_y, current_y + remain_h - button_block_h))
         local bottom_btn_w = math.floor((avail_w - spacing * 2) / 3)
 
         PushButton(editor_ctx, "primary")
@@ -769,7 +776,7 @@ local function EditorLoop()
         RPR.ImGui_Button(editor_ctx, "Highlight", bottom_btn_w, 24)
         PopButton(editor_ctx)
 
-        RPR.ImGui_Spacing(editor_ctx)
+        RPR.ImGui_Dummy(editor_ctx, 1, 3)
         if RPR.ImGui_Button(editor_ctx, "Reset All to Default", -1, 26) then
             ResetToDefaults()
             selected_preset = "Default Dark"
@@ -781,6 +788,15 @@ local function EditorLoop()
         if not RPR.ImGui_IsAnyItemActive(editor_ctx) and RPR.ImGui_IsKeyPressed(editor_ctx, RPR.ImGui_Key_Space(), false) then
             RPR.Main_OnCommand(40044, 0)
         end        
+    end
+
+    -- Escape closes the Theme Manager, but not while editing an input field
+    -- or while a popup owns keyboard focus. This preserves Combo Escape behavior.
+    if visible
+        and RPR.ImGui_IsWindowFocused(editor_ctx, RPR.ImGui_FocusedFlags_RootWindow())
+        and not RPR.ImGui_IsAnyItemActive(editor_ctx)
+        and RPR.ImGui_IsKeyPressed(editor_ctx, RPR.ImGui_Key_Escape()) then
+        open_flag = false
     end
 
     RPR.ImGui_End(editor_ctx)

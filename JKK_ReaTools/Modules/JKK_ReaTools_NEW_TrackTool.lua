@@ -17,9 +17,7 @@ if not reaper.file_exists(sel_path) then
 end
 local sel_mgr = _G.JKK_SelectionManager or (reaper.file_exists(sel_path) and dofile(sel_path))
 
--- FIX: slider undo blocks. The block used to open when a slider was clicked and
--- close only after an actual edit, so a click without a change left it open.
--- It now opens on the first change and closes whenever the slider is released.
+-- Start slider undo blocks on first value change; close on release.
 local slider_undo_open = false
 local function SliderUndoBegin()
     if not slider_undo_open then
@@ -418,43 +416,10 @@ end
 ------------------------------------------------------------
 -- UI: Context-specific Actions
 ------------------------------------------------------------
-local function PushJKKButtonStyle(ctx)
-    if JKK_Theme then
-        JKK_Theme.PushButton(ctx, "primary")
-    else
-        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_Button(), 0x233C4FFF)
-        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonHovered(), 0x435665FF)
-        reaper.ImGui_PushStyleColor(ctx, reaper.ImGui_Col_ButtonActive(), 0x042239FF)
-    end
-end
-
-local function PopJKKButtonStyle(ctx)
-    if JKK_Theme then
-        JKK_Theme.PopButton(ctx)
-    else
-        reaper.ImGui_PopStyleColor(ctx, 3)
-    end
-end
 
 local function DrawTrackActions(ctx)
     local available_width = select(1, reaper.ImGui_GetContentRegionAvail(ctx))
     local button_gap = S(6)
-    local top_button_width = math.max(1, (available_width - button_gap) / 2)
-
-    if reaper.ImGui_Button(ctx, "Delete Unused Tracks", top_button_width, S(22)) then
-        DeleteEmptyTracksAndFolders()
-    end
-
-    reaper.ImGui_SameLine(ctx, 0, button_gap)
-    PushJKKButtonStyle(ctx)
-    if reaper.ImGui_Button(ctx, "Track Manager", top_button_width, S(22)) then
-        local cmd_id = reaper.NamedCommandLookup("_RS672098c29f44e4b9b23dd82b40f07cfaba13c9a9")
-        if cmd_id ~= 0 then
-            reaper.Main_OnCommand(cmd_id, 0)
-        end
-    end
-    PopJKKButtonStyle(ctx)
-
     local button_width = math.max(1, (available_width - (button_gap * 2)) / 3)
     if reaper.ImGui_Button(ctx, "Trim", button_width, S(22)) then
         Action_SetSelectedTracksAutomationMode(0)
@@ -487,18 +452,91 @@ local function DrawTimelineActions(ctx)
     end
 end
 
+-- Shared core for the standalone Track Manager and JKK_ReaTools.
+local track_mgr_core = nil
+local function GetTrackManagerCore()
+    if track_mgr_core then return track_mgr_core end
+    if _G.JKK_TrackManagerCore then
+        track_mgr_core = _G.JKK_TrackManagerCore
+        return track_mgr_core
+    end
+    local this_dir = (debug.getinfo(1, "S").source or ""):match("^@(.+[\\/])") or ""
+    local path = this_dir .. "JKK_TrackManager_Core.lua"
+    if reaper.file_exists(path) then
+        local ok, result = pcall(dofile, path)
+        if ok then track_mgr_core = result end
+    end
+    return track_mgr_core
+end
+
+local function DrawActivationAndSort(ctx)
+    local core = GetTrackManagerCore()
+    local available_width = select(1, reaper.ImGui_GetContentRegionAvail(ctx))
+    -- The three management buttons share exactly the same 1:1:1 geometry
+    -- as Trim / Read / Write. Shorten captions only if necessary.
+    local gap = S(6)
+    local third = math.max(1, (available_width - gap * 2) / 3)
+    local function ResponsiveCaption(full, short)
+        local text_width = select(1, reaper.ImGui_CalcTextSize(ctx, full))
+        return (text_width + S(12) <= third) and full or short
+    end
+    local sel_count = reaper.CountSelectedTracks(0)
+
+    reaper.ImGui_BeginDisabled(ctx, sel_count == 0 or core == nil)
+    local any_active = false
+    if core then
+        for i = 0, sel_count - 1 do
+            local tr = reaper.GetSelectedTrack(0, i)
+            if tr and core.IsTrackActive(tr) then any_active = true; break end
+        end
+    end
+    local label = any_active and "Deactivate Tracks" or "Activate Tracks"
+    local activation_caption = ResponsiveCaption(label, any_active and "Deactivate" or "Activate")
+    if reaper.ImGui_Button(ctx, activation_caption .. "##JKK_Activation", third, S(22)) and core then
+        core.ToggleSelectedTracksActive()
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+        reaper.ImGui_SetTooltip(ctx, "Toggle activation of selected tracks and folder descendants")
+    end
+    reaper.ImGui_EndDisabled(ctx)
+
+    reaper.ImGui_SameLine(ctx, 0, gap)
+    if reaper.ImGui_Button(ctx, ResponsiveCaption("Delete Unused Tracks", "Delete Unused") .. "##JKK_DeleteUnused", third, S(22)) then
+        DeleteEmptyTracksAndFolders()
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+        reaper.ImGui_SetTooltip(ctx, "Delete empty tracks and folders")
+    end
+
+    reaper.ImGui_SameLine(ctx, 0, gap)
+    reaper.ImGui_BeginDisabled(ctx, sel_count == 0 or core == nil)
+    if reaper.ImGui_Button(ctx, ResponsiveCaption("Sort Tracks A-Z", "Sort A-Z") .. "##JKK_SortTracks", third, S(22)) and core then
+        local ok, message = core.SortSelectedTrackSiblingsAZ()
+        if not ok and message and not message:find("already sorted", 1, true) then
+            reaper.MB(message, "Sort Tracks", 0)
+        end
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+        reaper.ImGui_SetTooltip(ctx, "Sort all direct siblings A-Z at the first selected track's level; folder children stay together and are not sorted")
+    end
+    reaper.ImGui_EndDisabled(ctx)
+end
+
 local function JKK_TrackTool_Draw(ctx, active_context)
     active_context = active_context or "track"
     if active_context == "track" then
         DrawTrackBatchController(ctx)
+        reaper.ImGui_Spacing(ctx)
+        -- Automation modes sit above; management actions are the fixed footer.
+        DrawTrackActions(ctx)
 
         local footer_cursor_y = reaper.ImGui_GetCursorPosY(ctx)
         local _, footer_available_y = reaper.ImGui_GetContentRegionAvail(ctx)
-        local track_actions_height = S(22) * 2 + S(6) 
+        local management_height = S(22)
         reaper.ImGui_SetCursorPosY(
-            ctx, footer_cursor_y + math.max(0, footer_available_y - track_actions_height)
+            ctx, footer_cursor_y + math.max(0, footer_available_y - management_height)
         )
-        DrawTrackActions(ctx)
+        DrawActivationAndSort(ctx)
     elseif active_context == "timeline" then
         DrawTimelineActions(ctx)
     end

@@ -4,18 +4,15 @@
 -- @noindex
 --========================================================
 
-local open = true
 
-local theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme.lua"
+local theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme_Core.lua"
 local theme_module = nil
 if reaper.file_exists(theme_path) then
     theme_module = dofile(theme_path)
 end
 
 local ApplyTheme = theme_module and theme_module.ApplyTheme or function(ctx) return 0, 0 end
-local style_pop_count, color_pop_count
 
-local select_level = 0
 local volume_db = 0.0
 local pan_val = 0.0
 

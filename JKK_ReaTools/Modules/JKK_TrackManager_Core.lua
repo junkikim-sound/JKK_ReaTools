@@ -275,4 +275,245 @@ function Core.SetSelectedTracksActive(make_active, undo_label)
     RPR.Undo_EndBlock(undo_label or (make_active and "Activate Selected Tracks" or "Deactivate Selected Tracks"), -1)
 end
 
+
+-- Toggle all currently selected tracks (folders include their descendants).
+-- When any selected track is active we deactivate the selection;
+-- otherwise we restore the selection together.
+function Core.ToggleSelectedTracksActive()
+    local count = RPR.CountSelectedTracks(0)
+    if count < 1 then return false end
+    local any_active = false
+    for i = 0, count - 1 do
+        local tr = RPR.GetSelectedTrack(0, i)
+        if tr and Core.IsTrackActive(tr) then
+            any_active = true
+            break
+        end
+    end
+    Core.SetSelectedTracksActive(not any_active, "JKK Track Manager: Toggle Selected Tracks Active")
+    return true
+end
+
+local function GetNameForSorting(track)
+    local _, name = RPR.GetSetMediaTrackInfo_String(track, Core.TRACK_PROP.NAME, "", false)
+    name = StripInactivePrefix(name or "")
+    return name:lower()
+end
+
+-- Natural A-Z ordering: digit runs are compared numerically without converting
+-- them to Lua numbers (so long track numbers remain precise).
+-- Non-numeric characters use case-insensitive lexical ordering.
+local function NaturalLess(a, b)
+    local ia, ib = 1, 1
+    while ia <= #a and ib <= #b do
+        local ca, cb = a:sub(ia, ia), b:sub(ib, ib)
+        if ca:match("%d") and cb:match("%d") then
+            local ra = a:sub(ia):match("^(%d+)")
+            local rb = b:sub(ib):match("^(%d+)")
+            local na = ra:gsub("^0+", "")
+            local nb = rb:gsub("^0+", "")
+            if na == "" then na = "0" end
+            if nb == "" then nb = "0" end
+            if #na ~= #nb then return #na < #nb end
+            if na ~= nb then return na < nb end
+            ia, ib = ia + #ra, ib + #rb
+        else
+            if ca ~= cb then return ca < cb end
+            ia, ib = ia + 1, ib + 1
+        end
+    end
+    return ia > #a and ib <= #b
+end
+
+local function TrackIsDescendantOf(track, ancestor)
+    local parent = RPR.GetParentTrack(track)
+    while parent do
+        if parent == ancestor then return true end
+        parent = RPR.GetParentTrack(parent)
+    end
+    return false
+end
+
+local function GatherSiblingUnits(parent)
+    local total = RPR.CountTracks(0)
+    local units = {}
+    for i = 0, total - 1 do
+        local track = RPR.GetTrack(0, i)
+        if RPR.GetParentTrack(track) == parent then
+            local is_folder = RPR.GetMediaTrackInfo_Value(track, Core.TRACK_PROP.FOLDER_DEPTH) == 1
+            local members = {track}
+            if is_folder then
+                for j = i + 1, total - 1 do
+                    local child = RPR.GetTrack(0, j)
+                    if not TrackIsDescendantOf(child, track) then break end
+                    members[#members+1] = child
+                end
+            end
+            units[#units+1] = {
+                track = track,
+                members = members,
+                is_folder = is_folder,
+                key = GetNameForSorting(track),
+                index = i,
+            }
+        end
+    end
+    return units
+end
+
+-- Sort every direct child of the selected track's parent, whether an
+-- ordinary track or a folder. A folder and all descendants move as ONE unit.
+-- Only one level is sorted (never recurse into child folders).
+-- When multiple tracks are selected, the first selected track in project
+-- order supplies the parent/sort scope; preserve every track selection.
+function Core.SortSelectedTrackSiblingsAZ()
+    if not RPR.ReorderSelectedTracks then
+        return false, "This REAPER version does not support ReorderSelectedTracks."
+    end
+
+    local selected = {}
+    local parent = nil
+    for i = 0, RPR.CountSelectedTracks(0) - 1 do
+        local tr = RPR.GetSelectedTrack(0, i)
+        if tr then
+            selected[#selected + 1] = tr
+            if #selected == 1 then parent = RPR.GetParentTrack(tr) end
+        end
+    end
+    if #selected == 0 then return false, "Select a track to sort its siblings." end
+
+    local units = GatherSiblingUnits(parent)
+    if #units < 2 then return false, "Only one track exists at this level." end
+
+    local sorted = {}
+    for i, unit in ipairs(units) do sorted[i] = unit end
+    table.sort(sorted, function(a, b)
+        if a.key == b.key then return a.index < b.index end
+        -- NaturalLess intentionally treats 1 and 01 as equivalent.
+        if NaturalLess(a.key, b.key) then return true end
+        if NaturalLess(b.key, a.key) then return false end
+        return a.index < b.index
+    end)
+    local changed = false
+    for i, unit in ipairs(units) do
+        if sorted[i] ~= unit then changed = true; break end
+    end
+    if not changed then return false, "Tracks are already sorted A-Z at this level." end
+
+    local groups = {{
+        parent = parent,
+        original = units,
+        target = sorted,
+        start = units[1].index,
+        depth = parent and RPR.GetTrackDepth(parent) + 1 or 0,
+    }}
+
+    -- Capture all original folder boundaries before any reordering. The track
+    -- at the end of a parent group closes the parent folder (possibly several
+    -- ancestor folders). This closure must follow the *new* last sibling.
+    local total = RPR.CountTracks(0)
+    local saved_order, target_order, depth_values = {}, {}, {}
+    for i = 0, total - 1 do
+        local tr = RPR.GetTrack(0, i)
+        saved_order[#saved_order+1] = tr
+        target_order[#target_order+1] = tr
+        depth_values[tr] = RPR.GetMediaTrackInfo_Value(tr, Core.TRACK_PROP.FOLDER_DEPTH)
+    end
+
+    -- Disjoint groups may be nested. Build the expected final pointer order by
+    -- moving each group's original complete sibling span in memory.
+    table.sort(groups, function(a,b)
+        if a.depth == b.depth then return a.start > b.start end
+        return a.depth > b.depth
+    end)
+    for _, group in ipairs(groups) do
+        local flat = {}
+        for _, unit in ipairs(group.target) do
+            for _, tr in ipairs(unit.members) do flat[#flat+1] = tr end
+        end
+        local initial_flat = {}
+        for _, unit in ipairs(group.original) do
+            for _, tr in ipairs(unit.members) do initial_flat[#initial_flat+1] = tr end
+        end
+        local first_pos
+        for j, tr in ipairs(target_order) do
+            if tr == initial_flat[1] then first_pos = j; break end
+        end
+        if not first_pos then return false, "Unable to locate track group." end
+        for j=1,#flat do target_order[first_pos+j-1] = flat[j] end
+
+        if group.parent then
+            local old_last_unit = group.original[#group.original]
+            local new_last_unit = group.target[#group.target]
+            if old_last_unit ~= new_last_unit then
+                local net_depth = 0
+                for _, tr in ipairs(old_last_unit.members) do
+                    net_depth = net_depth + depth_values[tr]
+                end
+                local outer_closures = math.max(0, -net_depth)
+                if outer_closures > 0 then
+                    local old_tail = old_last_unit.members[#old_last_unit.members]
+                    local new_tail = new_last_unit.members[#new_last_unit.members]
+                    depth_values[old_tail] = depth_values[old_tail] + outer_closures
+                    depth_values[new_tail] = depth_values[new_tail] - outer_closures
+                end
+            end
+        end
+    end
+
+    local function RestoreSelection()
+        for i=0,RPR.CountTracks(0)-1 do
+            RPR.SetTrackSelected(RPR.GetTrack(0,i),false)
+        end
+        for _, tr in ipairs(selected) do
+            if RPR.ValidatePtr2(0,tr,"MediaTrack*") then
+                RPR.SetTrackSelected(tr,true)
+            end
+        end
+    end
+
+    RPR.Undo_BeginBlock()
+    RPR.PreventUIRefresh(1)
+    local ok, err = pcall(function()
+        for _, group in ipairs(groups) do
+            local first = group.original[1].track
+            -- Move groups in reverse order to the same anchor position.
+            -- This preserves the internal track order of every subtree.
+            local anchor_idx = math.floor(RPR.GetMediaTrackInfo_Value(first, "IP_TRACKNUMBER")) - 1
+            for j=#group.target,1,-1 do
+                for i=0,RPR.CountTracks(0)-1 do
+                    RPR.SetTrackSelected(RPR.GetTrack(0,i),false)
+                end
+                for _, tr in ipairs(group.target[j].members) do RPR.SetTrackSelected(tr,true) end
+                if not RPR.ReorderSelectedTracks(anchor_idx, 0) then
+                    error("REAPER could not move a track group.")
+                end
+            end
+        end
+        for i, tr in ipairs(target_order) do
+            if RPR.GetTrack(0, i-1) ~= tr then
+                error("Track order validation failed. No changes will be kept.")
+            end
+        end
+        -- Reapply the exact original folder-depth values with closing markers
+        -- transferred to the new final sibling when necessary.
+        for _, tr in ipairs(saved_order) do
+            RPR.SetMediaTrackInfo_Value(tr, Core.TRACK_PROP.FOLDER_DEPTH, depth_values[tr])
+        end
+        RestoreSelection()
+        RPR.TrackList_AdjustWindows(false)
+        RPR.UpdateArrange()
+    end)
+    RPR.PreventUIRefresh(-1)
+    RPR.Undo_EndBlock("JKK: Sort Sibling Tracks A-Z", -1)
+    if not ok then
+        RPR.Undo_DoUndo2(0)
+        return false, tostring(err)
+    end
+    return true, string.format("Sorted %d sibling tracks A-Z.", #units)
+end
+
+-- Backward-compatible alias for older scripts calling the folder-only API.
+Core.SortSelectedFolderSiblingsAZ = Core.SortSelectedTrackSiblingsAZ
+
 return Core

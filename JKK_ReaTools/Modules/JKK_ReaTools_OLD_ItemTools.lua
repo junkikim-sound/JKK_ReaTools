@@ -6,14 +6,13 @@
 
 local open = true
 
-local theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme.lua"
+local theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme_Core.lua"
 local theme_module = nil
 if reaper.file_exists(theme_path) then
     theme_module = dofile(theme_path)
 end
 
 local ApplyTheme = theme_module and theme_module.ApplyTheme or function(ctx) return 0, 0 end
-local style_pop_count, color_pop_count
 
 -- Regions Renamer
 local reaper = reaper
@@ -804,9 +803,6 @@ math.randomseed(os.time())
             local vol_range        = 0
             local current_play_slot = 0
         -- Checkbox Default Value
-            local checkbox_x     = 455
-            local checkbox_y     = 338
-            local checkbox_h     = 25
             local random_pos     = true
             local random_pitch   = true
             local random_play    = true
@@ -814,13 +810,12 @@ math.randomseed(os.time())
             local random_order   = false
             local live_update    = true
         -- State tracking for selection change and initialization
-            local prev_project_state_count = reaper.GetProjectStateChangeCount(0) 
         -- Save
             local prev_width, prev_pos_range = width, pos_range
             local prev_pitch_range, prev_playback_range, prev_vol_range = pitch_range, playback_range, vol_range
             local prev_use_gap_mode = use_gap_mode
-            local prev_random_pos, prev_random_pitch, prev_random_play, prev_random_vol, prev_random_order =
-                random_pos, random_pitch, random_play, random_vol, random_order
+            local prev_random_pos, prev_random_pitch, prev_random_play, prev_random_vol =
+                random_pos, random_pitch, random_play, random_vol
         -- freeze (Cluster IDs based)
             local stored_offsets    = {}
             local stored_pitch      = {}
@@ -998,18 +993,8 @@ math.randomseed(os.time())
             return true
         end
 
-        local function ShuffleClusters(clusters)
-            local shuffled = {}
-            for i, v in ipairs(clusters) do shuffled[i] = v end
-            for i = #shuffled, 2, -1 do
-                local j = math.random(i)
-                shuffled[i], shuffled[j] = shuffled[j], shuffled[i]
-            end
-            return shuffled
-        end
 
         local p = 1.737
-        local slider_pos, display_str
         local max_grid, max_sec = 10.0, 5.0
         local min_rpm, max_rpm = 40.0, 2000.0
         local function CalculateSpacingAmount(val)
@@ -1312,24 +1297,6 @@ math.randomseed(os.time())
         local lastSelectionSignature = ""
         local silenceItems = {}
     -- Logic & Function
-        local function tableToString(tbl, depth)
-            if depth == nil then depth = 1 end
-            if depth > 5 then return "..." end
-
-            local str = "{"
-            for k, v in pairs(tbl) do
-                local key = tostring(k)
-                local value = type(v) == "table" and tableToString(v, depth + 1) or tostring(v)
-                str = str .. "[" .. key .. "] = " .. value .. ", "
-            end
-            str = str:sub(1, -3)
-            str = str .. "}"
-            return str
-        end
-
-        local function print(string)
-            reaper.ShowConsoleMsg(string .. "\n")
-        end
 
         local function showMessage(string, title, errType)
             local userChoice = reaper.MB(string, title, errType)
@@ -1383,17 +1350,6 @@ math.randomseed(os.time())
                 return channels
             end
 
-            local function selectNextTrack(currentTrack)
-                local currentTrackIndex = reaper.GetMediaTrackInfo_Value(currentTrack, "IP_TRACKNUMBER") - 1
-                local totalTracks = reaper.CountTracks(0)
-                local nextTrackIndex = currentTrackIndex + 1
-                if nextTrackIndex < totalTracks then
-                    local nextTrack = reaper.GetTrack(0, nextTrackIndex)
-                    reaper.SetOnlyTrackSelected(nextTrack)
-                else
-                    showMessage("No next track available.", "Error", 0)
-                end
-            end
 
             local function setAllFXStateOnTrack(track, state)
                 local fxCount = reaper.TrackFX_GetCount(track)
@@ -1440,21 +1396,6 @@ math.randomseed(os.time())
                 return nil
             end
 
-            local function getUnusedGroupNumber()
-                local groupNumber = 1
-                while true do
-                    local found = false
-                    for i = 0, reaper.CountMediaItems(0) - 1 do
-                        local item = reaper.GetMediaItem(0, i)
-                        if item and reaper.GetMediaItemInfo_Value(item, "I_GROUPID") == groupNumber then
-                            found = true
-                            break
-                        end
-                    end
-                    if not found then return groupNumber end
-                    groupNumber = groupNumber + 1
-                end
-            end
 
             local function createChildTrack(parentTrack, childTrack, item, trackItemPosition)
                 local trackName = "Original item"
@@ -1476,14 +1417,6 @@ math.randomseed(os.time())
                 return newItem
             end
 
-            local function removeOldItemFromTable(item, selectedItems)
-                for i = #selectedItems, 1, -1 do
-                    if selectedItems[i] == item then
-                        table.remove(selectedItems, i)
-                        break
-                    end
-                end  
-            end
 
             local function storeSelectedMediaItems()
                 local itemCount = reaper.CountSelectedMediaItems(0)
@@ -1671,8 +1604,6 @@ math.randomseed(os.time())
             local function calculatePeakTime(take, item, peakIndex, sampleRate)
                 local takeStartOffset = reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS")
                 local peakTimeRelativeToSource = takeStartOffset + (peakIndex / sampleRate)
-                local itemPosition = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
-                local peakTimeRelativeToProject = itemPosition + peakTimeRelativeToSource
                 local itemStartPos = reaper.GetMediaItemInfo_Value(item, "D_POSITION")
                 local peakTime = itemStartPos + (peakIndex / sampleRate)
 
@@ -2060,7 +1991,6 @@ math.randomseed(os.time())
             shouldKeepOriginal = true
         end
 
-        local alignToMarkerChanged = false
         local isWav = true
         local hasBeenStretched = false
         local splitAndSpace = false
@@ -2614,7 +2544,6 @@ math.randomseed(os.time())
                         reaper.ImGui_Spacing(ctx)
                         reaper.ImGui_Spacing(ctx)
                     -- Item Chennel & Pitch Mode & Properties ================
-                        local table_cp    = reaper.ImGui_TableFlags_SizingFixedFit()
                         if reaper.ImGui_BeginTable(ctx, "channel & properties", 2, table_full) then
                             reaper.ImGui_TableSetupColumn(ctx, 'Channel', reaper.ImGui_TableColumnFlags_WidthFixed(), 250)
                             reaper.ImGui_TableSetupColumn(ctx, 'Properties', reaper.ImGui_TableColumnFlags_WidthFixed(), 200)
@@ -2661,7 +2590,6 @@ math.randomseed(os.time())
             -- 2nd Table: Items Arranger & Randomizer ==========================
                 reaper.ImGui_Text(ctx, " ")
                 reaper.ImGui_SameLine(ctx)
-                local table_02      = reaper.ImGui_TableFlags_SizingFixedFit()
                 if reaper.ImGui_BeginTable(ctx, "table_02", 1, table_01) then
                     reaper.ImGui_TableSetupColumn(ctx, 'Items Arranger & Randomizer', reaper.ImGui_TableColumnFlags_WidthFixed(), 400)
                     reaper.ImGui_TableNextColumn(ctx)

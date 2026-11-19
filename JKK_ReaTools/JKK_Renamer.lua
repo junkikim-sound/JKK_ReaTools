@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Renamer
 -- @author Junki Kim
--- @version 1.1.3
+-- @version 1.1.4
 -- @provides 
 --     [nomain] Modules/JKK_Renamer_UCSList.lua
 --     [nomain] Modules/JKK_Renamer_WildcardList.lua
@@ -733,7 +733,7 @@ local function Main()
         r.ImGui_SetNextItemWidth(ctx, input_w)
         local hint_text = (target_count > 0) and targets[1].original_name or "Enter new name..."
         
-        local input_rect_min_x, input_rect_min_y = r.ImGui_GetCursorScreenPos(ctx)
+        local input_rect_min_x = r.ImGui_GetCursorScreenPos(ctx)
         
         r.ImGui_Function_SetValue(completion_callback, "tab_requested", 0)
         r.ImGui_Function_SetValue(completion_callback, "up_requested", 0)
@@ -796,7 +796,7 @@ local function Main()
             end
         end
 
-        local input_rect_max_x, input_rect_max_y = r.ImGui_GetItemRectMax(ctx)
+        local input_rect_max_y = select(2, r.ImGui_GetItemRectMax(ctx))
         
         r.ImGui_PopFont(ctx)
         r.ImGui_PopStyleVar(ctx)

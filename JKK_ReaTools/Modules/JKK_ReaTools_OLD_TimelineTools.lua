@@ -4,21 +4,17 @@
 -- @noindex
 --========================================================
 
-local open = true
 
-local theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme.lua"
+local theme_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme_Core.lua"
 local theme_module = nil
 if reaper.file_exists(theme_path) then
     theme_module = dofile(theme_path)
 end
 
 local ApplyTheme = theme_module and theme_module.ApplyTheme or function(ctx) return 0, 0 end
-local style_pop_count, color_pop_count
 
-local create_base_name = ""
 local rename_base_name = ""
 local selectedColor = nil
-local MAX_NAME_LEN = 256
 local last_ts, last_te = nil, nil
 
 -- Color Palette Data (24 Colors)

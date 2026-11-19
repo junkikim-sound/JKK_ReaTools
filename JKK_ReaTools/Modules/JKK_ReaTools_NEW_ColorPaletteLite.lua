@@ -423,9 +423,9 @@ local function JKK_ColorPalette_Draw(ctx, mode, is_active)
 
     -- [하단] Recent Colors + 랜덤/클리어 3종 버튼 + 메뉴
     local menu_width = frame_height
-    local btn_pal_rnd = S(58)
-    local btn_all_rnd = S(58)
-    local btn_clear   = S(46)
+    local btn_pal_rnd = S(80)
+    local btn_all_rnd = S(80)
+    local btn_clear   = S(80)
     
     local action_btns_width = btn_pal_rnd + btn_all_rnd + btn_clear + menu_width + (spacing_x * 4)
     local swatch = frame_height
