@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Renderer
 -- @author Junki Kim
--- @version 1.1.8
+-- @version 1.1.10
 -- @noindex
 --========================================================
 
@@ -18,6 +18,8 @@ end
 local w_list = LoadListModule("JKK_Renamer_WildcardList.lua")
 local ucs_list = LoadListModule("JKK_Renamer_UCSList.lua")
 local sel_mgr = LoadListModule("JKK_SelectionManager.lua")
+local WindowChrome = LoadListModule("JKK_WindowChrome.lua")
+assert(type(WindowChrome.header) == "function", "JKK_WindowChrome.lua missing. Reinstall JKK_ReaTools.")
 
 local ctx = r.ImGui_CreateContext("JKK_Render")
 local font = r.ImGui_CreateFont('Arial', 14)
@@ -214,7 +216,7 @@ end
 local function CreateDefaultTabState(name)
   return {
     name = name or "Render 1",
-    render_source = 4,
+    render_source = 0,
     render_bounds = 0,
     bounds_start = 0.0,
     bounds_end = 0.0,
@@ -227,7 +229,7 @@ local function CreateDefaultTabState(name)
     vorbis_quality = 0.80,
     vid_size_idx = 2,
     vid_fps_idx = 5,
-    file_directory = r.GetProjectPath("") .. "/Rendered",
+    file_directory = "",
     file_pattern = "$item",
     enable_pad_start = false,
     pad_start_len = 0.000,
@@ -244,8 +246,8 @@ local function CreateDefaultTabState(name)
     enable_limit = false,
     limit_val = 0.0,
     via_master = false,
-    embed_take_marker = true,
-    preserve_meta = true,
+    embed_take_marker = false,
+    preserve_meta = false,
     embed_meta = false,
     auto_close = false,
     add_to_proj = false,
@@ -258,6 +260,7 @@ end
 local tabs = { CreateDefaultTabState("Default") }
 local favorites = {}
 local active_tab_idx = 1
+local pending_tab_selection = nil  -- Selected flag applied on startup and when tabs change
 local rename_tab_target = nil
 local rename_input_buf = ""
 local fav_name_buf = ""
@@ -394,6 +397,7 @@ local function SaveAllExtState()
   r.SetExtState("JKK_CustomRender", "TabData", SerializeTable(tabs), true)
   r.SetExtState("JKK_CustomRender", "FavData", SerializeTable(favorites), true)
   r.SetExtState("JKK_CustomRender", "DataVersion", "3", true)
+  r.SetExtState("JKK_CustomRender", "ActiveTab", tostring(active_tab_idx), true)
 end
 
 local function LoadAllExtState()
@@ -441,7 +445,33 @@ local function LoadAllExtState()
 end
 
 LoadAllExtState()
+active_tab_idx = math.max(1, math.min(#tabs, math.floor(tonumber(r.GetExtState("JKK_CustomRender", "ActiveTab")) or 1)))
+pending_tab_selection = active_tab_idx
 r.atexit(SaveAllExtState)
+
+-- All tab-creation paths use the same defaults and selection behavior.
+local function AddRenderTab(name, source_tab)
+  local t = CreateDefaultTabState(name or ("Render " .. tostring(#tabs + 1)))
+  if source_tab then
+    for k, v in pairs(source_tab) do if k ~= "name" then t[k] = v end end
+  end
+  tabs[#tabs + 1] = t
+  active_tab_idx = #tabs
+  pending_tab_selection = active_tab_idx
+  SaveAllExtState()
+end
+
+local function DeleteRenderTab(index)
+  if #tabs <= 1 or index < 1 or index > #tabs then return end
+  table.remove(tabs, index)
+  if active_tab_idx > index then
+    active_tab_idx = active_tab_idx - 1
+  elseif active_tab_idx == index then
+    active_tab_idx = math.min(index, #tabs)
+  end
+  pending_tab_selection = active_tab_idx
+  SaveAllExtState()
+end
 
 -- =======================================================
 -- HELPER FUNCTIONS
@@ -995,55 +1025,57 @@ local function ParseWildcards(tab, pattern, sel_track, sel_item, sel_region, fil
   return out
 end
 
+-- Group selected parent-folder items by track before filtering descendants.
+-- The old implementation re-walked every item's parent chain once for EVERY
+-- selected folder item, causing O(items * folders * track-depth) work on each
+-- preview frame. This keeps the exact same overlap and output-order rules.
 local function GetFilteredRenderItems()
   local count = r.CountSelectedMediaItems(0)
   if count == 0 then return {} end
-  
+
   local sel_items = {}
-  local folder_items = {}
-  
+  local folders_by_track = {}
+  local folder_count = 0
   for i = 0, count - 1 do
     local item = r.GetSelectedMediaItem(0, i)
     local track = r.GetMediaItem_Track(item)
-    table.insert(sel_items, {item = item, track = track})
-    
+    sel_items[#sel_items + 1] = {item = item, track = track}
+
     if r.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") == 1 then
       local pos = r.GetMediaItemInfo_Value(item, "D_POSITION")
       local len = r.GetMediaItemInfo_Value(item, "D_LENGTH")
-      table.insert(folder_items, {item = item, track = track, start_pos = pos, end_pos = pos + len})
+      local entries = folders_by_track[track]
+      if not entries then
+        entries = {}
+        folders_by_track[track] = entries
+      end
+      entries[#entries + 1] = {item = item, start_pos = pos, end_pos = pos + len}
+      folder_count = folder_count + 1
     end
   end
-  
-  if #folder_items == 0 then return sel_items end
-  
+
+  if folder_count == 0 then return sel_items end
+
   local filtered_items = {}
   for _, s_item in ipairs(sel_items) do
-    local is_child_of_selected_folder = false
-    
-    for _, f_item in ipairs(folder_items) do
-      if s_item.item ~= f_item.item then
-        local parent = r.GetParentTrack(s_item.track)
-        local is_child = false
-        while parent do
-          if parent == f_item.track then
-            is_child = true
-            break
-          end
-          parent = r.GetParentTrack(parent)
-        end
-        
-        if is_child then
-          local pos = r.GetMediaItemInfo_Value(s_item.item, "D_POSITION")
-          local len = r.GetMediaItemInfo_Value(s_item.item, "D_LENGTH")
-          if pos < f_item.end_pos and (pos + len) > f_item.start_pos then
-            is_child_of_selected_folder = true
+    local pos = r.GetMediaItemInfo_Value(s_item.item, "D_POSITION")
+    local item_end = pos + r.GetMediaItemInfo_Value(s_item.item, "D_LENGTH")
+    local parent = r.GetParentTrack(s_item.track)
+    local covered_by_folder = false
+    while parent do
+      local candidate_folders = folders_by_track[parent]
+      if candidate_folders then
+        for _, folder in ipairs(candidate_folders) do
+          if folder.item ~= s_item.item and pos < folder.end_pos and item_end > folder.start_pos then
+            covered_by_folder = true
             break
           end
         end
       end
+      if covered_by_folder then break end
+      parent = r.GetParentTrack(parent)
     end
-    
-    if not is_child_of_selected_folder then table.insert(filtered_items, s_item) end
+    if not covered_by_folder then filtered_items[#filtered_items + 1] = s_item end
   end
   return filtered_items
 end
@@ -1131,7 +1163,7 @@ local function Main()
   
   local style_pop_count, color_pop_count = ApplyTheme(ctx)
   
-  local visible, open_flag = r.ImGui_Begin(ctx, 'JKK_Renderer', open, r.ImGui_WindowFlags_NoCollapse())
+  local visible, open_flag = r.ImGui_Begin(ctx, 'JKK_Renderer', open, WindowChrome.flags())
 
   open = open_flag
 
@@ -1140,6 +1172,7 @@ local function Main()
   end
 
   if visible then
+    if WindowChrome.header(ctx, 'JKK Renderer', 'renderer') then open = false end
     local is_focused = r.ImGui_IsWindowFocused(ctx, r.ImGui_FocusedFlags_RootAndChildWindows and r.ImGui_FocusedFlags_RootAndChildWindows() or 0)
     sel_mgr.Update(is_focused)
     local is_any_item_active = r.ImGui_IsAnyItemActive(ctx)
@@ -1154,26 +1187,38 @@ local function Main()
     -- =======================================================
     -- GLOBAL KEYBOARD SHORTCUTS
     -- =======================================================
+    local ctrl_down = r.ImGui_IsKeyDown(ctx, r.ImGui_Key_LeftCtrl()) or
+                      r.ImGui_IsKeyDown(ctx, r.ImGui_Key_RightCtrl()) or
+                      r.ImGui_IsKeyDown(ctx, r.ImGui_Key_LeftSuper()) or
+                      r.ImGui_IsKeyDown(ctx, r.ImGui_Key_RightSuper())
+    -- Ctrl+T / Ctrl+W work even when an input field has keyboard focus.
+    if is_focused and ctrl_down then
+      if r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_T(), false) then
+        AddRenderTab()
+      elseif r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_W(), false) then
+        DeleteRenderTab(active_tab_idx)
+      end
+    end
     if is_focused and not is_any_item_active then
-      if r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_Space(), false) then
+      if not ctrl_down and r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_Space(), false) then
         r.Main_OnCommand(40044, 0)
       end
-
-      local ctrl_down = r.ImGui_IsKeyDown(ctx, r.ImGui_Key_LeftCtrl()) or 
-                        r.ImGui_IsKeyDown(ctx, r.ImGui_Key_RightCtrl()) or 
-                        r.ImGui_IsKeyDown(ctx, r.ImGui_Key_LeftSuper()) or 
-                        r.ImGui_IsKeyDown(ctx, r.ImGui_Key_RightSuper())
       if ctrl_down and r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_Z(), false) then
         r.Main_OnCommand(40029, 0)
       end
     end
 
     if r.ImGui_BeginTabBar(ctx, "RenderTabBar", r.ImGui_TabBarFlags_Reorderable()) then
+      local selection_request_at_start = pending_tab_selection
       local tab_to_delete = nil
       for idx, t_data in ipairs(tabs) do
-        local is_selected = r.ImGui_BeginTabItem(ctx, t_data.name .. "##tab_" .. tostring(idx))
+        local tab_flags = (pending_tab_selection == idx) and r.ImGui_TabItemFlags_SetSelected() or 0
+        local is_selected = r.ImGui_BeginTabItem(ctx, t_data.name .. "##tab_" .. tostring(idx), nil, tab_flags)
         if is_selected then
-          active_tab_idx = idx
+          if active_tab_idx ~= idx then
+            active_tab_idx = idx
+            SaveAllExtState()
+          end
           r.ImGui_EndTabItem(ctx)
         end
         if r.ImGui_BeginPopupContextItem(ctx, "tab_ctx_" .. tostring(idx)) then
@@ -1183,25 +1228,22 @@ local function Main()
             r.ImGui_OpenPopup(ctx, "RenameTabModal")
           end
           if r.ImGui_MenuItem(ctx, "Duplicate Tab") then
-            local dup = CreateDefaultTabState(t_data.name .. " (Copy)")
-            for k, v in pairs(t_data) do if k ~= "name" then dup[k] = v end end
-            table.insert(tabs, dup)
-            SaveAllExtState()
+            AddRenderTab(t_data.name .. " (Copy)", t_data)
           end
           if #tabs > 1 and r.ImGui_MenuItem(ctx, "Delete Tab") then tab_to_delete = idx end
           r.ImGui_EndPopup(ctx)
         end
       end
       if r.ImGui_TabItemButton(ctx, "+", r.ImGui_TabItemFlags_Trailing()) then
-        table.insert(tabs, CreateDefaultTabState("Render " .. tostring(#tabs + 1)))
-        SaveAllExtState()
+        AddRenderTab()
       end
-      if tab_to_delete then
-        table.remove(tabs, tab_to_delete)
-        if active_tab_idx > #tabs then active_tab_idx = #tabs end
-        SaveAllExtState()
-      end
+      if tab_to_delete then DeleteRenderTab(tab_to_delete) end
       r.ImGui_EndTabBar(ctx)
+      -- Clear only the selection request that existed before drawing tabs.
+      -- '+' / Duplicate may create a NEW request mid-frame for the next frame.
+      if pending_tab_selection == selection_request_at_start then
+        pending_tab_selection = nil
+      end
     end
     
     if r.ImGui_BeginPopupModal(ctx, "RenameTabModal", nil, r.ImGui_WindowFlags_AlwaysAutoResize()) then
@@ -1558,7 +1600,7 @@ local function Main()
             if p_item.track then r.SetTrackSelected(p_item.track, true) end
             
             ApplyRenderSettingsToProject(tab, p_item)
-            if tab.add_to_queue then r.Main_OnCommand(41207, 0) else r.Main_OnCommand(41824, 0) end
+            if tab.add_to_queue then r.Main_OnCommand(41823, 0) else r.Main_OnCommand(41824, 0) end
           end
         else
           if tab.render_source == 4 then
@@ -1570,7 +1612,7 @@ local function Main()
           end
           
           ApplyRenderSettingsToProject(tab, items_to_process[1])
-          if tab.add_to_queue then r.Main_OnCommand(41207, 0) else r.Main_OnCommand(41824, 0) end
+          if tab.add_to_queue then r.Main_OnCommand(41823, 0) else r.Main_OnCommand(41824, 0) end
         end
 
         if matrix_snapshot then
@@ -2013,8 +2055,8 @@ local function Main()
 
       r.ImGui_EndTable(ctx)
     end
-    r.ImGui_End(ctx)
   end
+  r.ImGui_End(ctx)
   
   r.ImGui_PopStyleVar(ctx, style_pop_count)
   r.ImGui_PopStyleColor(ctx, color_pop_count)

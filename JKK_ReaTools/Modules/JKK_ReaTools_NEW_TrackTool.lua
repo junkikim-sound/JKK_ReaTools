@@ -121,6 +121,51 @@ local function Action_SetTrackChannels(num_channels)
     reaper.Undo_EndBlock("Set Track Channels", -1)
 end
 
+-- Offset of the selected tracks' main (Master/Parent) audio output.
+-- Preserve each track's C_MAINSEND_NCH (0 = all track channels); this control
+-- chooses the destination position, not the width of the parent send.
+-- When a destination exceeds the parent's existing channel count, expand it
+-- so the newly assigned output is actually audible/routable.
+local MAX_PARENT_OUTPUT_CHANNELS = 64 -- keep the physical routing safety limit unchanged
+local MAX_VISIBLE_OUTPUT_CHANNEL = 10 -- only offer destinations through channel 10
+
+local function GetParentOutputWidth(track)
+    local send_nch = math.floor((reaper.GetMediaTrackInfo_Value(track, "C_MAINSEND_NCH") or 0) + 0.5)
+    if send_nch > 0 then return send_nch end
+    return math.max(1, math.floor((reaper.GetMediaTrackInfo_Value(track, "I_NCHAN") or 2) + 0.5))
+end
+
+local function Action_SetParentOutputOffset(channel_offset)
+    local count = reaper.CountSelectedTracks(0)
+    if count == 0 then return end
+    channel_offset = math.max(0, math.floor(channel_offset))
+
+    reaper.Undo_BeginBlock()
+    local updated = false
+    for i = 0, count - 1 do
+        local track = reaper.GetSelectedTrack(0, i)
+        if track then
+            local old = reaper.GetMediaTrackInfo_Value(track, "C_MAINSEND_OFFS") or 0
+            if math.floor(old + 0.5) ~= channel_offset then
+                reaper.SetMediaTrackInfo_Value(track, "C_MAINSEND_OFFS", channel_offset)
+                updated = true
+            end
+            local parent = reaper.GetParentTrack(track) or reaper.GetMasterTrack(0)
+            if parent then
+                local required = channel_offset + GetParentOutputWidth(track)
+                local available = reaper.GetMediaTrackInfo_Value(parent, "I_NCHAN") or 2
+                if required <= MAX_PARENT_OUTPUT_CHANNELS and required > available then
+                    -- REAPER tracks use an even internal channel count.
+                    reaper.SetMediaTrackInfo_Value(parent, "I_NCHAN", math.ceil(required / 2) * 2)
+                    updated = true
+                end
+            end
+        end
+    end
+    reaper.Undo_EndBlock("Set Track Master/Parent Output Channels", updated and -1 or 0)
+    if updated then reaper.TrackList_AdjustWindows(false); reaper.UpdateArrange() end
+end
+
 ------------------------------------------------------------
 -- Track Actions
 ------------------------------------------------------------
@@ -258,6 +303,72 @@ local function slider_pos_to_db(pos)
     return ((pos - 0.75) / 0.25) * MAX_DB
 end
 
+-- A fixed, non-scrolling popup instead of BeginCombo. ReaImGui's combo
+-- HeightLargest is only a size hint: its popup may still create a scrollbar.
+-- These two short lists must NEVER scroll, even when the popup is open.
+local function DrawCenteredChannelCombo(ctx, id, preview, entries, selected_index, width)
+    local r = reaper
+    local x, y = r.ImGui_GetCursorScreenPos(ctx)
+    local frame_h = r.ImGui_GetFrameHeight(ctx)
+    local label = '##channel_popup_button_' .. id
+    local popup_id = '##channel_popup_' .. id
+
+    -- Use the normal frame colors, not the accent/button theme colors.
+    local colors = {
+        {r.ImGui_Col_Button(), r.ImGui_GetColor(ctx, r.ImGui_Col_FrameBg())},
+        {r.ImGui_Col_ButtonHovered(), r.ImGui_GetColor(ctx, r.ImGui_Col_FrameBgHovered())},
+        {r.ImGui_Col_ButtonActive(), r.ImGui_GetColor(ctx, r.ImGui_Col_FrameBgActive())},
+    }
+    for _, color in ipairs(colors) do
+        r.ImGui_PushStyleColor(ctx, color[1], color[2])
+    end
+    local clicked = r.ImGui_Button(ctx, label, width, frame_h)
+    r.ImGui_PopStyleColor(ctx, #colors)
+    if clicked and #entries > 0 then r.ImGui_OpenPopup(ctx, popup_id) end
+
+    -- Center the selected text in the preview area, with a separate arrow.
+    -- This paint does not add another ImGui widget or change the hitbox.
+    local text = tostring(preview or '')
+    local preview_w = math.max(1, width - frame_h * 0.70)
+    local text_w, text_h = r.ImGui_CalcTextSize(ctx, text)
+    local text_x = x + math.max(S(2), (preview_w - text_w) * 0.5)
+    local text_y = y + math.max(0, (frame_h - text_h) * 0.5)
+    local color = r.ImGui_GetColor(ctx, r.ImGui_Col_Text())
+    local draw_list = r.ImGui_GetWindowDrawList(ctx)
+    r.ImGui_DrawList_AddText(draw_list, text_x, text_y, color, text)
+    local arrow = '▼'
+    local arrow_w, arrow_h = r.ImGui_CalcTextSize(ctx, arrow)
+    r.ImGui_DrawList_AddText(draw_list,
+        x + width - (frame_h * 0.70 + arrow_w) * 0.5,
+        y + math.max(0, (frame_h - arrow_h) * 0.5), color, arrow)
+
+    if #entries == 0 then return nil end
+    local padding_x, padding_y = r.ImGui_GetStyleVar(ctx, r.ImGui_StyleVar_WindowPadding())
+    local item_gap_x, item_gap_y = r.ImGui_GetStyleVar(ctx, r.ImGui_StyleVar_ItemSpacing())
+    local inner_height = #entries * frame_h + (#entries - 1) * item_gap_y
+    local popup_height = inner_height + 2 * padding_y + S(4)
+    local popup_width = math.max(width, S(85))
+    -- Popup opens directly below the combo. Set an exact height large enough
+    -- for every entry and forbid both scrollbar and mouse-wheel scrolling.
+    r.ImGui_SetNextWindowSize(ctx, popup_width, popup_height, r.ImGui_Cond_Always())
+    local popup_flags = r.ImGui_WindowFlags_NoScrollbar() | r.ImGui_WindowFlags_NoScrollWithMouse()
+    local chosen_index = nil
+    if r.ImGui_BeginPopup(ctx, popup_id, popup_flags) then
+        r.ImGui_PushStyleVar(ctx, r.ImGui_StyleVar_SelectableTextAlign(), 0.5, 0.5)
+        for i, value in ipairs(entries) do
+            local selected = (i == selected_index)
+            if r.ImGui_Selectable(ctx, value .. '##' .. id .. '_' .. i, selected, 0, 0, frame_h) then
+                chosen_index = i
+                r.ImGui_CloseCurrentPopup(ctx)
+            end
+            if selected then r.ImGui_SetItemDefaultFocus(ctx) end
+        end
+        r.ImGui_PopStyleVar(ctx)
+        r.ImGui_EndPopup(ctx)
+    end
+    return chosen_index
+end
+
 local function DrawTrackBatchController(ctx)
     local selected_track = reaper.GetSelectedTrack(0, 0)
     local selected_count = reaper.CountSelectedTracks(0)
@@ -392,25 +503,149 @@ local function DrawTrackBatchController(ctx)
         reaper.Undo_EndBlock("Reset Width", -1)
     end
 
-    -- Channels
+    -- Track channels and Master/Parent output share one controller row.
     BeginLabeledRow("Channels")
-    local channel_options = " 2 ch\0 4 ch\0 6 ch\0 8 ch\0 10 ch\0 12 ch\0 16 ch\0"
+    local channel_options = {'2 ch', '4 ch', '6 ch', '8 ch', '10 ch', '12 ch', '16 ch'}
     local current_nchan = selected_track
         and reaper.GetMediaTrackInfo_Value(selected_track, "I_NCHAN")
         or track_channels
     local channel_map = {2, 4, 6, 8, 10, 12, 16}
-    local channel_idx = 0
+    local channel_idx = nil
     for i, value in ipairs(channel_map) do
-        if value == current_nchan then
-            channel_idx = i - 1
-            break
+        if value == current_nchan then channel_idx = i; break end
+    end
+
+    local nav_width, nav_gap = S(21), S(3)
+    local between_groups = S(9)
+    local out_label_width = select(1, reaper.ImGui_CalcTextSize(ctx, 'Out'))
+    -- Both channel groups occupy precisely the same width. Like the supplied
+    -- desired image, put the unused horizontal room AFTER the 'Out' label,
+    -- before its left arrow (not between the first combo and its arrows).
+    local group_width = math.max(nav_width * 2 + nav_gap * 2 + S(30),
+        math.floor(full_control_width * 0.405))
+    local out_label_right_gap = math.max(S(12),
+        full_control_width - group_width * 2 - between_groups - out_label_width)
+    local combo_width = math.max(S(30), group_width - nav_width * 2 - nav_gap * 2)
+    local track_combo_width, out_combo_width = combo_width, combo_width
+    local can_change = selected_count > 0
+
+    -- Navigation honors non-preset channel counts too (e.g. 14ch).
+    local function StepTrackChannels(direction)
+        local current = tonumber(current_nchan) or 2
+        local next_value
+        if direction > 0 then
+            for _, value in ipairs(channel_map) do
+                if value > current then next_value = value; break end
+            end
+            next_value = next_value or channel_map[1]
+        else
+            for i = #channel_map, 1, -1 do
+                if channel_map[i] < current then next_value = channel_map[i]; break end
+            end
+            next_value = next_value or channel_map[#channel_map]
         end
+        Action_SetTrackChannels(next_value)
+        current_nchan = next_value
+        track_channels = next_value
     end
-    reaper.ImGui_SetNextItemWidth(ctx, full_control_width)
-    local changed_channels, new_channel_idx = reaper.ImGui_Combo(ctx, "##TrackChannels", channel_idx, channel_options)
-    if changed_channels then
-        Action_SetTrackChannels(channel_map[new_channel_idx + 1])
+
+    if not can_change then reaper.ImGui_BeginDisabled(ctx) end
+    local previous = reaper.ImGui_Button(ctx, '◀##TrackChannelsPrev', nav_width, 0)
+    if previous and can_change then StepTrackChannels(-1) end
+    reaper.ImGui_SameLine(ctx, 0, nav_gap)
+    local channel_preview = (channel_idx and channel_options[channel_idx])
+        or ('%d ch'):format(math.floor((current_nchan or 2) + 0.5))
+    local new_channel_idx = DrawCenteredChannelCombo(ctx, '##TrackChannels',
+        channel_preview, channel_options, channel_idx, track_combo_width)
+    if new_channel_idx and can_change then
+        Action_SetTrackChannels(channel_map[new_channel_idx])
+        track_channels = channel_map[new_channel_idx]
     end
+    reaper.ImGui_SameLine(ctx, 0, nav_gap)
+    local following = reaper.ImGui_Button(ctx, '▶##TrackChannelsNext', nav_width, 0)
+    if following and can_change then StepTrackChannels(1) end
+    if not can_change then reaper.ImGui_EndDisabled(ctx) end
+
+    -- Output destination uses REAPER's actual Master/Parent send offset.
+    -- Keep the send width unchanged (0 means all track channels), including
+    -- multichannel sends such as 4ch / 6ch. Mono sends may use every channel;
+    -- multichannel sends navigate in stereo pairs.
+    local current_offset = selected_track and math.max(0,
+        math.floor((reaper.GetMediaTrackInfo_Value(selected_track, "C_MAINSEND_OFFS") or 0) + 0.5)) or 0
+    local send_width = selected_track and GetParentOutputWidth(selected_track) or 2
+    local step = (send_width == 1) and 1 or 2
+    local offsets = {}
+    -- Only list routings whose LAST destination channel is <= 10.
+    -- Keep the real send width intact for mono and multichannel tracks.
+    local max_offset = MAX_VISIBLE_OUTPUT_CHANNEL - send_width
+    if max_offset >= 0 then
+        for offset = 0, max_offset, step do offsets[#offsets + 1] = offset end
+    end
+
+    local function output_caption(offset)
+        local first = offset + 1
+        local last = offset + send_width
+        return send_width == 1 and ('%d'):format(first)
+            or ('%d-%d'):format(first, last)
+    end
+
+    local output_entries = {}
+    local current_out_idx = nil
+    for i, offset in ipairs(offsets) do
+        if offset == current_offset then current_out_idx = i end
+        output_entries[#output_entries + 1] = output_caption(offset)
+    end
+    -- Out-of-range current routing remains unchanged and visible in preview,
+    -- but is never inserted as an extra selectable item above channel 9-10.
+    local output_preview = selected_track and output_caption(current_offset) or '-'
+    if #offsets == 0 then
+        output_preview = selected_track and 'N/A' or '-'
+    end
+
+    local function StepOutputChannels(direction)
+        if #offsets == 0 then return end
+        local new_offset
+        if direction > 0 then
+            for _, offset in ipairs(offsets) do
+                if offset > current_offset then new_offset = offset; break end
+            end
+            new_offset = new_offset or offsets[1]
+        else
+            for i = #offsets, 1, -1 do
+                if offsets[i] < current_offset then new_offset = offsets[i]; break end
+            end
+            new_offset = new_offset or offsets[#offsets]
+        end
+        Action_SetParentOutputOffset(new_offset)
+        current_offset = new_offset
+    end
+
+    reaper.ImGui_SameLine(ctx, 0, between_groups)
+    reaper.ImGui_AlignTextToFramePadding(ctx)
+    reaper.ImGui_Text(ctx, 'Out')
+    if reaper.ImGui_IsItemHovered(ctx) then
+        reaper.ImGui_SetTooltip(ctx, 'Master/Parent output channels (destination); preserves the number of sent channels')
+    end
+    reaper.ImGui_SameLine(ctx, 0, out_label_right_gap)
+    local can_change_out = can_change and #offsets > 0
+    if not can_change_out then reaper.ImGui_BeginDisabled(ctx) end
+    local out_previous = reaper.ImGui_Button(ctx, '◀##TrackOutputPrev', nav_width, 0)
+    if out_previous and can_change_out then StepOutputChannels(-1) end
+    reaper.ImGui_SameLine(ctx, 0, nav_gap)
+    local new_out_idx = DrawCenteredChannelCombo(ctx, '##TrackParentOutput',
+        output_preview, output_entries, current_out_idx, out_combo_width)
+    if new_out_idx and can_change_out then
+        Action_SetParentOutputOffset(offsets[new_out_idx])
+    end
+    if reaper.ImGui_IsItemHovered(ctx) then
+        reaper.ImGui_SetTooltip(ctx,
+            'Master/Parent output destination: ' .. output_caption(current_offset)
+            .. '. Selecting channels beyond the parent width expands the parent track.')
+    end
+    reaper.ImGui_SameLine(ctx, 0, nav_gap)
+    local out_following = reaper.ImGui_Button(ctx, '▶##TrackOutputNext', nav_width, 0)
+    if out_following and can_change_out then StepOutputChannels(1) end
+    if not can_change_out then reaper.ImGui_EndDisabled(ctx) end
 end
 
 ------------------------------------------------------------

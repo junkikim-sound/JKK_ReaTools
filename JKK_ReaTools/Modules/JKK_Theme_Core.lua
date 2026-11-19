@@ -5,6 +5,8 @@
 --========================================================
 
 local RPR = reaper
+local core_dir = (debug.getinfo(1, "S").source or ""):match("^@(.+[\\/])") or ""
+local WindowChrome = dofile(core_dir .. "JKK_WindowChrome.lua")
 local EXT_SECTION = "JKK_Theme"
 local PRESET_SECTION = "JKK_Theme_Presets"
 
@@ -628,10 +630,11 @@ local function EditorLoop()
     RPR.ImGui_SetNextWindowSize(editor_ctx, 400, 590, RPR.ImGui_Cond_FirstUseEver())
 
     local sp, cp = ApplyTheme(editor_ctx, 1.0)
-    local visible, open_flag = RPR.ImGui_Begin(editor_ctx, "JKK Theme Manager", editor_open, RPR.ImGui_WindowFlags_NoCollapse())
+    local visible, open_flag = RPR.ImGui_Begin(editor_ctx, "JKK Theme Manager", editor_open, WindowChrome.flags())
 
     if visible then
         PushFont(editor_ctx, 1.0, "base")
+        if WindowChrome.header(editor_ctx, 'JKK Theme Manager', 'theme') then open_flag = false end
         local avail_w = RPR.ImGui_GetContentRegionAvail(editor_ctx)
         local spacing = 8
         local nav_btn_w = 24

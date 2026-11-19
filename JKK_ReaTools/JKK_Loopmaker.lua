@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Loopmaker
 -- @author Junki Kim
--- @version 1.2.8
+-- @version 1.2.9
 -- @noindex
 --========================================================
 
@@ -13,6 +13,7 @@ local RPR = reaper
 -- 1. 테마(JKK_Theme.lua) 동적 로드
 -- ==========================================
 local script_path = debug.getinfo(1, "S").source:sub(2):match("(.*[/\\])") or ""
+local WindowChrome = dofile(script_path .. "Modules/JKK_WindowChrome.lua")
 local theme_paths = {
     script_path .. "Modules/JKK_Theme_Core.lua",
     script_path .. "../Modules/JKK_Theme_Core.lua",
@@ -856,9 +857,10 @@ function Loop()
     ImGui.SetNextWindowSizeConstraints(ctx, 500, 500, 9999, 9999)
     ImGui.SetNextWindowSize(ctx, 540, 540, ImGui.Cond_FirstUseEver)
     
-    local visible, open = ImGui.Begin(ctx, 'JKK_Loopmaker', true, ImGui.WindowFlags_NoCollapse)
+    local visible, open = ImGui.Begin(ctx, 'JKK_Loopmaker', true, WindowChrome.flags())
     
     if visible then
+        if WindowChrome.header(ctx, 'JKK Loopmaker', 'loopmaker') then open = false end
         local enter_pressed = ImGui.IsKeyPressed(ctx, ImGui.Key_Enter) or ImGui.IsKeyPressed(ctx, ImGui.Key_KeypadEnter)
         if ImGui.IsKeyPressed(ctx, ImGui.Key_Escape) then open = false end
         if ImGui.IsKeyPressed(ctx, ImGui.Key_Space) then reaper.Main_OnCommand(40044, 0) end
@@ -1104,8 +1106,8 @@ function Loop()
         PopButton(ctx); ImGui.PopFont(ctx)
         if not is_valid then ImGui.EndDisabled(ctx) end
 
-        ImGui.End(ctx)
     end
+    ImGui.End(ctx)
 
     ImGui.PopStyleVar(ctx, 3)
     ImGui.PopFont(ctx)

@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ColorPalette
 -- @author Junki Kim
--- @version 1.1.0
+-- @version 1.1.1
 -- @noindex
 --========================================================
 
@@ -42,6 +42,7 @@ local theme_module = load_module("JKK_Theme_Core.lua")
 local ApplyTheme = theme_module and theme_module.ApplyTheme or function(c) return 0, 0 end
 
 local ui_module = load_module("JKK_ColorPalette_UI.lua")
+local WindowChrome = assert(load_module("JKK_WindowChrome.lua"), "JKK_WindowChrome.lua missing")
 
 local is_open = true
 
@@ -52,10 +53,10 @@ local function Main()
     local style_pop, color_pop = ApplyTheme(ctx)
     reaper.ImGui_PushFont(ctx, font, 14)
 
-    local visible, open_flag = reaper.ImGui_Begin(ctx, 'JKK Color Palette', is_open, reaper.ImGui_WindowFlags_NoCollapse())
+    local visible, open_flag = reaper.ImGui_Begin(ctx, 'JKK Color Palette', is_open, WindowChrome.flags())
 
     if visible then
-        local should_close = false
+        local should_close = WindowChrome.header(ctx, 'JKK Color Palette', 'palette')
         if ui_module and ui_module.JKK_ColorPalette_Draw then
             should_close = ui_module.JKK_ColorPalette_Draw(ctx)
         end
@@ -64,8 +65,8 @@ local function Main()
             open_flag = false 
         end
         
-        reaper.ImGui_End(ctx)
     end
+    reaper.ImGui_End(ctx)
     
     reaper.ImGui_PopFont(ctx)
     reaper.ImGui_PopStyleVar(ctx, style_pop)

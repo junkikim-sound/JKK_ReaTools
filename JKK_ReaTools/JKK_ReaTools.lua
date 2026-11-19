@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 1.0.12
+-- @version 1.0.13
 -- @provides
 --     [main] Actions/JKK_TrackManager_Open.lua
 --     [main] Actions/JKK_TrackManager_TrackActivation.lua
@@ -23,6 +23,7 @@
 --     [nomain] Modules/JKK_SelectionManager.lua
 --     [nomain] Modules/JKK_TakeMarker_Peaks.lua
 --     [nomain] Modules/JKK_Theme_Core.lua
+--     [nomain] Modules/JKK_WindowChrome.lua
 --     [nomain] Modules/JKK_TrackManager_Core.lua
 --     [nomain] Modules/JKK_TrackManager_UI.lua
 --========================================================

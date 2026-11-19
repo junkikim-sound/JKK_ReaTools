@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_TrackManager
 -- @author Junki Kim
--- @version 1.0.1
+-- @version 1.0.2
 -- @noindex
 --========================================================
 
@@ -18,10 +18,11 @@ end
 local Core = dofile(Path("JKK_TrackManager_Core.lua"))
 local Theme = dofile(Path("JKK_Theme_Core.lua"))
 local View = dofile(Path("JKK_TrackManager_UI.lua")).Create({core = Core, theme = Theme})
+local WindowChrome = dofile(Path("JKK_WindowChrome.lua"))
 
 local ctx = RPR.ImGui_CreateContext("JKK_TrackManager_Ctx")
 local open = true
-local window_flags = RPR.ImGui_WindowFlags_NoCollapse()
+local window_flags = WindowChrome.flags()
     | RPR.ImGui_WindowFlags_NoScrollbar()
     | RPR.ImGui_WindowFlags_NoScrollWithMouse()
 
@@ -38,6 +39,7 @@ local function Main()
     local visible, open_flag = RPR.ImGui_Begin(ctx, "JKK Track Manager", open, window_flags)
 
     if visible then
+        if WindowChrome.header(ctx, 'JKK Track Manager', 'track_manager') then open_flag = false end
         View.Draw(ctx, { embedded = false, scale = 1.0 })
     end
     RPR.ImGui_End(ctx)

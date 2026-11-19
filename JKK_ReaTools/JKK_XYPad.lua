@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_XYPad
 -- @author Junki Kim
--- @version 1.0.1
+-- @version 1.0.2
 -- @noindex
 --========================================================
 
@@ -19,6 +19,8 @@ local theme_path = script_dir .. "Modules/JKK_Theme_Core.lua"
 if not reaper.file_exists(theme_path) then
     theme_path = resource_path .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme_Core.lua"
 end
+
+local WindowChrome = dofile(script_dir .. "Modules/JKK_WindowChrome.lua")
 
 local theme_module = nil
 if reaper.file_exists(theme_path) then
@@ -415,7 +417,7 @@ function Loop()
 
     reaper.ImGui_SetNextWindowSizeConstraints(ctx, 350, 400, 9999, 9999)
     
-    local window_flags = reaper.ImGui_WindowFlags_NoCollapse()
+    local window_flags = WindowChrome.flags()
     local visible, open = reaper.ImGui_Begin(ctx, 'JKK_XYPad', true, window_flags)
     
     if visible then
@@ -424,6 +426,8 @@ function Loop()
         elseif fallback_font then
             reaper.ImGui_PushFont(ctx, fallback_font, 13)
         end
+
+        if WindowChrome.header(ctx, 'JKK XY Pad', 'xy_pad') then open = false end
 
         local state = GetGlobalMacroState()
         
@@ -597,8 +601,8 @@ function Loop()
         elseif fallback_font then
             reaper.ImGui_PopFont(ctx)
         end
-        reaper.ImGui_End(ctx)
     end
+    reaper.ImGui_End(ctx)
     
     if style_pop_count and style_pop_count > 0 then
         reaper.ImGui_PopStyleVar(ctx, style_pop_count)

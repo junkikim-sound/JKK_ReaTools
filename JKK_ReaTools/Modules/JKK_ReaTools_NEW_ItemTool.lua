@@ -368,9 +368,69 @@ math.randomseed(os.time())
                 end
             end
         end
+    -- Shared navigation for Take Channel and both Pitch Mode dropdowns.
+    -- The arrows live inside the existing combo's total width and never
+    -- change the legacy dropdown selection behavior or undo target.
+    local function JKK_IT_ComboNavButton(ctx, id, direction, enabled)
+        local button_width = JKK_Scale(21)
+        if not enabled then reaper.ImGui_BeginDisabled(ctx) end
+        local clicked = reaper.ImGui_Button(ctx,
+            (direction < 0 and '◀' or '▶') .. '##' .. id, button_width, 0)
+        if not enabled then reaper.ImGui_EndDisabled(ctx) end
+        return clicked and enabled
+    end
+    local function JKK_IT_ComboNavStart(ctx, id, width, enabled, on_step)
+        if JKK_IT_ComboNavButton(ctx, id .. '_prev', -1, enabled) then on_step(-1) end
+        reaper.ImGui_SameLine(ctx, 0, JKK_Scale(3))
+        local combo_w = (width or JKK_Scale(128)) - JKK_Scale(48)
+        reaper.ImGui_SetNextItemWidth(ctx, math.max(JKK_Scale(32), combo_w))
+    end
+    local function JKK_IT_ComboNavFinish(ctx, id, enabled, on_step)
+        reaper.ImGui_SameLine(ctx, 0, JKK_Scale(3))
+        if JKK_IT_ComboNavButton(ctx, id .. '_next', 1, enabled) then on_step(1) end
+    end
+
+    local take_channel_modes = {0, 1, 2, 3, 4}
+    for ch = 3, 12 do take_channel_modes[#take_channel_modes + 1] = ch + 2 end
+    for ch = 1, 12 do take_channel_modes[#take_channel_modes + 1] = ch + 66 end
+
+    local function JKK_IT_StepTakeChannel(direction)
+        local index = 1
+        for i, mode in ipairs(take_channel_modes) do
+            if mode == take_chan_mode then index = i; break end
+        end
+        index = ((index - 1 + direction) % #take_channel_modes) + 1
+        take_chan_mode = take_channel_modes[index]
+        JKK_IT_ApplyTakeChannelMode(take_chan_mode)
+    end
+    local function JKK_IT_StepPitchMain(direction)
+        if #pitch_mode_list == 0 then return end
+        local index = 1
+        for i, mode in ipairs(pitch_mode_list) do
+            if mode.id == take_pitch_mode then index = i; break end
+        end
+        index = ((index - 1 + direction) % #pitch_mode_list) + 1
+        take_pitch_mode = pitch_mode_list[index].id
+        take_pitch_sub_mode = 0
+        JKK_IT_ApplyTakePitchMode(take_pitch_mode, take_pitch_sub_mode)
+    end
+    local function JKK_IT_StepPitchSub(direction)
+        if take_pitch_mode == -1 then return end
+        local count = 0
+        -- Guard against a malformed/never-ending enumeration from an extension.
+        for i = 0, 255 do
+            local name = reaper.EnumPitchShiftSubModes(take_pitch_mode, i)
+            if not name then break end
+            count = count + 1
+        end
+        if count == 0 then return end
+        take_pitch_sub_mode = ((take_pitch_sub_mode + direction) % count + count) % count
+        JKK_IT_ApplyTakePitchMode(take_pitch_mode, take_pitch_sub_mode)
+    end
     -- Channel Mode & Pitch Mode Combo Draw
         local function JKK_IT_DrawChannelModeCombo(ctx, width)
-            reaper.ImGui_SetNextItemWidth(ctx, width or JKK_Scale(128))
+            local can_change = reaper.CountSelectedMediaItems(0) > 0
+            JKK_IT_ComboNavStart(ctx, 'TakeChannel', width, can_change, JKK_IT_StepTakeChannel)
             -- [1] Preview Text
             local preview_text = ""
 
@@ -442,12 +502,14 @@ math.randomseed(os.time())
 
                 reaper.ImGui_EndCombo(ctx)
             end
+            JKK_IT_ComboNavFinish(ctx, 'TakeChannel', can_change, JKK_IT_StepTakeChannel)
         end
         local function JKK_IT_DrawPitchModeCombo(ctx, width1, width2, stacked_sub, stacked_x)
             local item_cnt = reaper.CountSelectedMediaItems(0)
             
             -- 1. Main Mode Combo (Algorithm)
-            reaper.ImGui_SetNextItemWidth(ctx, width1 or JKK_Scale(128))
+            local can_change_main = item_cnt > 0 and #pitch_mode_list > 0
+            JKK_IT_ComboNavStart(ctx, 'PitchMain', width1, can_change_main, JKK_IT_StepPitchMain)
             
             local main_preview = ""
             if item_cnt > 0 then
@@ -475,6 +537,7 @@ math.randomseed(os.time())
                 end
                 reaper.ImGui_EndCombo(ctx)
             end
+            JKK_IT_ComboNavFinish(ctx, 'PitchMain', can_change_main, JKK_IT_StepPitchMain)
 
             -- 2. Sub Mode Combo (Parameter)
             if width2 then
@@ -484,8 +547,8 @@ math.randomseed(os.time())
                     reaper.ImGui_SameLine(ctx)
                 end
             end
-            reaper.ImGui_SetNextItemWidth(ctx, width2 or JKK_Scale(128))
             local is_sub_active = (item_cnt > 0) and (take_pitch_mode ~= -1)
+            JKK_IT_ComboNavStart(ctx, 'PitchSub', width2, is_sub_active, JKK_IT_StepPitchSub)
             local sub_preview = ""
 
             if is_sub_active then
@@ -516,6 +579,7 @@ math.randomseed(os.time())
                 end
                 reaper.ImGui_EndCombo(ctx)
             end
+            JKK_IT_ComboNavFinish(ctx, 'PitchSub', is_sub_active, JKK_IT_StepPitchSub)
         end
 
 ----------------------------------------------------------

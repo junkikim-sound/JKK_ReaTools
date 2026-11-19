@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Renamer
 -- @author Junki Kim
--- @version 1.1.5
+-- @version 1.1.6
 -- @noindex
 --========================================================
 
@@ -640,6 +640,7 @@ local function BuildInputTargetSignature(targets)
 end
 
 local num_input_active = false
+local WindowChrome = dofile((debug.getinfo(1, "S").source or ""):match("^@(.+[\\/])") .. "Modules/JKK_WindowChrome.lua")
 
 local function Main()
     r.ImGui_PushFont(ctx, font, 16)
@@ -648,7 +649,7 @@ local function Main()
 
     local style_pop_count, color_pop_count = ApplyTheme(ctx)
 
-    local visible, open_flag = r.ImGui_Begin(ctx, 'JKK_Renamer', open, r.ImGui_WindowFlags_NoCollapse())
+    local visible, open_flag = r.ImGui_Begin(ctx, 'JKK_Renamer', open, WindowChrome.flags())
     open = open_flag
 
     if r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_Escape()) then
@@ -656,6 +657,7 @@ local function Main()
     end
 
     if visible then
+        if WindowChrome.header(ctx, 'JKK Renamer', 'renamer') then open = false end
         SyncSharedSettings(num_input_active)
         UpdateFocusMode()
         
