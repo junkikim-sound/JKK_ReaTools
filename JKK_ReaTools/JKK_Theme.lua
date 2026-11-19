@@ -1,9 +1,8 @@
 --========================================================
 -- @title JKK_Theme
 -- @author Junki Kim
--- @version 1.0.0
--- @provides
---     [nomain] Modules/JKK_Theme_Core.lua
+-- @version 1.0.1
+-- @noindex
 --========================================================
 
 local RPR = reaper

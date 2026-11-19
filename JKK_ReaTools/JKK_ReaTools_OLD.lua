@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools_OLD
 -- @author Junki Kim
--- @version 0.9.66
+-- @version 0.9.67
 -- @provides 
 --     [nomain] Modules/JKK_ReaTools_OLD_ItemTools.lua
 --     [nomain] Modules/JKK_ReaTools_OLD_TrackTools.lua
@@ -19,19 +19,23 @@ local selected_tool = 1
 local prev_project_state_count = reaper.GetProjectStateChangeCount(0) 
 local current_project_state_count = prev_project_state_count
 
-local theme_path = RPR.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme_Core.lua"
-local ApplyTheme = (RPR.file_exists(theme_path) and dofile(theme_path).ApplyTheme) 
+local script_dir = (debug.getinfo(1, "S").source or ""):match("^@(.+[\\/])") or ""
+local theme_path = script_dir .. "Modules/JKK_Theme_Core.lua"
+if not RPR.file_exists(theme_path) then
+    theme_path = RPR.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme_Core.lua"
+end
+local ApplyTheme = (RPR.file_exists(theme_path) and dofile(theme_path).ApplyTheme)
                    or function(ctx) return 0, 0 end
 
-local function load_module(path)
-    local full_path = RPR.GetResourcePath() .. path
+local function load_module(file_name)
+    local full_path = script_dir .. "Modules/" .. file_name
     if not RPR.file_exists(full_path) then
         RPR.MB("Error: Module file not found at " .. full_path, "Module Load Error: File Not Found", 0)
         return nil
     end
     local status, result = pcall(dofile, full_path)
     if not status then
-        RPR.MB("Error executing module:\n" .. path .. "\n\nError Message:\n" .. tostring(result), "Module Execution Error", 0)
+        RPR.MB("Error executing module:\n" .. file_name .. "\n\nError Message:\n" .. tostring(result), "Module Execution Error", 0)
         return nil
     end
     return result
@@ -39,9 +43,9 @@ end
 
 --========================================================
 local tools = {}
-tools[1] = { name = "Item Tools",     module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_ReaTools_OLD_ItemTools.lua") }
-tools[2] = { name = "Track Tools",    module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_ReaTools_OLD_TrackTools.lua") }
-tools[3] = { name = "Timeline Tools", module = load_module("/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_ReaTools_OLD_TimelineTools.lua") }
+tools[1] = { name = "Item Tools",     module = load_module("JKK_ReaTools_OLD_ItemTools.lua") }
+tools[2] = { name = "Track Tools",    module = load_module("JKK_ReaTools_OLD_TrackTools.lua") }
+tools[3] = { name = "Timeline Tools", module = load_module("JKK_ReaTools_OLD_TimelineTools.lua") }
 
 ---------------------------------------------------------
 -- Note & State Tracking Variables

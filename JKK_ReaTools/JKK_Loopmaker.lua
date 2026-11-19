@@ -1,7 +1,8 @@
 --========================================================
 -- @title JKK_Loopmaker
 -- @author Junki Kim
--- @version 1.2.7
+-- @version 1.2.8
+-- @noindex
 --========================================================
 
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'

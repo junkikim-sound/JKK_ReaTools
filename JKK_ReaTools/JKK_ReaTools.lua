@@ -1,14 +1,33 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 1.0.0
+-- @version 1.0.1
 -- @provides
+--     [main] Actions/JKK_Action_Track Visualizer FX Chain.lua
+--     [main] Actions/JKK_Action_Volume Rounder.lua
+--     [main] Actions/JKK_TrackManager_Open.lua
+--     [main] Actions/JKK_TrackManager_TrackActivation.lua
+--     [main] JKK_ColorPalette.lua
+--     [main] JKK_Loopmaker.lua
+--     [main] JKK_ReaTools_OLD.lua
+--     [main] JKK_Renamer.lua
+--     [main] JKK_Renderer.lua
+--     [main] JKK_Theme.lua
+--     [main] JKK_TrackManager.lua
+--     [main] JKK_XYPad.lua
+--     [nomain] Modules/JKK_ColorPalette_Data.lua
+--     [nomain] Modules/JKK_ColorPalette_UI.lua
 --     [nomain] Modules/JKK_ReaTools_NEW_ItemTool.lua
 --     [nomain] Modules/JKK_ReaTools_NEW_TrackTool.lua
 --     [nomain] Modules/JKK_ReaTools_NEW_RenamerLite.lua
 --     [nomain] Modules/JKK_ReaTools_NEW_ColorPaletteLite.lua
+--     [nomain] Modules/JKK_Renamer_UCSList.lua
+--     [nomain] Modules/JKK_Renamer_WildcardList.lua
 --     [nomain] Modules/JKK_SelectionManager.lua
 --     [nomain] Modules/JKK_TakeMarker_Peaks.lua
+--     [nomain] Modules/JKK_Theme_Core.lua
+--     [nomain] Modules/JKK_TrackManager_Core.lua
+--     [nomain] Modules/JKK_TrackManager_UI.lua
 --========================================================
 
 local RPR = reaper

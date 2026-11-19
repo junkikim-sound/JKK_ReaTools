@@ -1,12 +1,8 @@
 --========================================================
 -- @title JKK_TrackManager
 -- @author Junki Kim
--- @version 1.0.0
--- @provides
---   [main] Actions/JKK_TrackManager_Open.lua
---   [main] Actions/JKK_TrackManager_TrackActivation.lua
---   [nomain] Modules/JKK_TrackManager_Core.lua
---   [nomain] Modules/JKK_TrackManager_UI.lua
+-- @version 1.0.1
+-- @noindex
 --========================================================
 
 local RPR = reaper

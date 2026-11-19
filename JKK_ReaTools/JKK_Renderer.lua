@@ -1,7 +1,8 @@
 --========================================================
 -- @title JKK_Renderer
 -- @author Junki Kim
--- @version 1.1.7
+-- @version 1.1.8
+-- @noindex
 --========================================================
 
 local r = reaper
@@ -63,9 +64,9 @@ local cached_previews = {}
 -- =======================================================
 -- Theme Module Integration
 -- =======================================================
-local theme_path = r.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme_Core.lua"
+local theme_path = script_path .. "Modules/JKK_Theme_Core.lua"
 if not r.file_exists(theme_path) then
-  theme_path = script_path .. "Modules/JKK_Theme_Core.lua"
+  theme_path = r.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme_Core.lua"
 end
 
 local theme = r.file_exists(theme_path) and dofile(theme_path) or {}

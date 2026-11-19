@@ -1,10 +1,8 @@
 --========================================================
 -- @title JKK_ColorPalette
 -- @author Junki Kim
--- @version 1.0.9
--- @provides
---     [nomain] Modules/JKK_ColorPalette_Data.lua
---     [nomain] Modules/JKK_ColorPalette_UI.lua
+-- @version 1.1.0
+-- @noindex
 --========================================================
 
 local reaper = reaper
@@ -21,24 +19,22 @@ local base_dir = resource_path .. "/Scripts/JKK_ColorPalette/"
 local script_dir = debug.getinfo(1, "S").source:match("@?(.*[\\/])") or ""
 
 local function load_module(filename)
-    -- 1차 시도: GetResourcePath 기준 경로
-    local path1 = base_dir .. "Modules/" .. filename
-    if reaper.file_exists(path1) then
-        return dofile(path1)
-    end
-    
-    -- 2차 시도: relative script_dir 기준 경로
-    local path2 = script_dir .. "Modules/" .. filename
-    if reaper.file_exists(path2) then
-        return dofile(path2)
-    end
-    
-    -- 3차 시도: JKK_ReaTools 모듈 폴더 공유 경로 (필요 시)
-    local path3 = resource_path .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/" .. filename
-    if reaper.file_exists(path3) then
-        return dofile(path3)
+    -- ReaPack unified package: shared Modules live next to this script.
+    local local_path = script_dir .. "Modules/" .. filename
+    if reaper.file_exists(local_path) then
+        return dofile(local_path)
     end
 
+    -- Compatibility with older manually installed layouts.
+    local legacy_paths = {
+        base_dir .. "Modules/" .. filename,
+        resource_path .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/" .. filename,
+    }
+    for _, path in ipairs(legacy_paths) do
+        if reaper.file_exists(path) then
+            return dofile(path)
+        end
+    end
     return nil
 end
 

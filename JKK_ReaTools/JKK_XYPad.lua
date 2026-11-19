@@ -1,7 +1,8 @@
 --========================================================
 -- @title JKK_XYPad
 -- @author Junki Kim
--- @version 1.0.0
+-- @version 1.0.1
+-- @noindex
 --========================================================
 
 local reaper = reaper
@@ -13,7 +14,11 @@ local global_state = nil
 -- Load Theme (JKK_Theme_Core)
 --========================================================
 local resource_path = reaper.GetResourcePath()
-local theme_path = resource_path .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme_Core.lua"
+local script_dir = (debug.getinfo(1, "S").source or ""):match("^@(.+[\\/])") or ""
+local theme_path = script_dir .. "Modules/JKK_Theme_Core.lua"
+if not reaper.file_exists(theme_path) then
+    theme_path = resource_path .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme_Core.lua"
+end
 
 local theme_module = nil
 if reaper.file_exists(theme_path) then
