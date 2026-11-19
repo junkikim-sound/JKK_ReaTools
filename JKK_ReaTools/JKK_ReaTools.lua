@@ -1,13 +1,12 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 1.0.11
+-- @version 1.0.12
 -- @provides
 --     [main] Actions/JKK_TrackManager_Open.lua
 --     [main] Actions/JKK_TrackManager_TrackActivation.lua
 --     [main] JKK_ColorPalette.lua
 --     [main] JKK_Loopmaker.lua
---     [main] JKK_ReaTools_OLD.lua
 --     [main] JKK_Renamer.lua
 --     [main] JKK_Renderer.lua
 --     [main] JKK_Theme.lua
