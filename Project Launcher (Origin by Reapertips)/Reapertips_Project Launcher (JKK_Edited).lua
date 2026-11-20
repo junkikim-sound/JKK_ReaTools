@@ -1,7 +1,7 @@
 --[[
   @description Project Launcher
   @author Reapertips (Alejandro Hernandez)
-  @version 1.3.0
+  @version 1.3.01
   @license MIT
   @changelog
     - New: Tree view. In Folders, turn on Tree view under Rescan to see your folders as a tree, like Finder. Click a folder to open or close it.
@@ -1463,7 +1463,8 @@ function SB.tree_flatten(tops, skip_top)
 end
 
 function SB.cache_path()
-    local dir = SB.join(reaper.GetResourcePath(), 'Scripts', 'Reapertips', 'Project Launcher')
+    local dir = SB.join(reaper.GetResourcePath(), 'Scripts', 'JKK_ReaTools',
+        'Project Launcher (Origin by Reapertips)', 'cache')
     return dir, SB.join(dir, 'folder-cache.txt')
 end
 
