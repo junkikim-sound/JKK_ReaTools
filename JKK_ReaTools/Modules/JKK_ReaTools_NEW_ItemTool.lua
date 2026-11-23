@@ -8,6 +8,8 @@ local reaper = reaper
 
 -- JKK_ReaTools가 먼저 로드한 SelectionManager 참조 (단독 로드 시 폴백 포함)
 local script_dir = (debug.getinfo(1, "S").source or ""):match("^@(.+[\\/])") or ""
+local Undo = dofile(script_dir .. "JKK_UndoLabels.lua")
+local GestureUndo = _G.JKK_GestureUndo or dofile(script_dir .. "JKK_GestureUndo.lua")
 local sel_path = script_dir .. "JKK_SelectionManager.lua"
 if not reaper.file_exists(sel_path) then
     sel_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_SelectionManager.lua"
@@ -22,19 +24,21 @@ local peak_markers_last_result = nil
 -- UI zoom factor published by JKK_ReaTools (1.0 = original design size).
 local function JKK_Scale(v) return v * (JKK_UI_SCALE or 1) end
 
--- Start slider undo blocks on the first value change; close on release.
-local JKK_ItemSliderUndoOpen = false
-local function JKK_ItemSliderUndoBegin()
-    if not JKK_ItemSliderUndoOpen then
-        reaper.Undo_BeginBlock()
-        JKK_ItemSliderUndoOpen = true
-    end
+-- ========================================================
+-- USER CONFIG: Take Channel / Pitch Mode popup height
+-- ========================================================
+-- Additional height (pixels at 100% UI scale), shared by the 3 popups.
+-- Set to 0 for the tightest fit; increase to 6-10 if any last row gets clipped.
+-- Unlike the old fixed FrameHeight-based calculation, popup height now follows
+-- the number of actual menu entries and their text-line height.
+local JKK_IT_COMBO_POPUP_EXTRA_HEIGHT = 4
+
+-- Centralized, cross-frame undo gesture: survive mode/visibility changes.
+local function JKK_ItemSliderUndoBegin(description)
+    GestureUndo.Begin(description, 4) -- Media-item/take state only
 end
 local function JKK_ItemSliderUndoEnd(ctx, description)
-    if JKK_ItemSliderUndoOpen and reaper.ImGui_IsItemDeactivated(ctx) then
-        reaper.Undo_EndBlock(description, -1)
-        JKK_ItemSliderUndoOpen = false
-    end
+    GestureUndo.FinishItem(ctx, description)
 end
 
 math.randomseed(os.time())
@@ -178,7 +182,7 @@ math.randomseed(os.time())
             end
             reaper.UpdateArrange()
             local names = { B_LOOPSRC = "Loop Source", B_MUTE = "Mute", C_LOCK = "Lock" }
-            reaper.Undo_EndBlock("Set Item " .. (names[key] or key), -1)
+            reaper.Undo_EndBlock(Undo.Label("item.set_item_property", names[key] or key), -1)
         end
     -- Fader
         local adj_fade_in_cur = 0.0
@@ -198,7 +202,7 @@ math.randomseed(os.time())
                 end
             end
             reaper.UpdateArrange()
-            reaper.Undo_EndBlock("Set Take Channel Mode", -1)
+            reaper.Undo_EndBlock(Undo.Label("item.set_take_channel_mode"), -1)
         end
         -- Pitch Mode Values
             local take_pitch_mode = -1 
@@ -242,7 +246,7 @@ math.randomseed(os.time())
                 end
             end
             reaper.UpdateArrange()
-            reaper.Undo_EndBlock("Set Take Pitch Mode", -1)
+            reaper.Undo_EndBlock(Undo.Label("item.set_take_pitch_mode"), -1)
         end
     -- Item Sync
         local take_chan_mode = 0
@@ -374,8 +378,8 @@ math.randomseed(os.time())
     local function JKK_IT_ComboNavButton(ctx, id, direction, enabled)
         local button_width = JKK_Scale(21)
         if not enabled then reaper.ImGui_BeginDisabled(ctx) end
-        local clicked = reaper.ImGui_Button(ctx,
-            (direction < 0 and '◀' or '▶') .. '##' .. id, button_width, 0)
+        local clicked = JKK_Theme.NavButton(ctx, '##' .. id,
+            direction < 0 and 'left' or 'right', button_width, 0)
         if not enabled then reaper.ImGui_EndDisabled(ctx) end
         return clicked and enabled
     end
@@ -383,11 +387,69 @@ math.randomseed(os.time())
         if JKK_IT_ComboNavButton(ctx, id .. '_prev', -1, enabled) then on_step(-1) end
         reaper.ImGui_SameLine(ctx, 0, JKK_Scale(3))
         local combo_w = (width or JKK_Scale(128)) - JKK_Scale(48)
-        reaper.ImGui_SetNextItemWidth(ctx, math.max(JKK_Scale(32), combo_w))
+        return math.max(JKK_Scale(32), combo_w)
     end
     local function JKK_IT_ComboNavFinish(ctx, id, enabled, on_step)
         reaper.ImGui_SameLine(ctx, 0, JKK_Scale(3))
         if JKK_IT_ComboNavButton(ctx, id .. '_next', 1, enabled) then on_step(1) end
+    end
+
+    -- ReaImGui's BeginCombo height hints can leave a nonfunctional scrollbar.
+    -- Size the no-scroll popup to Selectable text rows (NOT the taller button
+    -- FrameHeight). Count separators separately because they are much shorter.
+    local function JKK_IT_BeginNoScrollCombo(ctx, id, preview, frame_w, rows, columns, separators)
+        local frame_h = reaper.ImGui_GetFrameHeight(ctx)
+        local screen_x, screen_y = reaper.ImGui_GetCursorScreenPos(ctx)
+        local dl = reaper.ImGui_GetWindowDrawList(ctx)
+        local r = reaper
+        local color_cols = {
+            {r.ImGui_Col_Button(), r.ImGui_GetColor(ctx, r.ImGui_Col_FrameBg())},
+            {r.ImGui_Col_ButtonHovered(), r.ImGui_GetColor(ctx, r.ImGui_Col_FrameBgHovered())},
+            {r.ImGui_Col_ButtonActive(), r.ImGui_GetColor(ctx, r.ImGui_Col_FrameBgActive())},
+        }
+        for _, pair in ipairs(color_cols) do r.ImGui_PushStyleColor(ctx, pair[1], pair[2]) end
+        local clicked = r.ImGui_Button(ctx, '##JKK_NoScroll_' .. id, frame_w, frame_h)
+        r.ImGui_PopStyleColor(ctx, #color_cols)
+        local popup_id = '##JKK_NoScrollPopup_' .. id
+        if clicked then r.ImGui_OpenPopup(ctx, popup_id) end
+
+        local arrow, text = '▼', (preview or ''):gsub('^%s+', '')
+        local text_max = math.max(0, frame_w - frame_h - JKK_Scale(12))
+        local tw, th = r.ImGui_CalcTextSize(ctx, text)
+        if tw > text_max then
+            while #text > 0 and tw > text_max do
+                local last_start = utf8.offset(text, -1)
+            text = last_start and text:sub(1, last_start - 1) or ''
+                tw, th = r.ImGui_CalcTextSize(ctx, text .. '…')
+            end
+            text = text .. '…'
+        end
+        local color = r.ImGui_GetColor(ctx, r.ImGui_Col_Text())
+        r.ImGui_DrawList_AddText(dl, screen_x + JKK_Scale(6),
+            screen_y + math.max(0, (frame_h - th) * 0.5), color, text)
+        local aw, ah = r.ImGui_CalcTextSize(ctx, arrow)
+        r.ImGui_DrawList_AddText(dl, screen_x + frame_w - math.max(JKK_Scale(4), (frame_h + aw) * 0.5),
+            screen_y + math.max(0, (frame_h - ah) * 0.5), color, arrow)
+
+        local _, pad_y = r.ImGui_GetStyleVar(ctx, r.ImGui_StyleVar_WindowPadding())
+        local _, item_y = r.ImGui_GetStyleVar(ctx, r.ImGui_StyleVar_ItemSpacing())
+        local line_h = r.ImGui_GetTextLineHeight(ctx)
+        local shown_rows = math.max(1, rows or 1)
+        local separator_count = math.max(0, separators or 0)
+        -- Selectables occupy a text line + item spacing; separators occupy a
+        -- 1px line + item spacing. The trailing item spacing is not needed.
+        local content_h = shown_rows * (line_h + item_y)
+            + separator_count * (JKK_Scale(1) + item_y) - item_y
+        local popup_h = math.max(line_h + pad_y * 2,
+            content_h + pad_y * 2 + JKK_Scale(JKK_IT_COMBO_POPUP_EXTRA_HEIGHT))
+        local popup_w = math.max(frame_w, (columns or 1) * JKK_Scale(175))
+        r.ImGui_SetNextWindowSize(ctx, popup_w, popup_h, r.ImGui_Cond_Always())
+        local popup_flags = r.ImGui_WindowFlags_NoScrollbar() | r.ImGui_WindowFlags_NoScrollWithMouse()
+        return r.ImGui_BeginPopup(ctx, popup_id, popup_flags)
+    end
+
+    local function JKK_IT_EndNoScrollCombo(ctx)
+        reaper.ImGui_EndPopup(ctx)
     end
 
     local take_channel_modes = {0, 1, 2, 3, 4}
@@ -430,7 +492,7 @@ math.randomseed(os.time())
     -- Channel Mode & Pitch Mode Combo Draw
         local function JKK_IT_DrawChannelModeCombo(ctx, width)
             local can_change = reaper.CountSelectedMediaItems(0) > 0
-            JKK_IT_ComboNavStart(ctx, 'TakeChannel', width, can_change, JKK_IT_StepTakeChannel)
+            local combo_w = JKK_IT_ComboNavStart(ctx, 'TakeChannel', width, can_change, JKK_IT_StepTakeChannel)
             -- [1] Preview Text
             local preview_text = ""
 
@@ -452,7 +514,8 @@ math.randomseed(os.time())
             end
 
             -- [2] 드롭다운 시작
-            if reaper.ImGui_BeginCombo(ctx, "##ChannelMode", preview_text, reaper.ImGui_ComboFlags_HeightLarge()) then
+            -- 8 clickable/menu rows + 2 separator lines (not 9 full-height rows).
+            if JKK_IT_BeginNoScrollCombo(ctx, 'ChannelMode', preview_text, combo_w, 8, 1, 2) then
                 
                 -- A. 기본 모드들 (0 ~ 4)
                 local base_modes = { "Normal", "Reverse Stereo", "Mono (Mix L+R)", "Mono (Left)", "Mono (Right)" }
@@ -500,7 +563,7 @@ math.randomseed(os.time())
                     reaper.Main_OnCommand(42429, 0)
                 end
 
-                reaper.ImGui_EndCombo(ctx)
+                JKK_IT_EndNoScrollCombo(ctx)
             end
             JKK_IT_ComboNavFinish(ctx, 'TakeChannel', can_change, JKK_IT_StepTakeChannel)
         end
@@ -509,7 +572,7 @@ math.randomseed(os.time())
             
             -- 1. Main Mode Combo (Algorithm)
             local can_change_main = item_cnt > 0 and #pitch_mode_list > 0
-            JKK_IT_ComboNavStart(ctx, 'PitchMain', width1, can_change_main, JKK_IT_StepPitchMain)
+            local combo_w = JKK_IT_ComboNavStart(ctx, 'PitchMain', width1, can_change_main, JKK_IT_StepPitchMain)
             
             local main_preview = ""
             if item_cnt > 0 then
@@ -522,8 +585,13 @@ math.randomseed(os.time())
                 end
             end
 
-            if reaper.ImGui_BeginCombo(ctx, "##PitchModeMain", main_preview, reaper.ImGui_ComboFlags_HeightLarge()) then
+            local pitch_cols = math.max(1, math.ceil(#pitch_mode_list / 14))
+            local pitch_rows = math.ceil(#pitch_mode_list / pitch_cols)
+            if JKK_IT_BeginNoScrollCombo(ctx, 'PitchModeMain', main_preview, combo_w, pitch_rows, pitch_cols) then
+                local has_table = pitch_cols > 1 and reaper.ImGui_BeginTable(ctx, '##pitch_modes_all',
+                    pitch_cols, reaper.ImGui_TableFlags_SizingStretchSame())
                 for _, mode in ipairs(pitch_mode_list) do
+                    if has_table then reaper.ImGui_TableNextColumn(ctx) end
                     local is_selected = (take_pitch_mode == mode.id)
                     local label = mode.name .. "##pm_" .. mode.id
                     
@@ -535,7 +603,8 @@ math.randomseed(os.time())
 
                     if is_selected then reaper.ImGui_SetItemDefaultFocus(ctx) end
                 end
-                reaper.ImGui_EndCombo(ctx)
+                if has_table then reaper.ImGui_EndTable(ctx) end
+                JKK_IT_EndNoScrollCombo(ctx)
             end
             JKK_IT_ComboNavFinish(ctx, 'PitchMain', can_change_main, JKK_IT_StepPitchMain)
 
@@ -548,7 +617,7 @@ math.randomseed(os.time())
                 end
             end
             local is_sub_active = (item_cnt > 0) and (take_pitch_mode ~= -1)
-            JKK_IT_ComboNavStart(ctx, 'PitchSub', width2, is_sub_active, JKK_IT_StepPitchSub)
+            local sub_combo_w = JKK_IT_ComboNavStart(ctx, 'PitchSub', width2, is_sub_active, JKK_IT_StepPitchSub)
             local sub_preview = ""
 
             if is_sub_active then
@@ -560,13 +629,23 @@ math.randomseed(os.time())
                 end
             end
 
-            if reaper.ImGui_BeginCombo(ctx, "##PitchModeSub", sub_preview) then
+            local sub_names = {}
+            if is_sub_active then
+                for j = 0, 255 do
+                    local sub_name = reaper.EnumPitchShiftSubModes(take_pitch_mode, j)
+                    if not sub_name then break end
+                    sub_names[#sub_names + 1] = sub_name
+                end
+            end
+            local sub_cols = math.max(1, math.ceil(#sub_names / 14))
+            local sub_rows = math.ceil(#sub_names / sub_cols)
+            if JKK_IT_BeginNoScrollCombo(ctx, 'PitchModeSub', sub_preview, sub_combo_w, sub_rows, sub_cols) then
                 if is_sub_active then
-                    local j = 0
-                    while true do
-                        local sub_name = reaper.EnumPitchShiftSubModes(take_pitch_mode, j)
-                        if not sub_name then break end
-
+                    local has_table = sub_cols > 1 and reaper.ImGui_BeginTable(ctx, '##pitch_sub_all',
+                        sub_cols, reaper.ImGui_TableFlags_SizingStretchSame())
+                    for idx, sub_name in ipairs(sub_names) do
+                        local j = idx - 1
+                        if has_table then reaper.ImGui_TableNextColumn(ctx) end
                         local is_selected = (take_pitch_sub_mode == j)
                         if reaper.ImGui_Selectable(ctx, sub_name .. "##sub_" .. j, is_selected) then
                             take_pitch_sub_mode = j
@@ -574,10 +653,10 @@ math.randomseed(os.time())
                         end
                         
                         if is_selected then reaper.ImGui_SetItemDefaultFocus(ctx) end
-                        j = j + 1
                     end
+                    if has_table then reaper.ImGui_EndTable(ctx) end
                 end
-                reaper.ImGui_EndCombo(ctx)
+                JKK_IT_EndNoScrollCombo(ctx)
             end
             JKK_IT_ComboNavFinish(ctx, 'PitchSub', is_sub_active, JKK_IT_StepPitchSub)
         end
@@ -1050,7 +1129,7 @@ math.randomseed(os.time())
             sec = 0.5,         -- Seconds 모드 기본값 (0.01 ~ 5.0초)
             snapshot = nil,    -- 원본 아이템 상태 스냅샷
             output_guids = nil,
-            undo_label = "Live Grid Split Items",
+            undo_label = Undo.Label("item.live_grid_split"),
         }
         local splitAndSpace = false
         local shouldAlignToMarker = false
@@ -1782,7 +1861,7 @@ math.randomseed(os.time())
                 if itemsToConvert then
                     reaper.Undo_BeginBlock()
                     local goodToGo = askForBounce(shouldKeepOriginal, itemsToConvert, errorMessages)
-                    reaper.Undo_EndBlock("Bounce in place.", -1)
+                    reaper.Undo_EndBlock(Undo.Label("item.bounce_in_place"), -1)
                     return goodToGo
                 else
                     return true
@@ -2007,16 +2086,17 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
     BeginLabeledRow("Volume")
     local changed_vol, new_vol = reaper.ImGui_SliderDouble(ctx, "##ItemVolume", adjust_vol, -30.0, 30.0, "%.2f dB")
     if changed_vol then
-        JKK_ItemSliderUndoBegin()
+        JKK_ItemSliderUndoBegin(Undo.Label("item.batch_take_volume_applied"))
         adjust_vol = new_vol
         JKK_IT_ApplyBatchVolume()
     end
-    JKK_ItemSliderUndoEnd(ctx, "Batch Take Volume Applied")
+    JKK_ItemSliderUndoEnd(ctx, Undo.Label("item.batch_take_volume_applied"))
     if reaper.ImGui_IsItemClicked(ctx, 1) then
+        GestureUndo.Finish()
         reaper.Undo_BeginBlock()
         adjust_vol = 0.0
         JKK_IT_ApplyBatchVolume()
-        reaper.Undo_EndBlock("Reset Volume", -1)
+        reaper.Undo_EndBlock(Undo.Label("item.reset_volume"), -1)
     end
 
     -- Pan
@@ -2030,32 +2110,34 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
     end
     local changed_pan, new_pan = reaper.ImGui_SliderDouble(ctx, "##ItemPan", adjust_pan, -1.0, 1.0, pan_format)
     if changed_pan then
-        JKK_ItemSliderUndoBegin()
+        JKK_ItemSliderUndoBegin(Undo.Label("item.batch_pan_applied"))
         adjust_pan = new_pan
         JKK_IT_ApplyBatchPan()
     end
-    JKK_ItemSliderUndoEnd(ctx, "Batch Pan Applied")
+    JKK_ItemSliderUndoEnd(ctx, Undo.Label("item.batch_pan_applied"))
     if reaper.ImGui_IsItemClicked(ctx, 1) then
+        GestureUndo.Finish()
         reaper.Undo_BeginBlock()
         adjust_pan = 0.0
         JKK_IT_ApplyBatchPan()
-        reaper.Undo_EndBlock("Reset Pan", -1)
+        reaper.Undo_EndBlock(Undo.Label("item.reset_pan"), -1)
     end
 
     -- Pitch
     BeginLabeledRow("Pitch")
     local changed_pitch, new_pitch = reaper.ImGui_SliderDouble(ctx, "##ItemPitch", adjust_pitch, -12.0, 12.0, "%.1f st")
     if changed_pitch then
-        JKK_ItemSliderUndoBegin()
+        JKK_ItemSliderUndoBegin(Undo.Label("item.batch_pitch_applied"))
         adjust_pitch = new_pitch
         JKK_IT_ApplyBatchPitch()
     end
-    JKK_ItemSliderUndoEnd(ctx, "Batch Pitch Applied")
+    JKK_ItemSliderUndoEnd(ctx, Undo.Label("item.batch_pitch_applied"))
     if reaper.ImGui_IsItemClicked(ctx, 1) then
+        GestureUndo.Finish()
         reaper.Undo_BeginBlock()
         adjust_pitch = 0.0
         JKK_IT_ApplyBatchPitch()
-        reaper.Undo_EndBlock("Reset Pitch", -1)
+        reaper.Undo_EndBlock(Undo.Label("item.reset_pitch"), -1)
     end
 
     -- Playback Rate
@@ -2065,16 +2147,17 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
         reaper.ImGui_SliderFlags_Logarithmic()
     )
     if changed_rate then
-        JKK_ItemSliderUndoBegin()
+        JKK_ItemSliderUndoBegin(Undo.Label("item.batch_playback_rate_applied"))
         adjust_rate = new_rate
         JKK_IT_ApplyBatchRate()
     end
-    JKK_ItemSliderUndoEnd(ctx, "Batch Playback Rate Applied")
+    JKK_ItemSliderUndoEnd(ctx, Undo.Label("item.batch_playback_rate_applied"))
     if reaper.ImGui_IsItemClicked(ctx, 1) then
+        GestureUndo.Finish()
         reaper.Undo_BeginBlock()
         adjust_rate = 1.0
         JKK_IT_ApplyBatchRate()
-        reaper.Undo_EndBlock("Reset Playback Rate", -1)
+        reaper.Undo_EndBlock(Undo.Label("item.reset_playback_rate"), -1)
     end
 
     -- Group Stretch
@@ -2091,7 +2174,7 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
         end
     end
     if changed_group_stretch then
-        JKK_ItemSliderUndoBegin()
+        JKK_ItemSliderUndoBegin(Undo.Label("item.group_time_stretch_applied"))
         group_stretch_ratio = new_group_stretch
         if group_stretch_ratio ~= prev_group_stretch_ratio then
             JKK_IT_ApplyGroupStretch(group_stretch_ratio)
@@ -2099,14 +2182,15 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
             JKK_IT_update_prev()
         end
     end
-    JKK_ItemSliderUndoEnd(ctx, "Group Time Stretch Applied")
+    JKK_ItemSliderUndoEnd(ctx, Undo.Label("item.group_time_stretch_applied"))
     if reaper.ImGui_IsItemClicked(ctx, 1) then
+        GestureUndo.Finish()
         reaper.Undo_BeginBlock()
         group_stretch_ratio = 1.0
         JKK_IT_ApplyGroupStretch(group_stretch_ratio)
         prev_group_stretch_ratio = 1.0
         JKK_IT_update_prev()
-        reaper.Undo_EndBlock("Reset Group Stretch", -1)
+        reaper.Undo_EndBlock(Undo.Label("item.reset_group_stretch"), -1)
     end
 
     -- 버튼 적정 최대 크기 및 기본 간격 정의
@@ -2184,7 +2268,7 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
     if reaper.ImGui_Button(ctx, "Reverse", primary_button_width, JKK_Scale(22)) then
         reaper.Undo_BeginBlock()
         reaper.Main_OnCommand(41051, 0)
-        reaper.Undo_EndBlock("Take Reverse", -1)
+        reaper.Undo_EndBlock(Undo.Label("item.take_reverse"), -1)
     end
     PopJKKButtonStyle(ctx)
 
@@ -2192,10 +2276,10 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
     reaper.ImGui_SameLine(ctx, 0, 0)
     reaper.ImGui_SetCursorPosX(ctx, center_group_x)
     reaper.ImGui_BeginDisabled(ctx, not has_multiple_takes)
-    if reaper.ImGui_Button(ctx, "<", nav_button_width, JKK_Scale(22)) then
+    if JKK_Theme.NavButton(ctx, "##ItemPrevTake", "left", nav_button_width, JKK_Scale(22)) then
         reaper.Undo_BeginBlock()
         reaper.Main_OnCommand(42350, 0)
-        reaper.Undo_EndBlock("Prev Take", -1)
+        reaper.Undo_EndBlock(Undo.Label("item.prev_take"), -1)
     end
     reaper.ImGui_EndDisabled(ctx)
 
@@ -2214,10 +2298,10 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
 
     reaper.ImGui_SameLine(ctx, 0, nav_gap)
     reaper.ImGui_BeginDisabled(ctx, not has_multiple_takes)
-    if reaper.ImGui_Button(ctx, ">", nav_button_width, JKK_Scale(22)) then
+    if JKK_Theme.NavButton(ctx, "##ItemNextTake", "right", nav_button_width, JKK_Scale(22)) then
         reaper.Undo_BeginBlock()
         reaper.Main_OnCommand(42349, 0)
-        reaper.Undo_EndBlock("Next Take", -1)
+        reaper.Undo_EndBlock(Undo.Label("item.next_take"), -1)
     end
     reaper.ImGui_EndDisabled(ctx)
 
@@ -2228,7 +2312,7 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
     if reaper.ImGui_Button(ctx, "Render Take", primary_button_width, JKK_Scale(22)) then
         reaper.Undo_BeginBlock()
         reaper.Main_OnCommand(41999, 0)
-        reaper.Undo_EndBlock("Render to New Take", -1)
+        reaper.Undo_EndBlock(Undo.Label("item.render_to_new_take"), -1)
     end
     PopJKKButtonStyle(ctx)
 end
@@ -2367,6 +2451,7 @@ local function DrawIntervalWidthTools(ctx, layout)
     -- processed, so an option click can never accidentally rearrange items.
     local slider_deactivated = reaper.ImGui_IsItemDeactivated(ctx)
     local slider_active = reaper.ImGui_IsItemActive(ctx)
+    GestureUndo.Touch(Undo.Label("item.update_interval_width"))
     local arrange_width_requested = changed_width and slider_active
     if changed_width and slider_active then
         width = (spacing_mode == 0)
@@ -2412,7 +2497,7 @@ local function DrawIntervalWidthTools(ctx, layout)
     if shuffle_clicked then
         reaper.Undo_BeginBlock()
         JKK_IT_shuffle_item_order()
-        reaper.Undo_EndBlock("Shuffle Item Order", -1)
+        reaper.Undo_EndBlock(Undo.Label("item.shuffle_item_order"), -1)
     end
     PopJKKConfirmButtonStyle(ctx)
 
@@ -2588,7 +2673,7 @@ local function DrawIntervalWidthTools(ctx, layout)
             end
         end
         reaper.UpdateArrange()
-        reaper.Undo_EndBlock("Delete All Take Markers from Selected Items", -1)
+        reaper.Undo_EndBlock(Undo.Label("item.delete_all_take_markers"), -1)
     end
     reaper.ImGui_EndDisabled(ctx)
     if reaper.ImGui_IsItemHovered(ctx, reaper.ImGui_HoveredFlags_AllowWhenDisabled()) then
@@ -2605,12 +2690,12 @@ local function DrawIntervalWidthTools(ctx, layout)
         loop_text .. "##JKK_Loopmaker", action_button_width, button_height)
     PopJKKButtonStyle(ctx)
     if loopmaker_clicked then
-        reaper.Undo_BeginBlock()
+        -- 창을 여는 행위 자체는 프로젝트 편집이 아니므로 Undo를 만들지 않는다.
+        -- 루프 확정(Make Loop)의 Undo는 JKK_Loopmaker.lua에서 별도로 기록한다.
         local cmd_id = reaper.NamedCommandLookup("_RScca2c247e3eef55035a013459ae01e9beab07629")
         if cmd_id ~= 0 then
             reaper.Main_OnCommand(cmd_id, 0)
         end
-        reaper.Undo_EndBlock("Run Loopmaker Action", -1)
     end
 
     -- A checkbox or action button is never a request to apply Arrange Width.
@@ -2619,15 +2704,14 @@ local function DrawIntervalWidthTools(ctx, layout)
     local other_control_clicked = changed_gap or changed_group or changed_center
         or shuffle_clicked or peak_marker_clicked or del_marker_clicked or loopmaker_clicked
     if arrange_width_requested and not other_control_clicked then
-        JKK_ItemSliderUndoBegin()
+        JKK_ItemSliderUndoBegin(Undo.Label("item.update_interval_width"))
         JKK_IT_apply_spacing_only()
     end
     -- Use the deactivation state captured immediately after the width slider,
     -- not the most recently rendered button/checkbox.
-    if JKK_ItemSliderUndoOpen and slider_deactivated then
-        reaper.Undo_EndBlock("Update Interval Width", -1)
-        JKK_ItemSliderUndoOpen = false
-    end
+    -- The width slider was drawn above; close the same named gesture even
+    -- though other controls are rendered before the arrange operation.
+    if slider_deactivated then GestureUndo.FinishLabel(Undo.Label("item.update_interval_width")) end
 
     -- Reserve only two rows of vertical space: slider/Shuffler + controls.
     -- Add an actual ImGui item after SetCursorPosY so Dear ImGui can update
@@ -2680,7 +2764,7 @@ local function DrawDynamicItemSplitter(ctx, selected_item_count, is_active_conte
             end
             reaper.UpdateArrange()
         end
-        reaper.Undo_EndBlock("Split", -1)
+        reaper.Undo_EndBlock(Undo.Label("item.split"), -1)
     end
     PopJKKConfirmButtonStyle(ctx)
 
@@ -2723,7 +2807,7 @@ local function DrawDynamicItemSplitter(ctx, selected_item_count, is_active_conte
             end
             reaper.UpdateArrange()
         end
-        reaper.Undo_EndBlock("Split & Takes", -1)
+        reaper.Undo_EndBlock(Undo.Label("item.split_takes"), -1)
     end
     PopJKKButtonStyle(ctx)
 
@@ -2914,9 +2998,6 @@ local function DrawGridSplitter(ctx, layout)
         reaper.SetExtState("JKK_ItemTool", "grid_live_enabled", grid_live.enabled and "1" or "0", true)
         ResetLiveGridSession()
     end
-    if reaper.ImGui_IsItemHovered(ctx) then
-        reaper.ImGui_SetTooltip(ctx, "Slice dynamically while adjusting the slider")
-    end
 
     reaper.ImGui_SameLine(ctx, 0, layout.item_spacing)
     if grid_live.enabled then
@@ -2927,23 +3008,20 @@ local function DrawGridSplitter(ctx, layout)
             reaper.PreventUIRefresh(1)
             reaper.Undo_BeginBlock()
             RestoreLiveGridSnapshot()
-            reaper.Undo_EndBlock("Undo Live Grid Split", -1)
+            reaper.Undo_EndBlock(Undo.Label("item.undo_live_grid_split"), -1)
             reaper.PreventUIRefresh(-1)
             reaper.UpdateArrange()
             ResetLiveGridSession()
         end
         PopJKKButtonStyle(ctx)
         reaper.ImGui_EndDisabled(ctx)
-        if reaper.ImGui_IsItemHovered(ctx, reaper.ImGui_HoveredFlags_AllowWhenDisabled()) then
-            reaper.ImGui_SetTooltip(ctx, "Restore items to their state before Live Grid Split")
-        end
     else
         PushJKKConfirmButtonStyle(ctx)
         if reaper.ImGui_Button(ctx, "Split Grid", layout.button_width, JKK_Scale(22)) then
             ResetLiveGridSession()
             reaper.Undo_BeginBlock()
             GridSplitMain()
-            reaper.Undo_EndBlock("Grid Split Items", -1)
+            reaper.Undo_EndBlock(Undo.Label("item.grid_split_items"), -1)
         end
         PopJKKConfirmButtonStyle(ctx)
     end

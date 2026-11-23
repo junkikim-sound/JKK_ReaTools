@@ -18,6 +18,7 @@ local function S(v) return v * (JKK_UI_SCALE or 1) end
 
 -- JKK_ReaTools가 먼저 로드한 SelectionManager 참조 (단독 로드 시 폴백 포함)
 local script_dir = (debug.getinfo(1, "S").source or ""):match("^@(.+[\\/])") or ""
+local Undo = dofile(script_dir .. "JKK_UndoLabels.lua")
 local sel_path = script_dir .. "JKK_SelectionManager.lua"
 if not reaper.file_exists(sel_path) then
     sel_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_SelectionManager.lua"
@@ -347,7 +348,7 @@ local function CreateRegionsFromItems(per_item, base_name)
         reaper.AddProjectMarker(0, true, region.start_pos, region.end_pos, region.name or "", -1)
     end
     reaper.UpdateArrange()
-    reaper.Undo_EndBlock("Create Regions from Items", -1)
+    reaper.Undo_EndBlock(Undo.Label("renamer_lite.create_regions_from_items"), -1)
 end
 
 local function ApplyRename(mode, targets, name_pattern)
@@ -358,12 +359,22 @@ local function ApplyRename(mode, targets, name_pattern)
         indices = BuildHierarchyIndices(mode, targets)
     end
 
-    reaper.Undo_BeginBlock()
+    -- Prepare names before opening Undo. Clicking Apply with unchanged names
+    -- must not produce a spurious "ReaScript: Run" history entry.
+    local pending = {}
     for i, target in ipairs(targets) do
         local new_name = EvaluateName(name_pattern, target, i, indices)
-        SetTargetName(target, new_name)
+        if new_name ~= (target.original_name or "") then
+            pending[#pending + 1] = {target = target, name = new_name}
+        end
     end
-    reaper.Undo_EndBlock("JKK ReaTools - Rename", -1)
+    if #pending == 0 then return false end
+
+    reaper.Undo_BeginBlock2(0)
+    for _, edit in ipairs(pending) do
+        SetTargetName(edit.target, edit.name)
+    end
+    reaper.Undo_EndBlock2(0, Undo.Label("renamer_lite.jkk_reatools_rename"), -1)
     reaper.UpdateArrange()
     return true
 end

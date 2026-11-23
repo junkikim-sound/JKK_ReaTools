@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Renamer
 -- @author Junki Kim
--- @version 1.1.6
+-- @version 1.1.7
 -- @noindex
 --========================================================
 
@@ -10,6 +10,7 @@ local r = reaper
 -- 외부 모듈 로드
 local info = debug.getinfo(1, 'S')
 local script_path = info.source:match([[^@?(.*[\/])]]) or ""
+local Undo = dofile(script_path .. "Modules/JKK_UndoLabels.lua")
 local w_list = dofile(script_path .. "Modules/JKK_Renamer_WildcardList.lua")
 local ucs_list = dofile(script_path .. "Modules/JKK_Renamer_UCSList.lua")
 local sel_mgr = _G.JKK_SelectionManager or dofile(script_path .. "Modules/JKK_SelectionManager.lua")
@@ -601,7 +602,7 @@ local function ApplyFindReplace(targets, hierarchy_indices)
             SetTargetName(target, new_name)
         end
     end
-    r.Undo_EndBlock("JKK Renamer - Find & Replace", -1)
+    r.Undo_EndBlock(Undo.Label("renamer.find_replace"), -1)
     r.UpdateArrange()
 end
 
@@ -614,7 +615,7 @@ local function ApplyRename(targets, hierarchy_indices)
         SetTargetName(target, new_name)
     end
     
-    r.Undo_EndBlock("Smart Batch Rename", -1)
+    r.Undo_EndBlock(Undo.Label("renamer.batch_rename"), -1)
     r.UpdateArrange()
     input_user_edited = false
     pending_default_name = nil

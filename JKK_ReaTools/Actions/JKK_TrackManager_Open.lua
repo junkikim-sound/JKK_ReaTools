@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_TrackManager_Open
 -- @author Junki Kim
--- @version 1.0.3
+-- @version 1.0.4
 -- @noindex
 --========================================================
 
@@ -21,6 +21,7 @@ else
             RPR.Main_OnCommand(cmd_id, 0)
         end
     else
-        RPR.ShowMessageBox("JKK_TrackManager.lua 파일을 찾을 수 없습니다.\n경로: " .. main_script, "JKK Track Manager", 0)
+        RPR.ShowMessageBox("Fail to find the JKK_TrackManager.lua.\nPath: " .. main_script, "JKK Track Manager", 0)
     end
 end
+RPR.defer(function() end)

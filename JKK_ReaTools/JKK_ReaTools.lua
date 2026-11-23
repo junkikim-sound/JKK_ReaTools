@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 1.0.13
+-- @version 1.0.14
 -- @provides
 --     [main] Actions/JKK_TrackManager_Open.lua
 --     [main] Actions/JKK_TrackManager_TrackActivation.lua
@@ -23,6 +23,8 @@
 --     [nomain] Modules/JKK_SelectionManager.lua
 --     [nomain] Modules/JKK_TakeMarker_Peaks.lua
 --     [nomain] Modules/JKK_Theme_Core.lua
+--     [nomain] Modules/JKK_UndoLabels.lua
+--     [nomain] Modules/JKK_GestureUndo.lua
 --     [nomain] Modules/JKK_WindowChrome.lua
 --     [nomain] Modules/JKK_TrackManager_Core.lua
 --     [nomain] Modules/JKK_TrackManager_UI.lua
@@ -194,6 +196,10 @@ local function load_module(file_name)
 end
 
 -- SelectionManager를 가장 먼저 로드하여 하위 모듈들이 _G.JKK_SelectionManager를 공유하도록 보장
+-- One undo gesture manager shared by the Item and Track controllers.
+local GestureUndo = load_module("JKK_GestureUndo.lua")
+_G.JKK_GestureUndo = GestureUndo
+local Undo = load_module("JKK_UndoLabels.lua")
 local sel_mgr              = load_module("JKK_SelectionManager.lua")
 local item_module          = load_module("JKK_ReaTools_NEW_ItemTool.lua")
 local track_module         = load_module("JKK_ReaTools_NEW_TrackTool.lua")
@@ -220,14 +226,36 @@ end
 -- Project Memo
 ---------------------------------------------------------
 local project_note = ""
+local stored_project_note = ""
+local memo_input_active = false
 local last_project_ptr = nil
 
-local function LoadProjectNote()
-    local retval, saved_note = RPR.GetProjExtState(0, "JKK_ReaTools_Note", "project_note")
+local function ReadProjectNote(proj)
+    local retval, note = RPR.GetProjExtState(proj or 0, "JKK_ReaTools_Note", "project_note")
     if retval <= 0 then
-        retval, saved_note = RPR.GetProjExtState(0, "JKK_ReaTools_Note", "Project_note")
+        retval, note = RPR.GetProjExtState(proj or 0, "JKK_ReaTools_Note", "Project_note")
     end
-    project_note = (retval > 0) and saved_note or ""
+    return (retval > 0) and note or ""
+end
+
+local function LoadProjectNote()
+    project_note = ReadProjectNote(0)
+    stored_project_note = project_note
+end
+
+-- Do not write to project state on every keystroke. Commit a single named
+-- undo point after editing ends (focus loss), only if the text changed.
+local function SaveProjectNoteIfChanged()
+    if project_note == stored_project_note then return false end
+    if GestureUndo then GestureUndo.Finish() end
+    RPR.Undo_BeginBlock2(0)
+    RPR.SetProjExtState(0, "JKK_ReaTools_Note", "project_note", project_note)
+    RPR.SetProjExtState(0, "JKK_ReaTools_Note", "Project_note", project_note)
+    if RPR.MarkProjectDirty then RPR.MarkProjectDirty(0) end
+    -- 8 = extension/misc configuration undo state (Project ExtState).
+    RPR.Undo_EndBlock2(0, Undo.Label("memo.save_project_note"), 8)
+    stored_project_note = project_note
+    return true
 end
 
 LoadProjectNote()
@@ -1010,11 +1038,12 @@ local function DrawTopBar()
         Theme.PopButton(ctx)
     end
     if memo_clicked then
+        if memo_on then
+            SaveProjectNoteIfChanged() -- Also commit if panel is hidden mid-edit.
+            memo_input_active = false
+        end
         panel_visible.A = not panel_visible.A
         SavePanelVisibility()
-    end
-    if RPR.ImGui_IsItemHovered(ctx) then
-        RPR.ImGui_SetTooltip(ctx, memo_on and "Hide the Project Memo panel" or "Show the Project Memo panel")
     end
 
     RPR.ImGui_SameLine(ctx, 0, S(4))
@@ -1039,10 +1068,9 @@ local function DrawPanelA()
         math.max(1, available_width), math.max(S(40), available_height)
     )
     if changed_note then project_note = new_note end
+    memo_input_active = RPR.ImGui_IsItemActive(ctx)
     if RPR.ImGui_IsItemDeactivatedAfterEdit(ctx) then
-        RPR.SetProjExtState(0, "JKK_ReaTools_Note", "project_note", project_note)
-        RPR.SetProjExtState(0, "JKK_ReaTools_Note", "Project_note", project_note)
-        if RPR.MarkProjectDirty then RPR.MarkProjectDirty(0) end
+        SaveProjectNoteIfChanged()
     end
 end
 
@@ -1202,6 +1230,7 @@ end
 -- Main UI Loop
 ---------------------------------------------------------
 local function Main()
+    if GestureUndo then GestureUndo.FrameStart() end
     -- Maintain inactive track invariants in either Item or Track mode.
     if track_manager_core then
         local hide_tcp, hide_mcp = track_manager_core.GetHideFlags()
@@ -1212,8 +1241,18 @@ local function Main()
 
     local current_project_ptr = RPR.EnumProjects(-1)
     if current_project_ptr ~= last_project_ptr then
+        -- A project tab change must never save the old text into the new tab.
         LoadProjectNote()
+        memo_input_active = false
         last_project_ptr = current_project_ptr
+    elseif not memo_input_active and project_note == stored_project_note
+        and prev_project_state_count ~= current_project_state_count then
+        -- Refresh memo after REAPER Undo/Redo or an external project edit.
+        local actual_note = ReadProjectNote(0)
+        if actual_note ~= stored_project_note then
+            project_note = actual_note
+            stored_project_note = actual_note
+        end
     end
 
     RPR.ImGui_SetNextWindowSize(
@@ -1247,12 +1286,18 @@ local function Main()
         DrawTopBar()
         RPR.ImGui_Separator(ctx)
         DrawPanels()
+        if not panel_visible.A then
+            SaveProjectNoteIfChanged() -- Settings can also hide the memo panel.
+            memo_input_active = false
+        end
+        if GestureUndo then GestureUndo.FinishIdle(ctx) end
 
         RPR.ImGui_PopStyleVar(ctx, 1)
         Theme.PopFont(ctx)
     else
         UpdateFocusMode(false)
         UpdateSelectionStatusCache()
+        if GestureUndo then GestureUndo.Finish() end
     end
 
     RPR.ImGui_End(ctx)
@@ -1274,6 +1319,8 @@ local function Main()
         end
         RPR.defer(Main)
     else
+        SaveProjectNoteIfChanged()
+        if GestureUndo then GestureUndo.Finish() end
         if RPR.ImGui_DestroyContext then
             RPR.ImGui_DestroyContext(ctx)
         end
@@ -1282,6 +1329,9 @@ local function Main()
 end
 
 RPR.atexit(function()
+    -- Window-close/REAPER-quit fallback if focus-deactivation was not drawn.
+    pcall(SaveProjectNoteIfChanged)
+    if GestureUndo then GestureUndo.Finish() end
     if item_module and item_module.JKK_ItemTool_Cleanup then
         pcall(item_module.JKK_ItemTool_Cleanup)
     end

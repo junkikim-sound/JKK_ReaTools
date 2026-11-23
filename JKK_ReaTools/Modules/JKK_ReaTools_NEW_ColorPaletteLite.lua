@@ -7,6 +7,7 @@
 local reaper = reaper
 local source = debug.getinfo(1, "S").source or ""
 local script_dir = source:match("^@(.+[\\/])") or ""
+local Undo = dofile(script_dir .. "JKK_UndoLabels.lua")
 local data_path = script_dir .. "JKK_ColorPalette_Data.lua"
 local sel_path = script_dir .. "JKK_SelectionManager.lua"
 local sel_mgr = _G.JKK_SelectionManager or (reaper.file_exists(sel_path) and dofile(sel_path))
@@ -102,6 +103,24 @@ local function GetAllPalettes()
         all[#all + 1] = palette
     end
     return all
+end
+
+local function DrawCenteredComboCaption(ctx, draw_list, x, y, w, h, caption)
+    local text = tostring(caption or '')
+    local usable_w = math.max(1, w - h - 10)
+    local tw, th = reaper.ImGui_CalcTextSize(ctx, text)
+    if tw > usable_w then
+        while #text > 0 and tw > usable_w do
+            local last_start = utf8.offset(text, -1)
+            text = last_start and text:sub(1, last_start - 1) or ''
+            tw, th = reaper.ImGui_CalcTextSize(ctx, text .. '…')
+        end
+        text = text .. '…'
+    end
+    local col = reaper.ImGui_GetColor(ctx, reaper.ImGui_Col_Text())
+    reaper.ImGui_DrawList_AddText(draw_list,
+        x + math.max(3, (w - h - tw) * 0.5),
+        y + math.max(0, (h - th) * 0.5), col, text)
 end
 
 local function GetPaletteName(palette)
@@ -213,7 +232,7 @@ local function ApplyColor(u32_color, mode, is_active)
 
     reaper.PreventUIRefresh(-1)
     reaper.UpdateArrange()
-    reaper.Undo_EndBlock("Apply Color Palette", -1)
+    reaper.Undo_EndBlock(Undo.Label("color_palette.apply_color_palette"), -1)
     return true
 end
 
@@ -356,18 +375,20 @@ local function JKK_ColorPalette_Draw(ctx, mode, is_active)
         local rnd_width = S(28)
         local combo_width = math.max(S(40), right_width - nav_width * 2 - rnd_width - spacing_x * 3)
 
-        if reaper.ImGui_ArrowButton(ctx, "##JKKLitePalettePrev", reaper.ImGui_Dir_Left()) then
+        if _G.JKK_Theme.NavButton(ctx, "##JKKLitePalettePrev", "left", nav_width, frame_height) then
             current_palette_idx = current_palette_idx - 1
             if current_palette_idx < 1 then current_palette_idx = #palettes end
             SaveState()
         end
         reaper.ImGui_SameLine(ctx, 0, spacing_x)
         
+        local combo_x, combo_y = reaper.ImGui_GetCursorScreenPos(ctx)
+        local combo_dl = reaper.ImGui_GetWindowDrawList(ctx)
         reaper.ImGui_SetNextItemWidth(ctx, combo_width)
         local item_h = reaper.ImGui_GetTextLineHeightWithSpacing(ctx)
         local desired_h = math.min(S(650), (#palettes * item_h) + S(16))
         reaper.ImGui_SetNextWindowSizeConstraints(ctx, math.max(combo_width, S(180)), desired_h, 16384, 16384)
-        if reaper.ImGui_BeginCombo(ctx, "##JKKLitePaletteCombo", " " .. GetPaletteName(active_palette), reaper.ImGui_ComboFlags_HeightLargest()) then
+        if reaper.ImGui_BeginCombo(ctx, "##JKKLitePaletteCombo", "", reaper.ImGui_ComboFlags_HeightLargest()) then
             for index, palette in ipairs(palettes) do
                 if reaper.ImGui_Selectable(ctx, GetPaletteName(palette) .. "##pal_" .. index, current_palette_idx == index) then
                     current_palette_idx = index
@@ -376,9 +397,11 @@ local function JKK_ColorPalette_Draw(ctx, mode, is_active)
             end
             reaper.ImGui_EndCombo(ctx)
         end
+        DrawCenteredComboCaption(ctx, combo_dl, combo_x, combo_y, combo_width,
+            reaper.ImGui_GetFrameHeight(ctx), GetPaletteName(active_palette))
         
         reaper.ImGui_SameLine(ctx, 0, spacing_x)
-        if reaper.ImGui_ArrowButton(ctx, "##JKKLitePaletteNext", reaper.ImGui_Dir_Right()) then
+        if _G.JKK_Theme.NavButton(ctx, "##JKKLitePaletteNext", "right", nav_width, frame_height) then
             current_palette_idx = current_palette_idx + 1
             if current_palette_idx > #palettes then current_palette_idx = 1 end
             SaveState()
@@ -460,7 +483,6 @@ local function JKK_ColorPalette_Draw(ctx, mode, is_active)
     if reaper.ImGui_Button(ctx, "Pal Rnd", btn_pal_rnd, frame_height) then
         if active_palette then ApplyAndRemember(GetPaletteColor(active_palette, math.random(1, 24)), mode, is_active) end
     end
-    if reaper.ImGui_IsItemHovered(ctx, reaper.ImGui_HoveredFlags_AllowWhenDisabled()) then reaper.ImGui_SetTooltip(ctx, "Random from Palette") end
 
     reaper.ImGui_SameLine(ctx, 0, spacing_x)
 
@@ -469,7 +491,6 @@ local function JKK_ColorPalette_Draw(ctx, mode, is_active)
         wheel_color = color
         ApplyAndRemember(color, mode, is_active)
     end
-    if reaper.ImGui_IsItemHovered(ctx, reaper.ImGui_HoveredFlags_AllowWhenDisabled()) then reaper.ImGui_SetTooltip(ctx, "Absolute Random") end
     PopThemeButton(ctx)
     
     reaper.ImGui_SameLine(ctx, 0, spacing_x)
@@ -477,7 +498,6 @@ local function JKK_ColorPalette_Draw(ctx, mode, is_active)
     if reaper.ImGui_Button(ctx, "Clear", btn_clear, frame_height) then
         ApplyColor(0, mode, is_active)
     end
-    if reaper.ImGui_IsItemHovered(ctx, reaper.ImGui_HoveredFlags_AllowWhenDisabled()) then reaper.ImGui_SetTooltip(ctx, "Clear Color") end
     
     reaper.ImGui_EndDisabled(ctx)
     reaper.ImGui_SameLine(ctx, 0, spacing_x)

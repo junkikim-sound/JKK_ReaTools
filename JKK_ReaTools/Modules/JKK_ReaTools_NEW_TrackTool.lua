@@ -11,25 +11,20 @@ local function S(v) return v * (JKK_UI_SCALE or 1) end
 
 -- JKK_ReaTools가 먼저 로드한 SelectionManager 참조 (단독 로드 시 폴백 포함)
 local script_dir = (debug.getinfo(1, "S").source or ""):match("^@(.+[\\/])") or ""
+local Undo = dofile(script_dir .. "JKK_UndoLabels.lua")
+local GestureUndo = _G.JKK_GestureUndo or dofile(script_dir .. "JKK_GestureUndo.lua")
 local sel_path = script_dir .. "JKK_SelectionManager.lua"
 if not reaper.file_exists(sel_path) then
     sel_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_SelectionManager.lua"
 end
 local sel_mgr = _G.JKK_SelectionManager or (reaper.file_exists(sel_path) and dofile(sel_path))
 
--- Start slider undo blocks on first value change; close on release.
-local slider_undo_open = false
-local function SliderUndoBegin()
-    if not slider_undo_open then
-        reaper.Undo_BeginBlock()
-        slider_undo_open = true
-    end
+-- Shared deferred-slider undo, closed on release/context change/window exit.
+local function SliderUndoBegin(description)
+    GestureUndo.Begin(description, 1) -- Track configuration state only
 end
 local function SliderUndoEnd(ctx, description)
-    if slider_undo_open and reaper.ImGui_IsItemDeactivated(ctx) then
-        reaper.Undo_EndBlock(description, -1)
-        slider_undo_open = false
-    end
+    GestureUndo.FinishItem(ctx, description)
 end
 
 ------------------------------------------------------------
@@ -93,7 +88,7 @@ local function Action_RoundTracksVolumeToHalfDB(all_tracks)
             end
         end
     end
-    reaper.Undo_EndBlock(all_tracks and "Round All Tracks Volume to 0.5dB" or "Round Selected Tracks Volume to 0.5dB", -1)
+    reaper.Undo_EndBlock(all_tracks and Undo.Label("track.round_all_tracks_volume_to_0_5db") or Undo.Label("track.round_selected_tracks_volume_to_0_5db"), -1)
 end
 
 local function Action_SetSelectedTracksPan(value)
@@ -118,7 +113,7 @@ local function Action_SetTrackChannels(num_channels)
     for i = 0, count - 1 do
         reaper.SetMediaTrackInfo_Value(reaper.GetSelectedTrack(0, i), "I_NCHAN", num_channels)
     end
-    reaper.Undo_EndBlock("Set Track Channels", -1)
+    reaper.Undo_EndBlock(Undo.Label("track.set_track_channels"), -1)
 end
 
 -- Offset of the selected tracks' main (Master/Parent) audio output.
@@ -162,7 +157,7 @@ local function Action_SetParentOutputOffset(channel_offset)
             end
         end
     end
-    reaper.Undo_EndBlock("Set Track Master/Parent Output Channels", updated and -1 or 0)
+    reaper.Undo_EndBlock(Undo.Label("track.set_master_parent_output_channels"), updated and -1 or 0)
     if updated then reaper.TrackList_AdjustWindows(false); reaper.UpdateArrange() end
 end
 
@@ -229,7 +224,7 @@ local function DeleteEmptyTracksAndFolders()
 
     reaper.PreventUIRefresh(-1)
     reaper.UpdateArrange()
-    reaper.Undo_EndBlock("JKK: Delete Unused Tracks", -1)
+    reaper.Undo_EndBlock(Undo.Label("track.delete_unused"), -1)
 end
 
 local function Action_SetSelectedTracksAutomationMode(mode_idx)
@@ -240,7 +235,7 @@ local function Action_SetSelectedTracksAutomationMode(mode_idx)
     for i = 0, count - 1 do
         reaper.SetMediaTrackInfo_Value(reaper.GetSelectedTrack(0, i), "I_AUTOMODE", mode_idx)
     end
-    reaper.Undo_EndBlock("Set Selected Tracks Automation Mode", -1)
+    reaper.Undo_EndBlock(Undo.Label("track.set_selected_tracks_automation_mode"), -1)
 end
 
 ------------------------------------------------------------
@@ -282,7 +277,7 @@ local function DeleteOverlappingRegions()
     for i = #regions, 1, -1 do
         reaper.DeleteProjectMarker(0, regions[i].index, true)
     end
-    reaper.Undo_EndBlock("Delete Selected Regions", -1)
+    reaper.Undo_EndBlock(Undo.Label("track.delete_selected_regions"), -1)
     reaper.UpdateArrange()
 end
 
@@ -425,16 +420,17 @@ local function DrawTrackBatchController(ctx)
         ctx, "##TrackVolume", db_to_slider_pos(volume_db), 0.0, 1.0, vol_format
     )
     if changed_vol then
-        SliderUndoBegin()
+        SliderUndoBegin(Undo.Label("track.set_selected_tracks_volume"))
         volume_db = slider_pos_to_db(new_slider_pos)
         Action_SetSelectedTracksVolume(math.min(10 ^ (volume_db / 20.0), 3.98))
     end
-    SliderUndoEnd(ctx, "Set Selected Tracks Volume")
+    SliderUndoEnd(ctx, Undo.Label("track.set_selected_tracks_volume"))
     if reaper.ImGui_IsItemClicked(ctx, 1) then
+        GestureUndo.Finish()
         reaper.Undo_BeginBlock()
         volume_db = 0.0
         Action_SetSelectedTracksVolume(1.0)
-        reaper.Undo_EndBlock("Reset Volume", -1)
+        reaper.Undo_EndBlock(Undo.Label("track.reset_volume"), -1)
     end
     
     -- 0.5dB 버튼
@@ -467,16 +463,17 @@ local function DrawTrackBatchController(ctx)
     end
     local changed_pan, new_pan = reaper.ImGui_SliderDouble(ctx, "##TrackPan", pan_val, -1.0, 1.0, pan_format)
     if changed_pan then
-        SliderUndoBegin()
+        SliderUndoBegin(Undo.Label("track.set_selected_tracks_panning"))
         pan_val = new_pan
         Action_SetSelectedTracksPan(pan_val)
     end
-    SliderUndoEnd(ctx, "Set Selected Tracks Panning")
+    SliderUndoEnd(ctx, Undo.Label("track.set_selected_tracks_panning"))
     if reaper.ImGui_IsItemClicked(ctx, 1) then
+        GestureUndo.Finish()
         reaper.Undo_BeginBlock()
         pan_val = 0.0
         Action_SetSelectedTracksPan(0.0)
-        reaper.Undo_EndBlock("Reset Pan", -1)
+        reaper.Undo_EndBlock(Undo.Label("track.reset_pan"), -1)
     end
 
     -- Width
@@ -491,20 +488,22 @@ local function DrawTrackBatchController(ctx)
     end
     local changed_width, new_width = reaper.ImGui_SliderDouble(ctx, "##TrackWidth", width_val, -1.0, 1.0, width_format)
     if changed_width then
-        SliderUndoBegin()
+        SliderUndoBegin(Undo.Label("track.set_selected_tracks_width"))
         width_val = new_width
         Action_SetSelectedTracksWidth(width_val)
     end
-    SliderUndoEnd(ctx, "Set Selected Tracks Width")
+    SliderUndoEnd(ctx, Undo.Label("track.set_selected_tracks_width"))
     if reaper.ImGui_IsItemClicked(ctx, 1) then
+        GestureUndo.Finish()
         reaper.Undo_BeginBlock()
         width_val = 1.0
         Action_SetSelectedTracksWidth(1.0)
-        reaper.Undo_EndBlock("Reset Width", -1)
+        reaper.Undo_EndBlock(Undo.Label("track.reset_width"), -1)
     end
 
     -- Track channels and Master/Parent output share one controller row.
     BeginLabeledRow("Channels")
+    local channel_controls_x = reaper.ImGui_GetCursorPosX(ctx)
     local channel_options = {'2 ch', '4 ch', '6 ch', '8 ch', '10 ch', '12 ch', '16 ch'}
     local current_nchan = selected_track
         and reaper.GetMediaTrackInfo_Value(selected_track, "I_NCHAN")
@@ -517,13 +516,19 @@ local function DrawTrackBatchController(ctx)
 
     local nav_width, nav_gap = S(21), S(3)
     local between_groups = S(9)
-    local out_label_width = select(1, reaper.ImGui_CalcTextSize(ctx, 'Out'))
+    local out_label_width = select(1, reaper.ImGui_CalcTextSize(ctx, 'Output ch'))
     -- Both channel groups occupy precisely the same width. Like the supplied
-    -- desired image, put the unused horizontal room AFTER the 'Out' label,
+    -- desired image, put the unused horizontal room AFTER the 'Output ch' label,
     -- before its left arrow (not between the first combo and its arrows).
-    local group_width = math.max(nav_width * 2 + nav_gap * 2 + S(30),
-        math.floor(full_control_width * 0.405))
-    local out_label_right_gap = math.max(S(12),
+    local minimum_group_width = nav_width * 2 + nav_gap * 2 + S(30)
+    local needs_two_rows = full_control_width <
+        minimum_group_width * 2 + between_groups + out_label_width + S(12)
+    -- The longer label must not push the output controls beyond the panel.
+    local group_width = needs_two_rows and math.max(minimum_group_width, full_control_width)
+        or math.max(minimum_group_width,
+            math.min(math.floor(full_control_width * 0.405),
+                math.floor((full_control_width - between_groups - out_label_width - S(12)) / 2)))
+    local out_label_right_gap = needs_two_rows and S(6) or math.max(S(12),
         full_control_width - group_width * 2 - between_groups - out_label_width)
     local combo_width = math.max(S(30), group_width - nav_width * 2 - nav_gap * 2)
     local track_combo_width, out_combo_width = combo_width, combo_width
@@ -550,7 +555,7 @@ local function DrawTrackBatchController(ctx)
     end
 
     if not can_change then reaper.ImGui_BeginDisabled(ctx) end
-    local previous = reaper.ImGui_Button(ctx, '◀##TrackChannelsPrev', nav_width, 0)
+    local previous = JKK_Theme.NavButton(ctx, '##TrackChannelsPrev', 'left', nav_width, 0)
     if previous and can_change then StepTrackChannels(-1) end
     reaper.ImGui_SameLine(ctx, 0, nav_gap)
     local channel_preview = (channel_idx and channel_options[channel_idx])
@@ -562,7 +567,7 @@ local function DrawTrackBatchController(ctx)
         track_channels = channel_map[new_channel_idx]
     end
     reaper.ImGui_SameLine(ctx, 0, nav_gap)
-    local following = reaper.ImGui_Button(ctx, '▶##TrackChannelsNext', nav_width, 0)
+    local following = JKK_Theme.NavButton(ctx, '##TrackChannelsNext', 'right', nav_width, 0)
     if following and can_change then StepTrackChannels(1) end
     if not can_change then reaper.ImGui_EndDisabled(ctx) end
 
@@ -620,16 +625,22 @@ local function DrawTrackBatchController(ctx)
         current_offset = new_offset
     end
 
-    reaper.ImGui_SameLine(ctx, 0, between_groups)
-    reaper.ImGui_AlignTextToFramePadding(ctx)
-    reaper.ImGui_Text(ctx, 'Out')
-    if reaper.ImGui_IsItemHovered(ctx) then
-        reaper.ImGui_SetTooltip(ctx, 'Master/Parent output channels (destination); preserves the number of sent channels')
+    if needs_two_rows then
+        reaper.ImGui_NewLine(ctx)
+        reaper.ImGui_AlignTextToFramePadding(ctx)
+        reaper.ImGui_SetCursorPosX(ctx, channel_controls_x - label_width)
+        reaper.ImGui_Text(ctx, 'Output ch')
+        reaper.ImGui_SameLine(ctx, 0, 0)
+        reaper.ImGui_SetCursorPosX(ctx, channel_controls_x)
+    else
+        reaper.ImGui_SameLine(ctx, 0, between_groups)
+        reaper.ImGui_AlignTextToFramePadding(ctx)
+        reaper.ImGui_Text(ctx, 'Output ch')
+        reaper.ImGui_SameLine(ctx, 0, out_label_right_gap)
     end
-    reaper.ImGui_SameLine(ctx, 0, out_label_right_gap)
     local can_change_out = can_change and #offsets > 0
     if not can_change_out then reaper.ImGui_BeginDisabled(ctx) end
-    local out_previous = reaper.ImGui_Button(ctx, '◀##TrackOutputPrev', nav_width, 0)
+    local out_previous = JKK_Theme.NavButton(ctx, '##TrackOutputPrev', 'left', nav_width, 0)
     if out_previous and can_change_out then StepOutputChannels(-1) end
     reaper.ImGui_SameLine(ctx, 0, nav_gap)
     local new_out_idx = DrawCenteredChannelCombo(ctx, '##TrackParentOutput',
@@ -637,13 +648,8 @@ local function DrawTrackBatchController(ctx)
     if new_out_idx and can_change_out then
         Action_SetParentOutputOffset(offsets[new_out_idx])
     end
-    if reaper.ImGui_IsItemHovered(ctx) then
-        reaper.ImGui_SetTooltip(ctx,
-            'Master/Parent output destination: ' .. output_caption(current_offset)
-            .. '. Selecting channels beyond the parent width expands the parent track.')
-    end
     reaper.ImGui_SameLine(ctx, 0, nav_gap)
-    local out_following = reaper.ImGui_Button(ctx, '▶##TrackOutputNext', nav_width, 0)
+    local out_following = JKK_Theme.NavButton(ctx, '##TrackOutputNext', 'right', nav_width, 0)
     if out_following and can_change_out then StepOutputChannels(1) end
     if not can_change_out then reaper.ImGui_EndDisabled(ctx) end
 end
@@ -725,22 +731,15 @@ local function DrawActivationAndSort(ctx)
             if tr and core.IsTrackActive(tr) then any_active = true; break end
         end
     end
-    local label = any_active and "Deactivate Tracks" or "Activate Tracks"
-    local activation_caption = ResponsiveCaption(label, any_active and "Deactivate" or "Activate")
+    local activation_caption = ResponsiveCaption("Toggle Activation", "Toggle")
     if reaper.ImGui_Button(ctx, activation_caption .. "##JKK_Activation", third, S(22)) and core then
         core.ToggleSelectedTracksActive()
-    end
-    if reaper.ImGui_IsItemHovered(ctx) then
-        reaper.ImGui_SetTooltip(ctx, "Toggle activation of selected tracks and folder descendants")
     end
     reaper.ImGui_EndDisabled(ctx)
 
     reaper.ImGui_SameLine(ctx, 0, gap)
     if reaper.ImGui_Button(ctx, ResponsiveCaption("Delete Unused Tracks", "Delete Unused") .. "##JKK_DeleteUnused", third, S(22)) then
         DeleteEmptyTracksAndFolders()
-    end
-    if reaper.ImGui_IsItemHovered(ctx) then
-        reaper.ImGui_SetTooltip(ctx, "Delete empty tracks and folders")
     end
 
     reaper.ImGui_SameLine(ctx, 0, gap)
@@ -750,9 +749,6 @@ local function DrawActivationAndSort(ctx)
         if not ok and message and not message:find("already sorted", 1, true) then
             reaper.MB(message, "Sort Tracks", 0)
         end
-    end
-    if reaper.ImGui_IsItemHovered(ctx) then
-        reaper.ImGui_SetTooltip(ctx, "Sort all direct siblings A-Z at the first selected track's level; folder children stay together and are not sorted")
     end
     reaper.ImGui_EndDisabled(ctx)
 end

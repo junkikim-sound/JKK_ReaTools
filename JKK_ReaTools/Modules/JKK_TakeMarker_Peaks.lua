@@ -4,6 +4,7 @@
 -- The reference nvk_TAKES script calls take:Clips(true) for EVERY take;
 -- its variation detector is in the external nvk_FOLDER_ITEMS library (not in the ZIP).
 local r = reaper
+local Undo = dofile(((debug.getinfo(1, "S").source or ""):match("^@(.+[\\/])") or "") .. "JKK_UndoLabels.lua")
 local M = {}
 
 -- User-tunable analysis defaults (seconds unless otherwise stated).
@@ -477,7 +478,7 @@ function M.AddMarkersToSelectedItems(cfg, get_silences)
         end)
         r.PreventUIRefresh(-1)
         r.UpdateArrange()
-        r.Undo_EndBlock("JKK: Peak Markers from Split Dyn Keep Regions", -1)
+        r.Undo_EndBlock(Undo.Label("take_marker.create_peak_markers"), -1)
         if not okay then error(err) end
     end
     return summary

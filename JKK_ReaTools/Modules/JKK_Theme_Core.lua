@@ -70,11 +70,27 @@ local DEFAULTS = {
 
 local DARK_PRESET_ORDER = {
     "Default Dark", "Midnight Blue", "Warm Charcoal", "High Contrast",
-    "Obsidian Teal", "Deep Forest", "Plum Dusk", "Ember Night"
+    "Obsidian Teal", "Deep Forest", "Plum Dusk"
 }
 
 local LIGHT_PRESET_ORDER = {
-    "Soft Linen", "Mint Garden", "Lavender Bloom", "Peach Sorbet", "Clear Sky", "Rosewater"
+    "Soft Linen", "Mint Garden", "Lavender Bloom", "Peach Sorbet", "Clear Sky",
+    "Olive Parchment", "Blue Porcelain"
+}
+
+-- Bold high-chroma palettes: three dark vivid themes first, followed by four light vivid themes.
+-- Keep these in a single VIVID group in the manager and the prev/next cycle.
+local VIVID_PRESET_ORDER = {
+    "Ultraviolet Club", "Afterglow Circuit", "Neon Lagoon",
+    "Acid Gallery", "Bubblegum Terminal", "Cobalt Fiesta", "Tropic Pulse"
+}
+
+-- Vivid-specific selected-tab treatment: bright slider handles should never
+-- become same-color tab backgrounds with unreadable text.
+local VIVID_PRESET_MODE = {
+    ["Ultraviolet Club"] = "dark", ["Afterglow Circuit"] = "dark", ["Neon Lagoon"] = "dark",
+    ["Acid Gallery"] = "light", ["Bubblegum Terminal"] = "light",
+    ["Cobalt Fiesta"] = "light", ["Tropic Pulse"] = "light",
 }
 
 local BUILTIN_PRESETS = {
@@ -113,11 +129,6 @@ local BUILTIN_PRESETS = {
         base_bg = RGBA(38, 31, 43), control_bg = RGBA(55, 45, 62), text_main = RGBA(238, 231, 242), accent_main = RGBA(168, 126, 190),
         btn_primary = RGBA(76, 55, 91), btn_confirm = RGBA(71, 125, 106), btn_highlight = RGBA(227, 190, 119), btn_highlight_txt = RGBA(46, 35, 43), text_accent = RGBA(194, 157, 204),
     },
-    ["Ember Night"] = {
-        font_base_family = "Arial", font_base_size = 13, font_topbar_family = "Arial", font_topbar_size = 13, font_heading_family = "Arial", font_heading_size = 15,
-        base_bg = RGBA(42, 33, 30), control_bg = RGBA(61, 47, 42), text_main = RGBA(242, 231, 222), accent_main = RGBA(216, 126, 81),
-        btn_primary = RGBA(83, 53, 42), btn_confirm = RGBA(67, 125, 93), btn_highlight = RGBA(245, 184, 89), btn_highlight_txt = RGBA(54, 36, 26), text_accent = RGBA(230, 160, 115),
-    },
     ["Soft Linen"] = {
         base_bg = RGBA(246, 242, 233), control_bg = RGBA(229, 222, 209), text_main = RGBA(65, 58, 48), accent_main = RGBA(177, 128, 77),
         btn_primary = RGBA(218, 202, 175), btn_confirm = RGBA(139, 174, 139), btn_highlight = RGBA(247, 213, 133), btn_highlight_txt = RGBA(69, 52, 32), text_accent = RGBA(157, 111, 65),
@@ -138,9 +149,63 @@ local BUILTIN_PRESETS = {
         base_bg = RGBA(238, 246, 251), control_bg = RGBA(219, 232, 241), text_main = RGBA(47, 62, 76), accent_main = RGBA(71, 143, 190),
         btn_primary = RGBA(192, 217, 234), btn_confirm = RGBA(151, 192, 173), btn_highlight = RGBA(249, 220, 139), btn_highlight_txt = RGBA(53, 57, 49), text_accent = RGBA(82, 132, 168),
     },
-    ["Rosewater"] = {
-        base_bg = RGBA(249, 241, 245), control_bg = RGBA(235, 222, 231), text_main = RGBA(68, 53, 64), accent_main = RGBA(183, 112, 151),
-        btn_primary = RGBA(225, 197, 215), btn_confirm = RGBA(157, 185, 160), btn_highlight = RGBA(249, 219, 147), btn_highlight_txt = RGBA(70, 51, 55), text_accent = RGBA(164, 97, 136),
+    -- LIGHT: deeper, desaturated palettes comparable in density to Peach Sorbet.
+    ["Olive Parchment"] = {
+        base_bg = RGBA(226, 223, 199), control_bg = RGBA(202, 200, 173), text_main = RGBA(52, 58, 42), accent_main = RGBA(112, 126, 65),
+        btn_primary = RGBA(161, 170, 123), btn_primary_txt = RGBA(46, 55, 38), btn_confirm = RGBA(135, 169, 126), btn_highlight = RGBA(234, 196, 113), btn_highlight_txt = RGBA(65, 51, 29), text_accent = RGBA(90, 109, 53),
+    },
+    ["Blue Porcelain"] = {
+        base_bg = RGBA(216, 228, 231), control_bg = RGBA(187, 207, 216), text_main = RGBA(43, 61, 73), accent_main = RGBA(53, 119, 153),
+        btn_primary = RGBA(150, 180, 199), btn_primary_txt = RGBA(39, 62, 80), btn_confirm = RGBA(133, 177, 167), btn_highlight = RGBA(239, 195, 125), btn_highlight_txt = RGBA(55, 48, 39), text_accent = RGBA(54, 109, 140),
+    },
+    -- VIVID / 2026 contrast rework:
+    -- base_bg: window canvas; control_bg: slider track, combo/input frame and normal buttons.
+    -- The slider track is intentionally a different hue AND visibly different value
+    -- from the window surface, while every surface keeps readable base text.
+    -- accent_main: slider handle/checkmark (distinct from control_bg).
+    -- TabSelected is mapped separately in ApplyTheme so vivid handles do not
+    -- become unreadable tab backgrounds. Keep theme names/order unchanged.
+    -- 1) Ultraviolet: midnight aubergine / orchid-plum rails / fluorescent citron.
+    ["Ultraviolet Club"] = {
+        base_bg = RGBA(28, 14, 50), control_bg = RGBA(99, 50, 102), text_main = RGBA(255, 242, 249), accent_main = RGBA(218, 255, 93),
+        btn_primary = RGBA(79, 50, 127), btn_primary_txt = RGBA(255, 255, 255), btn_confirm = RGBA(11, 96, 118),
+        btn_highlight = RGBA(255, 105, 204), btn_highlight_txt = RGBA(37, 12, 51), text_accent = RGBA(230, 255, 138),
+    },
+    -- 2) Afterglow: noir-cherry / toasted copper rails / ice-blue electricity.
+    ["Afterglow Circuit"] = {
+        base_bg = RGBA(37, 13, 22), control_bg = RGBA(117, 64, 45), text_main = RGBA(255, 242, 232), accent_main = RGBA(75, 236, 255),
+        btn_primary = RGBA(34, 78, 123), btn_primary_txt = RGBA(255, 255, 255), btn_confirm = RGBA(17, 101, 90),
+        btn_highlight = RGBA(255, 185, 102), btn_highlight_txt = RGBA(48, 22, 32), text_accent = RGBA(255, 208, 152),
+    },
+    -- 3) Neon Lagoon: deep navy / petrol-teal rails / luminous pastel-coral handles.
+    ["Neon Lagoon"] = {
+        base_bg = RGBA(7, 31, 51), control_bg = RGBA(35, 89, 106), text_main = RGBA(234, 255, 255), accent_main = RGBA(255, 186, 208),
+        btn_primary = RGBA(104, 49, 124), btn_primary_txt = RGBA(255, 255, 255), btn_confirm = RGBA(109, 53, 106),
+        btn_highlight = RGBA(131, 255, 227), btn_highlight_txt = RGBA(18, 47, 57), text_accent = RGBA(142, 255, 232),
+    },
+    -- 4) Acid: citron window / lavender slider rails / deep purple grab.
+    ["Acid Gallery"] = {
+        base_bg = RGBA(217, 243, 92), control_bg = RGBA(183, 155, 220), text_main = RGBA(38, 19, 61), accent_main = RGBA(74, 35, 123),
+        btn_primary = RGBA(77, 26, 114), btn_primary_txt = RGBA(255, 255, 255), btn_confirm = RGBA(255, 155, 109),
+        btn_highlight = RGBA(255, 232, 128), btn_highlight_txt = RGBA(38, 19, 61), text_accent = RGBA(77, 26, 114),
+    },
+    -- 5) Bubblegum: bubblegum pink / saturated cerulean rails / indigo grab.
+    ["Bubblegum Terminal"] = {
+        base_bg = RGBA(255, 173, 204), control_bg = RGBA(88, 180, 223), text_main = RGBA(36, 20, 54), accent_main = RGBA(53, 31, 152),
+        btn_primary = RGBA(40, 63, 154), btn_primary_txt = RGBA(255, 255, 255), btn_confirm = RGBA(255, 221, 88),
+        btn_highlight = RGBA(214, 255, 107), btn_highlight_txt = RGBA(50, 27, 83), text_accent = RGBA(69, 34, 122),
+    },
+    -- 6) Cobalt: saturated sky-blue / mango-gold rails / ink-blue grab.
+    ["Cobalt Fiesta"] = {
+        base_bg = RGBA(105, 169, 250), control_bg = RGBA(255, 219, 121), text_main = RGBA(19, 40, 71), accent_main = RGBA(42, 50, 138),
+        btn_primary = RGBA(38, 62, 154), btn_primary_txt = RGBA(255, 255, 255), btn_confirm = RGBA(157, 255, 173),
+        btn_highlight = RGBA(255, 129, 109), btn_highlight_txt = RGBA(19, 40, 71), text_accent = RGBA(27, 44, 119),
+    },
+    -- 7) Tropic: aqua-jade window / orchid-rose rails / midnight-violet grab.
+    ["Tropic Pulse"] = {
+        base_bg = RGBA(67, 224, 190), control_bg = RGBA(194, 112, 168), text_main = RGBA(12, 34, 45), accent_main = RGBA(39, 19, 124),
+        btn_primary = RGBA(75, 32, 107), btn_primary_txt = RGBA(255, 255, 255), btn_confirm = RGBA(255, 214, 108),
+        btn_highlight = RGBA(255, 143, 93), btn_highlight_txt = RGBA(12, 34, 45), text_accent = RGBA(48, 16, 80),
     },
 }
 
@@ -297,6 +362,12 @@ local function ApplyTheme(ctx, scale)
     local s = scale or 1
     local base_bg, ctrl_bg, text_main, accent = cfg.base_bg, cfg.control_bg, cfg.text_main, cfg.accent_main
 
+    -- Preserve the original TabSelected behavior for all non-Vivid presets.
+    -- For Vivid, choose a saturated tab color with legible text_main:
+    -- dark Vivid uses the deep Important tone, light Vivid uses Confirm.
+    local vivid_mode = VIVID_PRESET_MODE[RPR.GetExtState(EXT_SECTION, "selected_preset")]
+    local selected_tab_bg = vivid_mode and (vivid_mode == "dark" and cfg.btn_primary or cfg.btn_confirm) or accent
+
     local child_bg      = ShiftBrightness(base_bg, -5)
     local title_active  = ShiftBrightness(base_bg, -12)
     local popup_bg      = ShiftBrightness(base_bg, -17, 240)
@@ -305,7 +376,9 @@ local function ApplyTheme(ctx, scale)
     local border_col    = ShiftBrightness(ctrl_bg, 27)
     local separator_col = ShiftBrightness(ctrl_bg, -3)
     local text_disabled = BlendRGBA(text_main, base_bg, 0.55, 255)
-    local accent_bright = ShiftBrightness(accent, 45)
+    -- Light Vivid has a dark grab on a colored, lighter slider rail.
+    -- +45 would wash out the active grab and reduce its contrast.
+    local accent_bright = ShiftBrightness(accent, vivid_mode == "light" and 12 or 45)
     local accent_dark   = ShiftBrightness(accent, -65)
 
     RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_Alpha(),                       1)
@@ -387,10 +460,10 @@ local function ApplyTheme(ctx, scale)
     RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_InputTextCursor(),           text_main)
     RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_TabHovered(),                ctrl_active)
     RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Tab(),                       ctrl_bg)
-    RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_TabSelected(),               accent)
-    RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_TabSelectedOverline(),       ctrl_active)
+    RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_TabSelected(),               selected_tab_bg)
+    RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_TabSelectedOverline(),       vivid_mode and accent or ctrl_active)
     RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_TabDimmed(),                 ShiftBrightness(base_bg, -14, 248))
-    RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_TabDimmedSelected(),         BlendRGBA(base_bg, accent, 0.35, 255))
+    RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_TabDimmedSelected(),         BlendRGBA(base_bg, selected_tab_bg, vivid_mode and 0.65 or 0.35, 255))
     RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_TabDimmedSelectedOverline(), RGBA(128, 128, 128, 0))
     RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_DockingPreview(),            RGBA(23, 156, 128, 179))
     RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_DockingEmptyBg(),            ShiftBrightness(base_bg, 14))
@@ -442,6 +515,7 @@ local function GetAllOrderedPresets()
     local all = {}
     for _, name in ipairs(DARK_PRESET_ORDER) do all[#all + 1] = name end
     for _, name in ipairs(LIGHT_PRESET_ORDER) do all[#all + 1] = name end
+    for _, name in ipairs(VIVID_PRESET_ORDER) do all[#all + 1] = name end
     for _, name in ipairs(GetCustomPresetNames()) do all[#all + 1] = name end
     return all
 end
@@ -507,6 +581,98 @@ local function DeletePreset(name)
 end
 
 ----------------------------------------------------------
+-- Central prev / next navigation buttons (all JKK windows)
+-- Text is the safe default. Image mode can be enabled in Theme Manager.
+-- Put future images at Modules/Icons/JKK_Nav_Left.png and
+-- Modules/Icons/JKK_Nav_Right.png, or type an absolute PNG path.
+-- If either image is missing/invalid, THAT button falls back to text.
+----------------------------------------------------------
+local NAV_TEXT_LEFT  = "◀"  -- single location for every left arrow's text
+local NAV_TEXT_RIGHT = "▶"  -- single location for every right arrow's text
+local NAV_DEFAULT_LEFT_PNG  = "Icons/JKK_Nav_Left.png"
+local NAV_DEFAULT_RIGHT_PNG = "Icons/JKK_Nav_Right.png"
+local NAV_REVISION_KEY = "nav_revision"
+
+local nav_mode, nav_left_png, nav_right_png = "text", NAV_DEFAULT_LEFT_PNG, NAV_DEFAULT_RIGHT_PNG
+local nav_last_revision = nil
+local nav_image_cache = setmetatable({}, { __mode = "k" }) -- resource owned per ImGui context
+
+local function LoadNavSettings(force)
+    local revision = RPR.GetExtState(EXT_SECTION, NAV_REVISION_KEY)
+    if not force and nav_last_revision == revision then return end
+    nav_last_revision = revision
+    nav_mode = (RPR.GetExtState(EXT_SECTION, "nav_mode") == "png") and "png" or "text"
+    local left = RPR.GetExtState(EXT_SECTION, "nav_left_png")
+    local right = RPR.GetExtState(EXT_SECTION, "nav_right_png")
+    nav_left_png = left ~= "" and left or NAV_DEFAULT_LEFT_PNG
+    nav_right_png = right ~= "" and right or NAV_DEFAULT_RIGHT_PNG
+end
+
+local function SaveNavSettings()
+    RPR.SetExtState(EXT_SECTION, "nav_mode", nav_mode, true)
+    RPR.SetExtState(EXT_SECTION, "nav_left_png", nav_left_png, true)
+    RPR.SetExtState(EXT_SECTION, "nav_right_png", nav_right_png, true)
+    nav_last_revision = tostring((tonumber(RPR.GetExtState(EXT_SECTION, NAV_REVISION_KEY)) or 0) + 1)
+    RPR.SetExtState(EXT_SECTION, NAV_REVISION_KEY, nav_last_revision, true)
+end
+
+local function NavImagePath(path)
+    if not path or path == "" then return nil end
+    -- Windows absolute paths (C:\\...), UNC and POSIX absolute paths supported.
+    if path:match("^%a:[/\\]") or path:match("^[/\\]") then return path end
+    return core_dir .. path
+end
+
+local function NavImage(ctx, direction)
+    if not (RPR.ImGui_CreateImage and RPR.ImGui_DrawList_AddImage and RPR.ImGui_Attach) then return nil end
+    local path = NavImagePath(direction == "left" and nav_left_png or nav_right_png)
+    if not path or not RPR.file_exists(path) then return nil end
+    local cache = nav_image_cache[ctx]
+    if not cache then cache = {}; nav_image_cache[ctx] = cache end
+    local entry = cache[direction]
+    if entry and entry.path == path and entry.image then
+        if not RPR.ImGui_ValidatePtr or RPR.ImGui_ValidatePtr(entry.image, "ImGui_Image*") then
+            return entry.image
+        end
+    end
+    -- Create/attach to the current context only. ReaImGui resources are not
+    -- interchangeable between distinct windows/contexts.
+    local ok, resource = pcall(RPR.ImGui_CreateImage, path)
+    if not ok or not resource then return nil end
+    if not pcall(RPR.ImGui_Attach, ctx, resource) then return nil end
+    cache[direction] = { path = path, image = resource }
+    return resource
+end
+
+local function NavButton(ctx, id, direction, width, height)
+    LoadNavSettings(false)
+    local is_left = direction == "left" or direction == -1 or direction == "prev"
+    direction = is_left and "left" or "right"
+    -- Pass a unique hidden ID, not visible arrow glyphs, at each call site.
+    id = tostring(id or "##JKK_Nav")
+    if nav_mode == "png" then
+        local image = NavImage(ctx, direction)
+        if image and RPR.ImGui_GetItemRectMin and RPR.ImGui_GetItemRectMax then
+            -- Draw on a NORMAL ImGui_Button so dimensions, theme states,
+            -- disabled behavior and existing IDs are identical in both modes.
+            local clicked = RPR.ImGui_Button(ctx, id, width or 0, height or 0)
+            local min_x, min_y = RPR.ImGui_GetItemRectMin(ctx)
+            local max_x, max_y = RPR.ImGui_GetItemRectMax(ctx)
+            local side = math.max(1, math.min(max_x - min_x, max_y - min_y) - 8)
+            local center_x, center_y = (min_x + max_x) / 2, (min_y + max_y) / 2
+            -- Center a SQUARE icon even in tall/rectangular buttons; no stretching.
+            pcall(RPR.ImGui_DrawList_AddImage, RPR.ImGui_GetWindowDrawList(ctx), image,
+                center_x - side / 2, center_y - side / 2,
+                center_x + side / 2, center_y + side / 2)
+            return clicked
+        end
+    end
+    return RPR.ImGui_Button(ctx, (is_left and NAV_TEXT_LEFT or NAV_TEXT_RIGHT) .. id, width or 0, height or 0)
+end
+
+LoadNavSettings(true)
+
+----------------------------------------------------------
 -- Fluid Editor Window
 ----------------------------------------------------------
 local FONT_SUGGESTIONS = {
@@ -517,8 +683,21 @@ local FONT_SUGGESTIONS = {
 
 local editor_ctx = nil
 local editor_open = false
+local RETIRED_PRESETS = {
+    ["Ember Night"] = true, ["Rosewater"] = true,
+    ["Harbor Slate"] = true, ["Lichen Stone"] = true,
+    ["Terracotta Fog"] = true, ["Mulberry Smoke"] = true,
+    ["Brass Workshop"] = true, ["Petrol Mist"] = true,
+    ["Indigo Canvas"] = true,
+}
 local saved_preset = RPR.GetExtState(EXT_SECTION, "selected_preset")
 local selected_preset = (saved_preset ~= "") and saved_preset or "Default Dark"
+if RETIRED_PRESETS[selected_preset] then
+    -- The named preset no longer exists: replace its obsolete color values
+    -- with an existing preset, rather than leaving the unreadable medium scheme active.
+    selected_preset = "Peach Sorbet"
+    LoadPreset(selected_preset)
+end
 local new_preset_name = ""
 
 local function CyclePreset(delta)
@@ -626,8 +805,8 @@ local function EditorLoop()
         return
     end
 
-    RPR.ImGui_SetNextWindowSizeConstraints(editor_ctx, 400, 590, 9999, 9999)
-    RPR.ImGui_SetNextWindowSize(editor_ctx, 400, 590, RPR.ImGui_Cond_FirstUseEver())
+    RPR.ImGui_SetNextWindowSizeConstraints(editor_ctx, 400, 640, 9999, 9999)
+    RPR.ImGui_SetNextWindowSize(editor_ctx, 420, 705, RPR.ImGui_Cond_FirstUseEver())
 
     local sp, cp = ApplyTheme(editor_ctx, 1.0)
     local visible, open_flag = RPR.ImGui_Begin(editor_ctx, "JKK Theme Manager", editor_open, WindowChrome.flags())
@@ -649,15 +828,20 @@ local function EditorLoop()
         RPR.ImGui_Text(editor_ctx, "Presets")
         PopText(editor_ctx)
 
-        if RPR.ImGui_Button(editor_ctx, "<##PrevPreset", nav_btn_w, 0) then
+        if NavButton(editor_ctx, "##PrevPreset", "left", nav_btn_w, 0) then
             CyclePreset(-1)
-        end
-        if RPR.ImGui_IsItemHovered(editor_ctx) then
-            RPR.ImGui_SetTooltip(editor_ctx, "Previous Preset")
         end
 
         RPR.ImGui_SameLine(editor_ctx, 0, nav_gap)
         RPR.ImGui_SetNextItemWidth(editor_ctx, combo_w)
+        -- All 21 built-in presets appear in Dark -> Light -> Vivid order.
+        -- Numerous custom presets may still scroll rather than overflow the display.
+        local preset_count = #DARK_PRESET_ORDER + #LIGHT_PRESET_ORDER
+            + #VIVID_PRESET_ORDER + #GetCustomPresetNames()
+        local item_line_h = RPR.ImGui_GetTextLineHeightWithSpacing(editor_ctx)
+        local popup_height = math.min(650, (preset_count + 3) * item_line_h + 24)
+        RPR.ImGui_SetNextWindowSizeConstraints(editor_ctx,
+            math.max(180, combo_w), popup_height, 16384, 16384)
         if RPR.ImGui_BeginCombo(
             editor_ctx, "##PresetCombo", selected_preset,
             RPR.ImGui_ComboFlags_HeightLargest()
@@ -676,6 +860,13 @@ local function EditorLoop()
                 end
             end
 
+            RPR.ImGui_SeparatorText(editor_ctx, "VIVID")
+            for _, bname in ipairs(VIVID_PRESET_ORDER) do
+                if RPR.ImGui_Selectable(editor_ctx, bname, selected_preset == bname) then
+                    selected_preset = bname; LoadPreset(bname)
+                end
+            end
+
             local custom_presets = GetCustomPresetNames()
             if #custom_presets > 0 then
                 RPR.ImGui_SeparatorText(editor_ctx, "CUSTOM")
@@ -689,11 +880,8 @@ local function EditorLoop()
         end
 
         RPR.ImGui_SameLine(editor_ctx, 0, nav_gap)
-        if RPR.ImGui_Button(editor_ctx, ">##NextPreset", nav_btn_w, 0) then
+        if NavButton(editor_ctx, "##NextPreset", "right", nav_btn_w, 0) then
             CyclePreset(1)
-        end
-        if RPR.ImGui_IsItemHovered(editor_ctx) then
-            RPR.ImGui_SetTooltip(editor_ctx, "Next Preset")
         end
 
         RPR.ImGui_SameLine(editor_ctx, 0, spacing)
@@ -727,6 +915,39 @@ local function EditorLoop()
         FontSelectorRow(editor_ctx, "UI Main (Base) Font", "base")
         FontSelectorRow(editor_ctx, "Top Bar & Input Font", "topbar")
         FontSelectorRow(editor_ctx, "Highlight (Title) Font", "heading")
+
+        RPR.ImGui_Spacing(editor_ctx); RPR.ImGui_Separator(editor_ctx); RPR.ImGui_Spacing(editor_ctx)
+
+        -- Shared navigation icon style: independent from color presets.
+        PushText(editor_ctx, "accent")
+        RPR.ImGui_Text(editor_ctx, "Navigation Buttons (Prev / Next)")
+        PopText(editor_ctx)
+        LoadNavSettings(false)
+        RPR.ImGui_SetNextItemWidth(editor_ctx, math.max(100, avail_w - 70))
+        if RPR.ImGui_BeginCombo(editor_ctx, "##NavButtonMode", nav_mode == "png" and "PNG images" or "Text arrows") then
+            if RPR.ImGui_Selectable(editor_ctx, "Text arrows", nav_mode == "text") then
+                nav_mode = "text"; SaveNavSettings()
+            end
+            if RPR.ImGui_Selectable(editor_ctx, "PNG images", nav_mode == "png") then
+                nav_mode = "png"; SaveNavSettings()
+            end
+            RPR.ImGui_EndCombo(editor_ctx)
+        end
+        RPR.ImGui_SameLine(editor_ctx)
+        NavButton(editor_ctx, "##NavPreviewLeft", "left", 24, 0)
+        RPR.ImGui_SameLine(editor_ctx, 0, 4)
+        NavButton(editor_ctx, "##NavPreviewRight", "right", 24, 0)
+        if nav_mode == "png" then
+            RPR.ImGui_SetNextItemWidth(editor_ctx, -1)
+            local left_changed, left_value = RPR.ImGui_InputText(editor_ctx, "##NavLeftPng", nav_left_png)
+            if left_changed then nav_left_png = left_value; SaveNavSettings() end
+            if RPR.ImGui_IsItemHovered(editor_ctx) then RPR.ImGui_SetTooltip(editor_ctx, "Left arrow PNG. Relative to Modules/ or absolute path") end
+            RPR.ImGui_SetNextItemWidth(editor_ctx, -1)
+            local right_changed, right_value = RPR.ImGui_InputText(editor_ctx, "##NavRightPng", nav_right_png)
+            if right_changed then nav_right_png = right_value; SaveNavSettings() end
+            if RPR.ImGui_IsItemHovered(editor_ctx) then RPR.ImGui_SetTooltip(editor_ctx, "Right arrow PNG. Relative to Modules/ or absolute path") end
+            RPR.ImGui_TextDisabled(editor_ctx, "Missing PNG = text fallback  |  Left, then Right")
+        end
 
         RPR.ImGui_Spacing(editor_ctx); RPR.ImGui_Separator(editor_ctx); RPR.ImGui_Spacing(editor_ctx)
 
@@ -824,6 +1045,10 @@ local function OpenEditor()
     end
     saved_preset = RPR.GetExtState(EXT_SECTION, "selected_preset")
     if saved_preset ~= "" then selected_preset = saved_preset end
+    if RETIRED_PRESETS[selected_preset] then
+        selected_preset = "Peach Sorbet"
+        LoadPreset(selected_preset)
+    end
     editor_ctx = RPR.ImGui_CreateContext("JKK_Theme_Manager")
     editor_open = true
     RPR.defer(EditorLoop)
@@ -853,6 +1078,7 @@ local Theme = {
     GetColor = GetColor,
     GetColorRGBA = GetColorRGBA,
     GetRevision = GetRevision,
+    NavButton = NavButton,
     GetSplitterColor = GetSplitterColor,
     OpenEditor = OpenEditor,
     ResetToDefaults = ResetToDefaults,

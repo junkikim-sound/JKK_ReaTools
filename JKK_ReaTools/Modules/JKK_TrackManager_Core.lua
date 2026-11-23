@@ -5,6 +5,7 @@
 --========================================================
 
 local RPR = reaper
+local Undo = dofile(((debug.getinfo(1, "S").source or ""):match("^@(.+[\\/])") or "") .. "JKK_UndoLabels.lua")
 local Core = {}
 
 Core.EXT_SEC = "JKK_TRACK_MGR"
@@ -12,6 +13,7 @@ Core.EXT_SEC = "JKK_TRACK_MGR"
 Core.EXT_KEYS = {
     HIDE_TCP     = "HIDE_TCP",
     HIDE_MCP     = "HIDE_MCP",
+    VIEW_FILTER  = "VIEW_FILTER",
     HEARTBEAT    = "HEARTBEAT",
     FOCUS_REQ    = "FOCUS_REQ",
     TR_INACTIVE  = "P_EXT:JKK_INACTIVE",
@@ -67,6 +69,23 @@ end
 function Core.SetHideFlags(hide_tcp, hide_mcp)
     RPR.SetExtState(Core.EXT_SEC, Core.EXT_KEYS.HIDE_TCP, hide_tcp and "1" or "0", true)
     RPR.SetExtState(Core.EXT_SEC, Core.EXT_KEYS.HIDE_MCP, hide_mcp and "1" or "0", true)
+end
+
+-- Display-only filtering: 0 = All Tracks, 1 = Inactive, 2 = Active.
+-- Never change actual track activation when changing the view.
+Core.VIEW_FILTERS = {"All Tracks", "Inactive Tracks", "Active Tracks"}
+
+function Core.GetViewFilter()
+    local value = tonumber(RPR.GetExtState(Core.EXT_SEC, Core.EXT_KEYS.VIEW_FILTER)) or 0
+    if value < 0 or value >= #Core.VIEW_FILTERS or value % 1 ~= 0 then return 0 end
+    return value
+end
+
+function Core.SetViewFilter(value)
+    value = tonumber(value) or 0
+    value = math.floor(value) % #Core.VIEW_FILTERS
+    RPR.SetExtState(Core.EXT_SEC, Core.EXT_KEYS.VIEW_FILTER, tostring(value), true)
+    return value
 end
 
 function Core.IsTrackActive(tr)
@@ -272,7 +291,7 @@ function Core.SetSelectedTracksActive(make_active, undo_label)
     RPR.TrackList_AdjustWindows(false)
     RPR.UpdateArrange()
     RPR.PreventUIRefresh(-1)
-    RPR.Undo_EndBlock(undo_label or (make_active and "Activate Selected Tracks" or "Deactivate Selected Tracks"), -1)
+    RPR.Undo_EndBlock(undo_label or (make_active and Undo.Label("track_manager.activate_selected_tracks") or Undo.Label("track_manager.deactivate_selected_tracks")), -1)
 end
 
 
@@ -290,7 +309,7 @@ function Core.ToggleSelectedTracksActive()
             break
         end
     end
-    Core.SetSelectedTracksActive(not any_active, "JKK Track Manager: Toggle Selected Tracks Active")
+    Core.SetSelectedTracksActive(not any_active, Undo.Label("track_manager.toggle_selected"))
     return true
 end
 
@@ -505,7 +524,7 @@ function Core.SortSelectedTrackSiblingsAZ()
         RPR.UpdateArrange()
     end)
     RPR.PreventUIRefresh(-1)
-    RPR.Undo_EndBlock("JKK: Sort Sibling Tracks A-Z", -1)
+    RPR.Undo_EndBlock(Undo.Label("track_manager.jkk_sort_sibling_tracks_a_z"), -1)
     if not ok then
         RPR.Undo_DoUndo2(0)
         return false, tostring(err)

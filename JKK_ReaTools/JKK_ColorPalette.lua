@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ColorPalette
 -- @author Junki Kim
--- @version 1.1.1
+-- @version 1.1.2
 -- @noindex
 --========================================================
 
@@ -58,7 +58,7 @@ local function Main()
     if visible then
         local should_close = WindowChrome.header(ctx, 'JKK Color Palette', 'palette')
         if ui_module and ui_module.JKK_ColorPalette_Draw then
-            should_close = ui_module.JKK_ColorPalette_Draw(ctx)
+            should_close = ui_module.JKK_ColorPalette_Draw(ctx) or should_close
         end
         
         if should_close or reaper.ImGui_IsKeyPressed(ctx, reaper.ImGui_Key_Escape()) then 

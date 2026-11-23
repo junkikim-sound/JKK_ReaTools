@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Renderer
 -- @author Junki Kim
--- @version 1.1.10
+-- @version 1.1.11
 -- @noindex
 --========================================================
 
@@ -10,6 +10,7 @@ local r = reaper
 -- Renamer와 동일한 UCS / Wildcard 데이터 모듈을 사용한다.
 local script_info = debug.getinfo(1, 'S')
 local script_path = script_info.source:match([[^@?(.*[\/])]]) or ""
+local Undo = dofile(script_path .. "Modules/JKK_UndoLabels.lua")
 local function LoadListModule(filename)
   local ok, result = pcall(dofile, script_path .. "Modules/" .. filename)
   if ok and type(result) == "table" then return result end
@@ -269,6 +270,15 @@ local open = true
 -- =======================================================
 -- File name shortcut helpers
 -- =======================================================
+-- Grouped renders a FOLDER MIX, not an individual item's source format.
+-- Auto rates/channels are therefore undefined. Keep explicit settings instead.
+local function NormalizeGroupedFormat(tab)
+  if tab and tab.render_source == 4 then
+    if tab.channels == 0 then tab.channels = 2 end     -- Stereo
+    if tab.sr_idx == 0 then tab.sr_idx = 7 end       -- 48000 Hz
+  end
+end
+
 local function ApplyRenderShortcut(tab, shortcut)
   local source_map = {
     srcmaster = 0, srcstem = 1, srcregionts = 2, srcregiontime = 3,
@@ -288,7 +298,7 @@ local function ApplyRenderShortcut(tab, shortcut)
   elseif shortcut == "bndtime" then
     tab.render_bounds = 1
   elseif shortcut == "chauto" then
-    tab.channels = 0
+    if tab.render_source ~= 4 then tab.channels = 0 end
   elseif shortcut == "chmono" then
     tab.channels = 1
   elseif shortcut == "chstereo" then
@@ -296,7 +306,7 @@ local function ApplyRenderShortcut(tab, shortcut)
   elseif shortcut:match("^ch[3-9]$") then
     tab.channels = tonumber(shortcut:sub(3))
   elseif shortcut == "rateauto" then
-    tab.sr_idx = 0
+    if tab.render_source ~= 4 then tab.sr_idx = 0 end
   elseif shortcut:match("^rate%d+$") then
     local sr = shortcut:sub(5)
     if rate_map[sr] then tab.sr_idx = rate_map[sr] end
@@ -330,6 +340,7 @@ local function ApplyRenderShortcut(tab, shortcut)
     tab.format_idx = 0
     tab.bit_depth_idx = 5
   end
+  NormalizeGroupedFormat(tab)
 end
 
 local function ScoreShortcutMatch(item, search, trigger_char)
@@ -694,7 +705,7 @@ end
 -- =======================================================
 -- REAPER RENDER SETTINGS INJECTION ENGINE
 -- =======================================================
-local function ApplyRenderSettingsToProject(tab, p_item)
+local function ApplyRenderSettingsToProject(tab, p_item, explicit_pattern)
   local proj = 0
   local resolved_dir, is_empty = ResolveOutputDirectory(tab.file_directory)
   local dir_to_set = is_empty and "" or resolved_dir
@@ -702,18 +713,23 @@ local function ApplyRenderSettingsToProject(tab, p_item)
     r.RecursiveCreateDirectory(dir_to_set, 0)
   end
   r.GetSetProjectInfo_String(proj, "RENDER_FILE", dir_to_set, true)
-  r.GetSetProjectInfo_String(proj, "RENDER_PATTERN", tab.file_pattern, true)
+  r.GetSetProjectInfo_String(proj, "RENDER_PATTERN", explicit_pattern or tab.file_pattern, true)
   
   local settings_val = 0
   if tab.render_source == 0 then settings_val = settings_val | 0
   elseif tab.render_source == 1 then
     if tab.via_master then settings_val = settings_val | 128 else settings_val = settings_val | 3 end
   elseif tab.render_source == 2 or tab.render_source == 3 then settings_val = settings_val | 8
-  elseif tab.render_source == 4 or tab.render_source == 5 then
+  elseif tab.render_source == 4 then
+    -- One folder track is selected per folder-item anchor. REAPER renders all
+    -- audible descendants through the parent-folder bus, independently of
+    -- which child media items are selected.
+    if tab.via_master then settings_val = settings_val | 128 else settings_val = settings_val | 2 end
+  elseif tab.render_source == 5 then
     if tab.via_master then settings_val = settings_val | 64 else settings_val = settings_val | 32 end
   end
 
-  if tab.embed_take_marker and (tab.render_source == 4 or tab.render_source == 5) then settings_val = settings_val | 1024 end
+  if tab.embed_take_marker and tab.render_source == 5 then settings_val = settings_val | 1024 end
   
   if tab.embed_meta then settings_val = settings_val | 512 end
   if tab.preserve_meta then settings_val = settings_val | 32768 end
@@ -724,11 +740,15 @@ local function ApplyRenderSettingsToProject(tab, p_item)
   if tab.render_source == 0 or tab.render_source == 1 then
     if tab.render_bounds == 1 then bounds_val = 2 else bounds_val = 1 end
   elseif tab.render_source == 2 or tab.render_source == 3 then bounds_val = 3
-  elseif tab.render_source == 4 or tab.render_source == 5 then bounds_val = 4 end
+  elseif tab.render_source == 4 then bounds_val = 0 -- Custom: selected folder item's exact bounds
+  elseif tab.render_source == 5 then bounds_val = 4 end
 
   r.GetSetProjectInfo(proj, "RENDER_BOUNDSFLAG", bounds_val, true)
 
-  if tab.render_source == 0 or tab.render_source == 1 then
+  if tab.render_source == 4 and p_item then
+    r.GetSetProjectInfo(proj, "RENDER_STARTPOS", p_item.start_pos, true)
+    r.GetSetProjectInfo(proj, "RENDER_ENDPOS", p_item.end_pos, true)
+  elseif tab.render_source == 0 or tab.render_source == 1 then
     r.GetSetProjectInfo(proj, "RENDER_STARTPOS", tab.bounds_start or 0.0, true)
     r.GetSetProjectInfo(proj, "RENDER_ENDPOS", tab.bounds_end or 0.0, true)
   end
@@ -752,8 +772,8 @@ local function ApplyRenderSettingsToProject(tab, p_item)
 
   -- Pad Start (Lead Silence) & Tail
   local pad_start_flag = 0
-  if tab.enable_pad_start then
-    if tab.render_source == 4 or tab.render_source == 5 then pad_start_flag = 16
+  if tab.enable_pad_start and tab.render_source ~= 4 then
+    if tab.render_source == 5 then pad_start_flag = 16
     elseif tab.render_source == 2 or tab.render_source == 3 then pad_start_flag = 8
     elseif tab.render_bounds == 0 then pad_start_flag = 2
     elseif tab.render_bounds == 1 then pad_start_flag = 4 end
@@ -762,8 +782,8 @@ local function ApplyRenderSettingsToProject(tab, p_item)
   r.GetSetProjectInfo(proj, "RENDER_STARTTAILMS", (tab.pad_start_len or 0.0) * 1000, true)
   
   local tail_flag = 0
-  if tab.enable_tail then
-    if tab.render_source == 4 or tab.render_source == 5 then tail_flag = 16
+  if tab.enable_tail and tab.render_source ~= 4 then
+    if tab.render_source == 5 then tail_flag = 16
     elseif tab.render_source == 2 or tab.render_source == 3 then tail_flag = 8
     elseif tab.render_bounds == 0 then tail_flag = 2
     elseif tab.render_bounds == 1 then tail_flag = 4 end
@@ -961,7 +981,7 @@ local function ApplyTimeSelectionMatrix()
   return snapshot, count
 end
 
-local function ParseWildcards(tab, pattern, sel_track, sel_item, sel_region, file_num)
+local function ParseWildcards(tab, pattern, sel_track, sel_item, sel_region, file_num, item_title_override)
   local out = pattern
   if not out or out == "" then return "" end
 
@@ -977,6 +997,8 @@ local function ParseWildcards(tab, pattern, sel_track, sel_item, sel_region, fil
     if take then _, item_name = r.GetSetMediaItemTakeInfo_String(take, "P_NAME", "", false) end
   end
   
+  if item_title_override and item_title_override ~= "" then item_name = item_title_override end
+
   local region_name = sel_region or "NoRegion"
   
   local sr_val = 48000
@@ -995,10 +1017,11 @@ local function ParseWildcards(tab, pattern, sel_track, sel_item, sel_region, fil
   end
   local ch_str = tostring(math.floor(ch_val))
 
-  out = out:gsub("%$project", p_name)
-  out = out:gsub("%$track", track_name)
-  out = out:gsub("%$region", region_name)
-  out = out:gsub("%$item", item_name)
+  -- Use function replacements so '%'-characters in media names remain literal.
+  out = out:gsub("%$project", function() return p_name end)
+  out = out:gsub("%$track", function() return track_name end)
+  out = out:gsub("%$region", function() return region_name end)
+  out = out:gsub("%$item", function() return item_name end)
   out = out:gsub("%$sampleratek", sr_k)
   out = out:gsub("%$channels", ch_str)
   
@@ -1025,59 +1048,51 @@ local function ParseWildcards(tab, pattern, sel_track, sel_item, sel_region, fil
   return out
 end
 
--- Group selected parent-folder items by track before filtering descendants.
--- The old implementation re-walked every item's parent chain once for EVERY
--- selected folder item, causing O(items * folders * track-depth) work on each
--- preview frame. This keeps the exact same overlap and output-order rules.
-local function GetFilteredRenderItems()
-  local count = r.CountSelectedMediaItems(0)
-  if count == 0 then return {} end
-
-  local sel_items = {}
-  local folders_by_track = {}
-  local folder_count = 0
-  for i = 0, count - 1 do
+-- A selected media item ON a folder track is an output anchor (name + bounds).
+-- Its selected state does NOT limit the audio. All audible child-track items
+-- within the time range are mixed by REAPER's native folder-track stem render.
+-- In particular, no child item has to be selected, and folder FX are retained.
+local function GetGroupedFolderItems()
+  local targets = {}
+  for i = 0, r.CountSelectedMediaItems(0) - 1 do
     local item = r.GetSelectedMediaItem(0, i)
     local track = r.GetMediaItem_Track(item)
-    sel_items[#sel_items + 1] = {item = item, track = track}
-
-    if r.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") == 1 then
-      local pos = r.GetMediaItemInfo_Value(item, "D_POSITION")
-      local len = r.GetMediaItemInfo_Value(item, "D_LENGTH")
-      local entries = folders_by_track[track]
-      if not entries then
-        entries = {}
-        folders_by_track[track] = entries
+    if track and r.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") > 0 then
+      local start_pos = r.GetMediaItemInfo_Value(item, "D_POSITION")
+      local length = r.GetMediaItemInfo_Value(item, "D_LENGTH")
+      if length > 0 then
+        targets[#targets + 1] = {
+          item = item, track = track,
+          start_pos = start_pos, end_pos = start_pos + length, selection_idx = i,
+        }
       end
-      entries[#entries + 1] = {item = item, start_pos = pos, end_pos = pos + len}
-      folder_count = folder_count + 1
     end
   end
+  table.sort(targets, function(a, b)
+    if a.start_pos ~= b.start_pos then return a.start_pos < b.start_pos end
+    local a_idx = r.GetMediaTrackInfo_Value(a.track, "IP_TRACKNUMBER") or 0
+    local b_idx = r.GetMediaTrackInfo_Value(b.track, "IP_TRACKNUMBER") or 0
+    if a_idx ~= b_idx then return a_idx < b_idx end
+    return a.selection_idx < b.selection_idx
+  end)
+  return targets
+end
 
-  if folder_count == 0 then return sel_items end
-
-  local filtered_items = {}
-  for _, s_item in ipairs(sel_items) do
-    local pos = r.GetMediaItemInfo_Value(s_item.item, "D_POSITION")
-    local item_end = pos + r.GetMediaItemInfo_Value(s_item.item, "D_LENGTH")
-    local parent = r.GetParentTrack(s_item.track)
-    local covered_by_folder = false
-    while parent do
-      local candidate_folders = folders_by_track[parent]
-      if candidate_folders then
-        for _, folder in ipairs(candidate_folders) do
-          if folder.item ~= s_item.item and pos < folder.end_pos and item_end > folder.start_pos then
-            covered_by_folder = true
-            break
-          end
-        end
-      end
-      if covered_by_folder then break end
-      parent = r.GetParentTrack(parent)
-    end
-    if not covered_by_folder then filtered_items[#filtered_items + 1] = s_item end
+-- Folder items are often empty placeholders. Prefer their take name / notes,
+-- then fall back to the folder-track name instead of generating "NoItem.wav".
+local function GetFolderAnchorName(target)
+  local take = r.GetActiveTake(target.item)
+  if take then
+    local _, name = r.GetSetMediaItemTakeInfo_String(take, "P_NAME", "", false)
+    if name and name ~= "" then return name end
   end
-  return filtered_items
+  local _, note = r.GetSetMediaItemInfo_String(target.item, "P_NOTES", "", false)
+  if note and note ~= "" then
+    local title = note:match("^([^\r\n]+)")
+    if title and title ~= "" then return title end
+  end
+  local _, track_name = r.GetTrackName(target.track)
+  return (track_name and track_name ~= "") and track_name or "Folder"
 end
 
 local function GetDisplaySR(tab, item)
@@ -1114,7 +1129,7 @@ local function GeneratePreviewList(tab)
   
   if tab.render_source == 4 or tab.render_source == 5 then
     if tab.render_source == 4 then
-      items_to_process = GetFilteredRenderItems() 
+      items_to_process = GetGroupedFolderItems()
     else
       local count = r.CountSelectedMediaItems(0)
       for i = 0, count - 1 do
@@ -1141,8 +1156,24 @@ local function GeneratePreviewList(tab)
     return {}, {} 
   end
   
+  local used_group_names = {}
   for _, p_item in ipairs(items_to_process) do
-    local fname = ParseWildcards(tab, tab.file_pattern, p_item.track, p_item.item, p_item.region, num) .. GetRenderFormatExtension(tab)
+    local anchor_name = (tab.render_source == 4) and GetFolderAnchorName(p_item) or nil
+    local pattern = ParseWildcards(tab, tab.file_pattern, p_item.track, p_item.item, p_item.region, num, anchor_name)
+    if tab.render_source == 4 then
+      -- Each anchor must have its own filename, even if the same folder has
+      -- multiple blank/named anchors or the pattern omits $filenumber.
+      if pattern == "" then pattern = anchor_name end
+      local stem = pattern
+      local serial = 1
+      while used_group_names[pattern:lower()] do
+        serial = serial + 1
+        pattern = stem .. string.format("_%02d", serial)
+      end
+      used_group_names[pattern:lower()] = true
+      p_item.render_pattern = pattern
+    end
+    local fname = pattern .. GetRenderFormatExtension(tab)
     table.insert(previews, {
       name = fname, 
       sr = GetDisplaySR(tab, p_item.item), 
@@ -1154,6 +1185,51 @@ local function GeneratePreviewList(tab)
   cached_previews = previews
   cached_targets = items_to_process
   return previews, items_to_process
+end
+
+-- Grouped = one folder bus stem per selected folder item. This is a series
+-- of ordinary REAPER stem renders with custom bounds (folder anchor position
+-- to its end). No child media selection, solo state or item content is modified.
+-- Render queue entries are enqueued while each folder/interval is active.
+local function RenderGroupedFolderMixes(tab, targets)
+  NormalizeGroupedFormat(tab)
+  local proj = 0
+  local number_props = {
+    "RENDER_SETTINGS", "RENDER_BOUNDSFLAG", "RENDER_STARTPOS", "RENDER_ENDPOS",
+    "RENDER_STARTTAILFLAG", "RENDER_TAILFLAG", "RENDER_STARTTAILMS", "RENDER_TAILMS",
+  }
+  local snapshot = {}
+  for _, key in ipairs(number_props) do
+    snapshot[key] = r.GetSetProjectInfo(proj, key, 0, false)
+  end
+  local _, original_pattern = r.GetSetProjectInfo_String(proj, "RENDER_PATTERN", "", false)
+
+  local function restore()
+    for _, key in ipairs(number_props) do
+      r.GetSetProjectInfo(proj, key, snapshot[key], true)
+    end
+    r.GetSetProjectInfo_String(proj, "RENDER_PATTERN", original_pattern, true)
+  end
+
+  local ok, err = xpcall(function()
+    for _, anchor in ipairs(targets) do
+      if r.ValidatePtr(anchor.track, "MediaTrack*") and r.ValidatePtr(anchor.item, "MediaItem*") then
+        r.Main_OnCommand(40297, 0) -- Unselect all tracks; only this folder bus is rendered
+        r.SetTrackSelected(anchor.track, true)
+        ApplyRenderSettingsToProject(tab, anchor, anchor.render_pattern)
+        if tab.add_to_queue then
+          r.Main_OnCommand(41823, 0)
+        else
+          r.Main_OnCommand(41824, 0)
+        end
+      end
+    end
+  end, debug.traceback)
+  restore()
+  if not ok then
+    r.ShowConsoleMsg("[JKK Renderer / Grouped] " .. tostring(err) .. "\n")
+    if r.MB then r.MB("Grouped render encountered an error. See REAPER console.", "JKK Renderer", 0) end
+  end
 end
 
 local function Main()
@@ -1262,6 +1338,7 @@ local function Main()
     end
 
     local tab = tabs[active_tab_idx] or tabs[1]
+    NormalizeGroupedFormat(tab)
     local previews, items_to_process = GeneratePreviewList(tab)
     local can_render = (#previews > 0)
     
@@ -1315,7 +1392,7 @@ local function Main()
         if r.ImGui_Button(ctx, "Set##matrix_set_btn", 42) then
           r.Undo_BeginBlock()
           SetMatrixFromTimeSelection()
-          r.Undo_EndBlock("Set Region Render Matrix from Time Selection", -1)
+          r.Undo_EndBlock(Undo.Label("renderer.set_region_matrix_from_time_selection"), -1)
         end
         PopAccentButtonStyle(ctx)
         if not has_time_selection then r.ImGui_EndDisabled(ctx) end
@@ -1359,7 +1436,9 @@ local function Main()
           if r.ImGui_Selectable(ctx, ch_names[i], tab.channels == i) then tab.channels = i end
         end
         r.ImGui_Separator(ctx)
-        if r.ImGui_Selectable(ctx, " Auto (Follow Source)", tab.channels == 0) then tab.channels = 0 end
+        if tab.render_source == 4 then r.ImGui_BeginDisabled(ctx) end
+        if r.ImGui_Selectable(ctx, " Auto (Follow Source)", tab.channels == 0) and tab.render_source ~= 4 then tab.channels = 0 end
+        if tab.render_source == 4 then r.ImGui_EndDisabled(ctx) end
         r.ImGui_EndCombo(ctx)
       end
       if r.ImGui_IsItemHovered(ctx) and tab.channels == 0 then
@@ -1381,7 +1460,9 @@ local function Main()
         r.ImGui_Separator(ctx)
         if r.ImGui_Selectable(ctx, " Custom", tab.sr_idx == 12) then tab.sr_idx = 12 end
         r.ImGui_Separator(ctx)
-        if r.ImGui_Selectable(ctx, " Auto (Follow Source)", tab.sr_idx == 0) then tab.sr_idx = 0 end
+        if tab.render_source == 4 then r.ImGui_BeginDisabled(ctx) end
+        if r.ImGui_Selectable(ctx, " Auto (Follow Source)", tab.sr_idx == 0) and tab.render_source ~= 4 then tab.sr_idx = 0 end
+        if tab.render_source == 4 then r.ImGui_EndDisabled(ctx) end
         r.ImGui_EndCombo(ctx)
       end
       if r.ImGui_IsItemHovered(ctx) and tab.sr_idx == 0 then
@@ -1442,6 +1523,7 @@ local function Main()
       r.ImGui_TextColored(ctx, GetColor("accent"), "Post Processing")
       r.ImGui_Spacing(ctx)
 
+      if tab.render_source == 4 then r.ImGui_BeginDisabled(ctx) end
       local chk_ps_changed, new_ps_chk = r.ImGui_Checkbox(ctx, "##ps_chk", tab.enable_pad_start or false)
       if chk_ps_changed then tab.enable_pad_start = new_ps_chk end
       
@@ -1459,6 +1541,7 @@ local function Main()
       if tail_changed then tab.tail_len = new_tail_len; tab.enable_tail = true end
       if r.ImGui_IsItemClicked(ctx, 1) then tab.tail_len = 1.000; tab.enable_tail = true end
       r.ImGui_SameLine(ctx); r.ImGui_Text(ctx, " Tail")
+      if tab.render_source == 4 then r.ImGui_EndDisabled(ctx) end
       
       local chk_fi_changed, new_fi_chk = r.ImGui_Checkbox(ctx, "##fi_chk", tab.enable_fadein)
       if chk_fi_changed then tab.enable_fadein = new_fi_chk end
@@ -1525,7 +1608,7 @@ local function Main()
         r.ImGui_EndDisabled(ctx)
       end
 
-      if tab.render_source == 4 or tab.render_source == 5 then
+      if tab.render_source == 5 then
         _, tab.embed_take_marker = r.ImGui_Checkbox(ctx, ' Embed take marker', tab.embed_take_marker)
       else
         r.ImGui_BeginDisabled(ctx)
@@ -1581,7 +1664,7 @@ local function Main()
 
       if render_btn_clicked or trigger_enter_render then
         
-        local need_sequential = (tab.channels == 0 or tab.sr_idx == 0) and (#items_to_process > 1) and (tab.render_source == 1 or tab.render_source == 4 or tab.render_source == 5)
+        local need_sequential = (tab.channels == 0 or tab.sr_idx == 0) and (#items_to_process > 1) and (tab.render_source == 1 or tab.render_source == 5)
 
         local init_sel_items, init_sel_tracks = {}, {}
         for i = 0, r.CountSelectedMediaItems(0) - 1 do table.insert(init_sel_items, r.GetSelectedMediaItem(0, i)) end
@@ -1592,7 +1675,9 @@ local function Main()
           matrix_snapshot = ApplyTimeSelectionMatrix()
         end
 
-        if need_sequential then
+        if tab.render_source == 4 then
+          RenderGroupedFolderMixes(tab, items_to_process)
+        elseif need_sequential then
           for _, p_item in ipairs(items_to_process) do
             r.Main_OnCommand(40289, 0)
             r.Main_OnCommand(40297, 0)
@@ -1603,14 +1688,6 @@ local function Main()
             if tab.add_to_queue then r.Main_OnCommand(41823, 0) else r.Main_OnCommand(41824, 0) end
           end
         else
-          if tab.render_source == 4 then
-            r.Main_OnCommand(40289, 0) 
-            for _, f_item in ipairs(items_to_process) do
-              if f_item.item then r.SetMediaItemSelected(f_item.item, true) end
-            end
-            r.UpdateArrange()
-          end
-          
           ApplyRenderSettingsToProject(tab, items_to_process[1])
           if tab.add_to_queue then r.Main_OnCommand(41823, 0) else r.Main_OnCommand(41824, 0) end
         end
@@ -1812,6 +1889,15 @@ local function Main()
         local source_list = trigger_char == "$" and w_list
             or (trigger_char == "!" and ucs_list or render_shortcuts)
         filtered_shortcuts = FilterShortcutList(source_list, filter_str, trigger_char)
+        if tab.render_source == 4 and trigger_char == "#" then
+          local allowed = {}
+          for _, candidate in ipairs(filtered_shortcuts) do
+            if candidate.insert ~= "#chauto" and candidate.insert ~= "#rateauto" then
+              allowed[#allowed + 1] = candidate
+            end
+          end
+          filtered_shortcuts = allowed
+        end
         if #filtered_shortcuts == 0 then show_autocomplete = false end
       end
 
@@ -2016,7 +2102,7 @@ local function Main()
           [0] = "Master Mix to Render:", [1] = "Stems to Render (" .. tostring(#previews) .. "):",
           [2] = "Matrix Regions to Render (" .. tostring(#previews) .. "):",
           [3] = "Time Selection Regions to Render (" .. tostring(#previews) .. "):",
-          [4] = "Items to Render (" .. tostring(#previews) .. "):",
+          [4] = "Folder Mixes to Render (" .. tostring(#previews) .. "):",
           [5] = "Items to Render Separately (" .. tostring(#previews) .. "):"
         }
         local box_title = render_title_map[tab.render_source] or ("Items to Render (" .. tostring(#previews) .. "):")
@@ -2026,7 +2112,7 @@ local function Main()
         if #previews == 0 then
           local empty_msg_map = {
             [0] = " (Master mix ready)", [1] = " (No tracks selected)", [2] = " (No Matrix regions selected)",
-            [3] = " (No regions overlap the Time Selection)", [4] = " (No items selected)", [5] = " (No items selected)"
+            [3] = " (No regions overlap the Time Selection)", [4] = " (Select an item on a folder track)", [5] = " (No items selected)"
           }
           local empty_msg = empty_msg_map[tab.render_source] or " (No items selected)"
           r.ImGui_SetCursorPosX(ctx, 16)

@@ -35,6 +35,7 @@ local function ResolveModulePath(file_name)
 end
 
 local Core = options.core or dofile(ResolveModulePath("JKK_TrackManager_Core.lua"))
+local Undo = dofile(ResolveModulePath("JKK_UndoLabels.lua"))
 
 local theme_path = ResolveModulePath("JKK_Theme_Core.lua")
 local Theme = options.theme or ((RPR.file_exists(theme_path) and dofile(theme_path)) or {
@@ -47,6 +48,9 @@ local Theme = options.theme or ((RPR.file_exists(theme_path) and dofile(theme_pa
     PopFont          = function() end,
     GetColor         = function() return 0xEDEDEDFF end,
     GetSplitterColor = function() return 0x3C3C3CFF end,
+    NavButton = function(ctx, id, dir, w, h)
+        return RPR.ImGui_Button(ctx, (dir == "left" and "<" or ">") .. id, w, h)
+    end,
 })
 
 ----------------------------------------------------------------------
@@ -55,9 +59,9 @@ local Theme = options.theme or ((RPR.file_exists(theme_path) and dofile(theme_pa
 local APP = {
     TITLE       = "JKK Track Manager",
     CTX_NAME    = "JKK_TrackManager_Ctx",
-    UNDO_ACT    = "JKK Track Manager: Toggle Track Active",
-    UNDO_PROP   = "JKK Track Manager: Modify Track Property",
-    UNDO_RENAME = "JKK Track Manager: Rename Track",
+    UNDO_ACT    = Undo.Label("track_manager.toggle_active"),
+    UNDO_PROP   = Undo.Label("track_manager.modify_property"),
+    UNDO_RENAME = Undo.Label("track_manager.rename_track"),
 }
 
 local REAPER_CMD = {
@@ -478,50 +482,90 @@ end
 
 -- Toolbar layout: fixed-height row, labels vertically aligned to button frame.
 -- The standalone-launch button hugs the right content edge in embedded mode.
+-- Center the label in a native combo frame without changing the popup logic.
+local function DrawCenteredFilterText(draw_ctx, draw_list, x, y, width, height, value)
+    local text = tostring(value or '')
+    local usable_width = math.max(1, width - height - 8 * UI_SCALE)
+    local tw, th = RPR.ImGui_CalcTextSize(draw_ctx, text)
+    if tw > usable_width then
+        while #text > 0 and tw > usable_width do
+            local last_start = utf8.offset(text, -1)
+            text = last_start and text:sub(1, last_start - 1) or ''
+            tw, th = RPR.ImGui_CalcTextSize(draw_ctx, text .. '…')
+        end
+        text = text .. '…'
+    end
+    local color = RPR.ImGui_GetColor(draw_ctx, RPR.ImGui_Col_Text())
+    RPR.ImGui_DrawList_AddText(draw_list,
+        x + math.max(2, (width - height - tw) * 0.5),
+        y + math.max(0, (height - th) * 0.5), color, text)
+end
+
+-- Shared toolbar for standalone Track Manager and the embedded ReaTools panel.
 local function DrawTopBar(draw_ctx, embedded, on_open)
     Theme.PushFont(draw_ctx, UI_SCALE, "topbar")
-
     local gap = LAYOUT.GLOBAL_ITEM_GAP * UI_SCALE
     local avail = math.max(1, select(1, RPR.ImGui_GetContentRegionAvail(draw_ctx)))
-    local start_x = RPR.ImGui_GetCursorPosX(draw_ctx)
-    local row_y = RPR.ImGui_GetCursorPosY(draw_ctx)
-    local row_h = RPR.ImGui_GetFrameHeight(draw_ctx)
-    local text_h = RPR.ImGui_GetTextLineHeight(draw_ctx)
-    local check_w = row_h -- the square part of a checkbox without its label
-    local check_gap = 4 * UI_SCALE
+    local start_x, row_y = RPR.ImGui_GetCursorPosX(draw_ctx), RPR.ImGui_GetCursorPosY(draw_ctx)
+    local row_h, text_h = RPR.ImGui_GetFrameHeight(draw_ctx), RPR.ImGui_GetTextLineHeight(draw_ctx)
+    local check_w, check_gap = row_h, 4 * UI_SCALE
+    local nav_w, nav_gap = 22 * UI_SCALE, 3 * UI_SCALE
     local button_label = "Track Manager"
     local has_button = embedded and on_open ~= nil
+    local button_w = has_button and (16 * UI_SCALE + select(1, RPR.ImGui_CalcTextSize(draw_ctx, button_label))) or 0
 
     local function CheckboxWidth(label)
         return check_w + check_gap + select(1, RPR.ImGui_CalcTextSize(draw_ctx, label))
     end
-    local function ButtonWidth(label)
-        return 16 * UI_SCALE + select(1, RPR.ImGui_CalcTextSize(draw_ctx, label))
+    local labels = {
+        {"Hide in TCP when deactivated", "Hide in MCP when deactivated"},
+        {"Hide TCP", "Hide MCP"},
+        {"TCP", "MCP"},
+    }
+    local tcp_label, mcp_label = labels[1][1], labels[1][2]
+    local min_filter_w = nav_w * 2 + nav_gap * 2 + 76 * UI_SCALE
+    local reserved_gaps = gap * (has_button and 3 or 2)
+    for _, pair in ipairs(labels) do
+        tcp_label, mcp_label = pair[1], pair[2]
+        if CheckboxWidth(tcp_label) + CheckboxWidth(mcp_label) + min_filter_w + button_w + reserved_gaps <= avail then
+            break
+        end
     end
 
-    local tcp_label, mcp_label = "Hide in TCP when deactivated", "Hide in MCP when deactivated"
-    local gaps = has_button and 2 or 1
-    local function RequiredWidth()
-        return CheckboxWidth(tcp_label) + CheckboxWidth(mcp_label)
-            + (has_button and ButtonWidth(button_label) or 0) + gap * gaps
-    end
-    if RequiredWidth() > avail then
-        tcp_label, mcp_label = "Hide in TCP", "Hide in MCP"
-    end
-    if RequiredWidth() > avail then
-        tcp_label, mcp_label = "TCP", "MCP"
+    -- At very small embedded-panel widths, place the checkboxes above the
+    -- filter/launcher row instead of letting controls overlap or clip.
+    local compact_min = CheckboxWidth("TCP") + CheckboxWidth("MCP")
+        + min_filter_w + button_w + reserved_gaps
+    local two_rows = avail < compact_min
+    if two_rows then
+        if CheckboxWidth("Hide TCP") + CheckboxWidth("Hide MCP") + gap <= avail then
+            tcp_label, mcp_label = "Hide TCP", "Hide MCP"
+        else
+            tcp_label, mcp_label = "TCP", "MCP"
+        end
+        if has_button then
+            button_w = math.min(button_w, math.max(72 * UI_SCALE, avail * 0.55))
+        end
     end
 
-    -- Text is rendered separately from the native checkbox square so its
-    -- baseline is explicitly centered against the Track Manager button.
-    -- Clicking either the square or its text toggles the same option.
+    -- Keep the filter immediately to the left of the launcher in ReaTools,
+    -- and right-aligned in the standalone window.
+    local checks_w = CheckboxWidth(tcp_label) + CheckboxWidth(mcp_label) + gap
+    local filter_room = two_rows and (avail - button_w - (has_button and gap or 0))
+        or (avail - checks_w - button_w - reserved_gaps + gap)
+    local combo_w = math.max((two_rows and 28 or 40) * UI_SCALE,
+        math.min(160 * UI_SCALE, filter_room - nav_w * 2 - nav_gap * 2))
+    local filter_w = combo_w + nav_w * 2 + nav_gap * 2
+    local button_x = start_x + avail - button_w
+    local filter_x = (has_button and button_x - gap or start_x + avail) - filter_w
+    local filter_y = two_rows and (row_y + row_h + 3 * UI_SCALE) or row_y
+
     local function DrawToggle(id, label, current, pos_x)
         RPR.ImGui_SetCursorPosX(draw_ctx, pos_x)
         RPR.ImGui_SetCursorPosY(draw_ctx, row_y)
         local changed, new_value = RPR.ImGui_Checkbox(draw_ctx, "##" .. id, current)
-        local text_x = pos_x + check_w + check_gap
         RPR.ImGui_SameLine(draw_ctx, 0, 0)
-        RPR.ImGui_SetCursorPosX(draw_ctx, text_x)
+        RPR.ImGui_SetCursorPosX(draw_ctx, pos_x + check_w + check_gap)
         RPR.ImGui_SetCursorPosY(draw_ctx, row_y + math.max(0, (row_h - text_h) * 0.5))
         RPR.ImGui_Text(draw_ctx, label)
         if RPR.ImGui_IsItemClicked(draw_ctx, 0) then
@@ -530,39 +574,64 @@ local function DrawTopBar(draw_ctx, embedded, on_open)
         return changed, new_value
     end
 
-    local cursor_x = start_x
-    local changed_tcp, new_tcp = DrawToggle("JKK_GlobalHideTCP", tcp_label, g_hide_tcp, cursor_x)
+    local changed_tcp, new_tcp = DrawToggle("JKK_GlobalHideTCP", tcp_label, g_hide_tcp, start_x)
     if changed_tcp then
         g_hide_tcp = new_tcp
         Core.SetHideFlags(g_hide_tcp, g_hide_mcp)
         Core.EnforceInactive(g_hide_tcp, g_hide_mcp)
     end
-    cursor_x = cursor_x + CheckboxWidth(tcp_label) + gap
     RPR.ImGui_SameLine(draw_ctx, 0, 0)
-    local changed_mcp, new_mcp = DrawToggle("JKK_GlobalHideMCP", mcp_label, g_hide_mcp, cursor_x)
+    local changed_mcp, new_mcp = DrawToggle("JKK_GlobalHideMCP", mcp_label, g_hide_mcp,
+        start_x + CheckboxWidth(tcp_label) + gap)
     if changed_mcp then
         g_hide_mcp = new_mcp
         Core.SetHideFlags(g_hide_tcp, g_hide_mcp)
         Core.EnforceInactive(g_hide_tcp, g_hide_mcp)
     end
 
-    if has_button then
-        local used_by_checks = CheckboxWidth(tcp_label) + CheckboxWidth(mcp_label) + gap
-        local remaining = math.max(1, avail - used_by_checks - gap)
-        local btn_w = math.min(ButtonWidth(button_label), remaining)
+    local filter_idx = Core.GetViewFilter()
+    local function SetFilter(idx) Core.SetViewFilter(idx) end
+    local function DrawAt(x)
         RPR.ImGui_SameLine(draw_ctx, 0, 0)
-        RPR.ImGui_SetCursorPosX(draw_ctx, start_x + avail - btn_w)
-        RPR.ImGui_SetCursorPosY(draw_ctx, row_y)
+        RPR.ImGui_SetCursorPosX(draw_ctx, x)
+        RPR.ImGui_SetCursorPosY(draw_ctx, filter_y)
+    end
+
+    DrawAt(filter_x)
+    if Theme.NavButton(draw_ctx, '##JKK_TrackFilterPrev', 'left', nav_w, row_h) then
+        filter_idx = (filter_idx + #Core.VIEW_FILTERS - 1) % #Core.VIEW_FILTERS
+        SetFilter(filter_idx)
+    end
+    DrawAt(filter_x + nav_w + nav_gap)
+    local combo_x, combo_y = RPR.ImGui_GetCursorScreenPos(draw_ctx)
+    local dl = RPR.ImGui_GetWindowDrawList(draw_ctx)
+    RPR.ImGui_SetNextItemWidth(draw_ctx, combo_w)
+    local opened = RPR.ImGui_BeginCombo(draw_ctx, '##JKK_TrackViewFilter', '', RPR.ImGui_ComboFlags_HeightLargest())
+    if opened then
+        for idx, label in ipairs(Core.VIEW_FILTERS) do
+            if RPR.ImGui_Selectable(draw_ctx, label .. '##JKK_Filter_' .. idx, filter_idx == idx - 1) then
+                filter_idx = idx - 1
+                SetFilter(filter_idx)
+            end
+        end
+        RPR.ImGui_EndCombo(draw_ctx)
+    end
+    DrawCenteredFilterText(draw_ctx, dl, combo_x, combo_y, combo_w, row_h,
+        Core.VIEW_FILTERS[filter_idx + 1])
+    DrawAt(filter_x + nav_w + nav_gap + combo_w + nav_gap)
+    if Theme.NavButton(draw_ctx, '##JKK_TrackFilterNext', 'right', nav_w, row_h) then
+        filter_idx = (filter_idx + 1) % #Core.VIEW_FILTERS
+        SetFilter(filter_idx)
+    end
+
+    if has_button then
+        DrawAt(button_x)
         Theme.PushButton(draw_ctx, "primary")
-        if RPR.ImGui_Button(draw_ctx, button_label .. "##JKK_OpenTrackManager", btn_w, row_h) then
+        if RPR.ImGui_Button(draw_ctx, button_label .. "##JKK_OpenTrackManager", button_w, row_h) then
             on_open()
         end
         Theme.PopButton(draw_ctx)
-        if RPR.ImGui_IsItemHovered(draw_ctx) then
-            RPR.ImGui_SetTooltip(draw_ctx, "Open Track Manager in a standalone window")
-        end
     end
-
     Theme.PopFont(draw_ctx)
 end
 
@@ -591,6 +660,7 @@ local function BuildVisibleRows()
     local visible_rows = {}
     local track_to_vis_idx = {}
     local skip_depth = -1
+    local view_filter = Core.GetViewFilter()
 
     for i = 0, num_tracks - 1 do
         local tr = RPR.GetTrack(0, i)
@@ -601,12 +671,19 @@ local function BuildVisibleRows()
         end
 
         if skip_depth == -1 then
+            local active = Core.IsTrackActive(tr)
+            local matches = (view_filter == 0)
+                or (view_filter == 1 and not active)
+                or (view_filter == 2 and active)
             local is_folder = (RPR.GetMediaTrackInfo_Value(tr, Core.TRACK_PROP.FOLDER_DEPTH) == Core.FOLDER_STATE.IS_PARENT)
             local compact   = RPR.GetMediaTrackInfo_Value(tr, Core.TRACK_PROP.FOLDER_COMP)
-            if is_folder and compact == Core.FOLDER_STATE.COLLAPSED then
+            -- A filtered-out folder cannot be expanded by the user. Therefore
+            -- its collapsed state must not hide eligible descendants.
+            if matches and is_folder and compact == Core.FOLDER_STATE.COLLAPSED then
                 skip_depth = depth
             end
 
+            if matches then
             local vis_idx = #visible_rows + 1
             visible_rows[vis_idx] = {
                 tr        = tr,
@@ -614,10 +691,11 @@ local function BuildVisibleRows()
                 depth     = depth,
                 is_folder = is_folder,
                 compact   = compact,
-                is_active = Core.IsTrackActive(tr),
+                is_active = active,
                 is_mute   = RPR.GetMediaTrackInfo_Value(tr, Core.TRACK_PROP.MUTE) > 0,
             }
             track_to_vis_idx[tr] = vis_idx
+            end
         end
     end
 

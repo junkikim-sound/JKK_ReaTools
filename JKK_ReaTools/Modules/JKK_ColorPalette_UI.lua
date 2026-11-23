@@ -7,12 +7,16 @@
 local reaper = reaper
 
 local script_dir = debug.getinfo(1, "S").source:match("@?(.*[\\/])") or ""
+local Undo = dofile(script_dir .. "JKK_UndoLabels.lua")
 local data_path = script_dir .. "JKK_ColorPalette_Data.lua"
 local data_module = reaper.file_exists(data_path) and dofile(data_path) or nil
 local sel_path = script_dir .. "JKK_SelectionManager.lua"
 local sel_mgr = _G.JKK_SelectionManager or (reaper.file_exists(sel_path) and dofile(sel_path))
 
 local theme = _G.JKK_Theme or {}
+local NavButton = theme.NavButton or function(ctx, id, dir, w, h)
+    return reaper.ImGui_Button(ctx, (dir == "left" and "<" or ">") .. id, w, h)
+end
 local PushButton = theme.PushButton or function(c, kind)
     reaper.ImGui_PushStyleColor(c, reaper.ImGui_Col_Button(), 0x24866FFF)
     reaper.ImGui_PushStyleColor(c, reaper.ImGui_Col_ButtonHovered(), 0x2A9A80FF)
@@ -176,7 +180,7 @@ local function ApplyColor(u32_color, is_imgui_focused)
     end
     
     reaper.UpdateArrange()
-    reaper.Undo_EndBlock("Apply Color Palette", -1)
+    reaper.Undo_EndBlock(Undo.Label("color_palette.apply_color_palette"), -1)
     
     return auto_close 
 end
@@ -186,6 +190,24 @@ local function HSVtoHSL(h, s, v)
     local sl = 0
     if l > 0 and l < 1 then sl = (v - l) / math.min(l, 1 - l) end
     return h, sl, l
+end
+
+local function DrawCenteredComboCaption(ctx, draw_list, x, y, w, h, caption)
+    local text = tostring(caption or '')
+    local usable_w = math.max(1, w - h - 10)
+    local tw, th = reaper.ImGui_CalcTextSize(ctx, text)
+    if tw > usable_w then
+        while #text > 0 and tw > usable_w do
+            local last_start = utf8.offset(text, -1)
+            text = last_start and text:sub(1, last_start - 1) or ''
+            tw, th = reaper.ImGui_CalcTextSize(ctx, text .. '…')
+        end
+        text = text .. '…'
+    end
+    local col = reaper.ImGui_GetColor(ctx, reaper.ImGui_Col_Text())
+    reaper.ImGui_DrawList_AddText(draw_list,
+        x + math.max(3, (w - h - tw) * 0.5),
+        y + math.max(0, (h - th) * 0.5), col, text)
 end
 
 function JKK_ColorPalette_Draw(ctx)
@@ -209,15 +231,18 @@ function JKK_ColorPalette_Draw(ctx)
     PopText(ctx)
     reaper.ImGui_Spacing(ctx)
 
-    if reaper.ImGui_Button(ctx, "<", 25, 23) then
+    if NavButton(ctx, "##JKKPalettePrev", "left", 25, 23) then
         current_palette_idx = current_palette_idx - 1
         if current_palette_idx < 1 then current_palette_idx = total_palettes end
         SaveState()
     end
     reaper.ImGui_SameLine(ctx)
 
-    reaper.ImGui_SetNextItemWidth(ctx, 220)
-    if reaper.ImGui_BeginCombo(ctx, "##PaletteCombo", " " .. active_palette.name, reaper.ImGui_ComboFlags_HeightLargest()) then
+    local combo_x, combo_y = reaper.ImGui_GetCursorScreenPos(ctx)
+    local combo_dl = reaper.ImGui_GetWindowDrawList(ctx)
+    local combo_w, combo_h = 220, reaper.ImGui_GetFrameHeight(ctx)
+    reaper.ImGui_SetNextItemWidth(ctx, combo_w)
+    if reaper.ImGui_BeginCombo(ctx, "##PaletteCombo", "", reaper.ImGui_ComboFlags_HeightLargest()) then
         for i, p in ipairs(default_palettes) do
             if reaper.ImGui_Selectable(ctx, " " .. p.name, current_palette_idx == i) then
                 current_palette_idx = i; SaveState()
@@ -241,9 +266,10 @@ function JKK_ColorPalette_Draw(ctx)
         end
         reaper.ImGui_EndCombo(ctx)
     end
+    DrawCenteredComboCaption(ctx, combo_dl, combo_x, combo_y, combo_w, combo_h, active_palette.name)
 
     reaper.ImGui_SameLine(ctx)
-    if reaper.ImGui_Button(ctx, ">", 25, 23) then
+    if NavButton(ctx, "##JKKPaletteNext", "right", 25, 23) then
         current_palette_idx = current_palette_idx + 1
         if current_palette_idx > total_palettes then current_palette_idx = 1 end
         SaveState()

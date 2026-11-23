@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Loopmaker
 -- @author Junki Kim
--- @version 1.2.9
+-- @version 1.3.0
 -- @noindex
 --========================================================
 
@@ -9,10 +9,15 @@ package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'
 local ImGui = require 'imgui' '0.9'
 local RPR = reaper
 
+-- The preview rebuilds complex REAPER items; cap rebuild frequency while dragging.
+-- Source Start uses a lightweight take-offset update and is not throttled.
+local PREVIEW_REBUILD_INTERVAL = 0.04 -- seconds (25 updates/s max for Length / Sequencer sliders)
+
 -- ==========================================
 -- 1. 테마(JKK_Theme.lua) 동적 로드
 -- ==========================================
 local script_path = debug.getinfo(1, "S").source:sub(2):match("(.*[/\\])") or ""
+local Undo = dofile(script_path .. "Modules/JKK_UndoLabels.lua")
 local WindowChrome = dofile(script_path .. "Modules/JKK_WindowChrome.lua")
 local theme_paths = {
     script_path .. "Modules/JKK_Theme_Core.lua",
@@ -88,6 +93,8 @@ local cfg = {
     
     -- Tab 1: Loopmaker
     loop_len = tonumber(reaper.GetExtState("JKK_Loopmaker", "loop_len")) or 5.0,
+    -- nil = automatic (the original Loopmaker seam position); numeric = seconds into the original item.
+    loop_src_start = tonumber(reaper.GetExtState("JKK_Loopmaker", "loop_src_start")),
     fade_len = tonumber(reaper.GetExtState("JKK_Loopmaker", "fade_len")) or 1.0,
     glue_res = reaper.GetExtState("JKK_Loopmaker", "glue_res") ~= "false",
     shape_idx = 1,
@@ -114,14 +121,24 @@ local seq_int_formats = {"%.2f s", "%d Grid", "%d RPM"}
 local rand_modes = {"Repeat Cycle", "True Random"}
 
 local is_session_active = false
+local setup_in_progress = false
 local is_valid = false
 local err_msg = ""
 local target_items = {}
 local target_meta = {} 
 local original_solos = {}
+local solo_user_intervened = false
+local session_project = nil
+local preview_enabled = false -- Always OFF on every launch; not persisted.
 local original_env = {}
+local expected_env = nil
+local env_changed_by_user = { cursor = false, range = false, repeat_state = false }
 local preview_folder_track = nil
 local preview_tracks = {}
+local preview_loop_takes = {}   -- Cached take offsets for zero-rebuild Source Start dragging.
+local pending_preview_mode = nil
+local last_preview_rebuild = -math.huge
+local apply_error = nil -- Show a failed glue without deleting any original items.
 
 -- ==========================================
 -- 3. 커브 드로잉 유틸리티
@@ -208,6 +225,7 @@ function SaveSettings()
     reaper.SetExtState("JKK_Loopmaker", "preview_vol", tostring(cfg.preview_vol), true)
     reaper.SetExtState("JKK_Loopmaker", "src_mode", tostring(cfg.src_mode), true)
     reaper.SetExtState("JKK_Loopmaker", "loop_len", tostring(cfg.loop_len), true)
+    reaper.SetExtState("JKK_Loopmaker", "loop_src_start", tostring(cfg.loop_src_start or ""), true)
     reaper.SetExtState("JKK_Loopmaker", "fade_len", tostring(cfg.fade_len), true)
     reaper.SetExtState("JKK_Loopmaker", "glue_res", tostring(cfg.glue_res), true)
     
@@ -288,108 +306,222 @@ end
 local last_mouse_down_state = false
 local pending_items_signature = nil
 
-function CheckAndSyncSelection(is_focused)
-    if sel_mgr then sel_mgr.Update(is_focused) end
-    local is_mouse_down = sel_mgr and sel_mgr.IsMouseDown() or false
-    local mouse_released = last_mouse_down_state and not is_mouse_down
-    last_mouse_down_state = is_mouse_down
+-- Preview owns temporary solos, but it must never overwrite a user's changes.
+-- Any non-preview solo enabled during the session means the user (or another
+-- script) took control. In that case do not resurrect the old solo snapshot.
+local function CurrentProject()
+    return reaper.EnumProjects(-1, "")
+end
 
-    local cur_valid, cur_err, cur_items = InitialValidate()
-
-    -- 1. 세션이 아예 활성화되지 않은 초기 상태 (아무 대상도 없을 때)
-    if not is_session_active then
-        if not cur_valid then
-            is_valid = false
-            err_msg = cur_err
-            pending_items_signature = nil
-            return
-        end
-
-        -- 현재 선택된 아이템들의 고유 식별자(포인터 주소) 문자열 생성
-        local sig = ""
-        for _, it in ipairs(cur_items) do sig = sig .. tostring(it) .. "," end
-
-        -- 마우스를 누르고 있는 동안에는 대기(Pending)
-        if is_mouse_down then
-            pending_items_signature = sig
-            return
-        end
-
-        -- 마우스를 뗄 때(released) 혹은 클릭 없이 선택된 상태일 때 비로소 세션 초기화 실행
-        if mouse_released or pending_items_signature == sig then
-            InitSession(cur_items)
-            pending_items_signature = nil
-        end
-        return
+local function ValidSessionTrack(tr)
+    if not tr then return false end
+    if reaper.ValidatePtr2 and session_project then
+        return reaper.ValidatePtr2(session_project, tr, "MediaTrack*")
     end
+    return reaper.ValidatePtr(tr, "MediaTrack*")
+end
 
-    -- 2. 이미 세션이 활성화된 상태 (대상 변경 처리)
-    if is_session_active and not cur_valid then
-        CancelAndRevert()
-        is_session_active = false
-        is_valid = false
-        err_msg = cur_err
-        return
+local function ObserveExternalChanges()
+    if not is_session_active or setup_in_progress or CurrentProject() ~= session_project then return end
+    local ignored = {}
+    -- The temporary folder is owned by Loopmaker, so changes to its solo
+    -- do not count as changes to the user's existing track solo choices.
+    if ValidSessionTrack(preview_folder_track) then
+        ignored[preview_folder_track] = true
     end
-
-    if is_session_active and cur_valid then
-        if is_mouse_down then return end -- 드래그/클릭 유지 중에는 대기
-
-        local changed = (#cur_items ~= #target_items)
-        if not changed then
-            for i, it in ipairs(cur_items) do
-                if it ~= target_items[i] then changed = true; break end
-            end
+    for _, tr in ipairs(preview_tracks) do
+        if ValidSessionTrack(tr) then ignored[tr] = true end
+    end
+    for i = 0, reaper.CountTracks(0) - 1 do
+        local tr = reaper.GetTrack(0, i)
+        if not ignored[tr] and reaper.GetMediaTrackInfo_Value(tr, "I_SOLO") ~= 0 then
+            solo_user_intervened = true
+            break
         end
-
-        if changed then 
-            CancelAndRevert()
-            InitSession(cur_items) 
+    end
+    if expected_env then
+        local cursor = reaper.GetCursorPosition()
+        local ts_start, ts_end = reaper.GetSet_LoopTimeRange(false, false, 0, 0, false)
+        local repeat_state = (reaper.GetToggleCommandState(1068) == 1)
+        if math.abs(cursor - expected_env.cursor) > 0.0001 then
+            env_changed_by_user.cursor = true
+        end
+        if math.abs(ts_start - expected_env.ts_start) > 0.0001
+            or math.abs(ts_end - expected_env.ts_end) > 0.0001 then
+            env_changed_by_user.range = true
+        end
+        if repeat_state ~= expected_env.loop then
+            env_changed_by_user.repeat_state = true
         end
     end
 end
 
+local function RestoreOriginalSolos()
+    ObserveExternalChanges()
+    if not solo_user_intervened then
+        for tr, solo in pairs(original_solos) do
+            if solo ~= 0 and ValidSessionTrack(tr)
+                and reaper.GetMediaTrackInfo_Value(tr, "I_SOLO") == 0 then
+                reaper.SetMediaTrackInfo_Value(tr, "I_SOLO", solo)
+            end
+        end
+    end
+    original_solos = {}
+end
+
+local function CaptureExpectedTimeline()
+    if not is_session_active then return end
+    local a, b = reaper.GetSet_LoopTimeRange(false, false, 0, 0, false)
+    expected_env = {
+        cursor = reaper.GetCursorPosition(), ts_start = a, ts_end = b,
+        loop = reaper.GetToggleCommandState(1068) == 1,
+    }
+end
+
+-- When a different project tab is active, temporarily target the original
+-- project for cleanup, then restore the user's currently selected project.
+local function WithSessionProject(fn)
+    local current = CurrentProject()
+    local switched = false
+    if session_project and current ~= session_project then
+        local open_project = false
+        for i = 0, 255 do
+            local project = reaper.EnumProjects(i, "")
+            if not project then break end
+            if project == session_project then open_project = true; break end
+        end
+        if not open_project then return false, "Preview project was closed" end
+        if not reaper.SelectProjectInstance then
+            return false, "Cannot safely restore a background project"
+        end
+        local switch_ok = pcall(reaper.SelectProjectInstance, session_project)
+        if not switch_ok then return false, "Could not select the preview project" end
+        switched = true
+    end
+    local ok, err = xpcall(fn, debug.traceback)
+    if switched and current then pcall(reaper.SelectProjectInstance, current) end
+    return ok, err
+end
+
+function CheckAndSyncSelection(is_focused)
+    if sel_mgr then sel_mgr.Update(is_focused) end
+    local is_mouse_down = sel_mgr and sel_mgr.IsMouseDown() or false
+    last_mouse_down_state = is_mouse_down
+
+    if is_session_active and session_project and CurrentProject() ~= session_project then
+        CancelAndRevert()
+        preview_enabled = false -- switching project must not auto-start a new preview
+    end
+
+    if is_session_active then
+        ObserveExternalChanges()
+        -- Manual removal of the temporary track group should not leave the
+        -- script repeatedly accessing stale MediaTrack pointers.
+        if not ValidSessionTrack(preview_folder_track) then
+            CancelAndRevert()
+            preview_enabled = false
+        end
+    end
+
+    local cur_valid, cur_err, cur_items = InitialValidate()
+    if not preview_enabled then
+        if is_session_active then CancelAndRevert() end
+        is_valid, err_msg, target_items = cur_valid, cur_err, cur_items
+        pending_items_signature = nil
+        return
+    end
+
+    if not is_session_active then
+        is_valid, err_msg = cur_valid, cur_err
+        target_items = cur_items
+        if not cur_valid then
+            pending_items_signature = nil
+            return
+        end
+        -- Do not create a preview while a selection drag is still held.
+        if is_mouse_down then return end
+        InitSession(cur_items)
+        pending_items_signature = nil
+        return
+    end
+
+    if not cur_valid then
+        CancelAndRevert()
+        is_valid, err_msg, target_items = false, cur_err, {}
+        return
+    end
+
+    if is_mouse_down then return end
+    local changed = (#cur_items ~= #target_items)
+    if not changed then
+        for i, it in ipairs(cur_items) do
+            if it ~= target_items[i] then changed = true; break end
+        end
+    end
+    if changed then
+        CancelAndRevert()
+        InitSession(cur_items)
+    end
+end
+
 function InitSession(items)
-    is_valid = true; err_msg = ""
+    is_valid = true; err_msg = ""; apply_error = nil
     target_items = items
     target_meta = CaptureMeta(items)
-    original_solos = {}; preview_tracks = {}
-    
+    original_solos, preview_tracks, preview_loop_takes = {}, {}, {}
+    pending_preview_mode = nil
+    preview_folder_track = nil
+    solo_user_intervened = false
+    expected_env = nil
+    env_changed_by_user = { cursor = false, range = false, repeat_state = false }
+    session_project = CurrentProject()
+
     original_env.cursor = reaper.GetCursorPosition()
     original_env.ts_start, original_env.ts_end = reaper.GetSet_LoopTimeRange(false, false, 0, 0, false)
     original_env.loop = reaper.GetToggleCommandState(1068) == 1
 
+    setup_in_progress = true
     reaper.PreventUIRefresh(1)
-    
-    local base_track = reaper.GetMediaItem_Track(target_items[1])
-    local base_idx = reaper.CSurf_TrackToID(base_track, false)
-    
-    reaper.InsertTrackAtIndex(base_idx - 1, false)
-    preview_folder_track = reaper.GetTrack(0, base_idx - 1)
-    reaper.GetSetMediaTrackInfo_String(preview_folder_track, "P_NAME", "JKK_Preview_Folder", true)
-    reaper.SetMediaTrackInfo_Value(preview_folder_track, "I_FOLDERDEPTH", 1)
-    reaper.SetMediaTrackInfo_Value(preview_folder_track, "I_SOLO", 2)
-    local linear_vol = 10 ^ (cfg.preview_vol / 20.0)
-    reaper.SetMediaTrackInfo_Value(preview_folder_track, "D_VOL", linear_vol)
-    
-    local pool_size = math.max(12, #target_items)
-    for i = 1, pool_size do
-        reaper.InsertTrackAtIndex(base_idx + i - 1, false)
-        local prev_track = reaper.GetTrack(0, base_idx + i - 1)
-        table.insert(preview_tracks, prev_track)
-        
-        reaper.SetMediaTrackInfo_Value(prev_track, "B_SHOWINTCP", 0)
-        reaper.SetMediaTrackInfo_Value(prev_track, "B_SHOWINMIXER", 0)
-        reaper.SetMediaTrackInfo_Value(prev_track, "I_FOLDERDEPTH", 0)
-    end
-    
-    for _, orig_item in ipairs(target_items) do
-        local orig_track = reaper.GetMediaItem_Track(orig_item)
-        original_solos[orig_track] = reaper.GetMediaTrackInfo_Value(orig_track, "I_SOLO")
-    end
+    local ok, err = xpcall(function()
+        -- Capture ALL existing track solos before creating preview tracks.
+        -- Only nonzero solos are temporarily cleared.
+        for i = 0, reaper.CountTracks(0) - 1 do
+            local tr = reaper.GetTrack(0, i)
+            local solo = reaper.GetMediaTrackInfo_Value(tr, "I_SOLO")
+            original_solos[tr] = solo
+            if solo ~= 0 then reaper.SetMediaTrackInfo_Value(tr, "I_SOLO", 0) end
+        end
+        local base_track = reaper.GetMediaItem_Track(target_items[1])
+        local base_idx = reaper.CSurf_TrackToID(base_track, false)
 
+        reaper.InsertTrackAtIndex(base_idx - 1, false)
+        preview_folder_track = reaper.GetTrack(0, base_idx - 1)
+        reaper.GetSetMediaTrackInfo_String(preview_folder_track, "P_NAME", "JKK_Preview_Folder", true)
+        reaper.SetMediaTrackInfo_Value(preview_folder_track, "I_FOLDERDEPTH", 1)
+        reaper.SetMediaTrackInfo_Value(preview_folder_track, "I_SOLO", 2)
+        local linear_vol = 10 ^ (cfg.preview_vol / 20.0)
+        reaper.SetMediaTrackInfo_Value(preview_folder_track, "D_VOL", linear_vol)
+
+        local pool_size = math.max(12, #target_items)
+        for i = 1, pool_size do
+            reaper.InsertTrackAtIndex(base_idx + i - 1, false)
+            local prev_track = reaper.GetTrack(0, base_idx + i - 1)
+            table.insert(preview_tracks, prev_track)
+            reaper.SetMediaTrackInfo_Value(prev_track, "B_SHOWINTCP", 0)
+            reaper.SetMediaTrackInfo_Value(prev_track, "B_SHOWINMIXER", 0)
+            reaper.SetMediaTrackInfo_Value(prev_track, "I_FOLDERDEPTH", 0)
+        end
+    end, debug.traceback)
     reaper.PreventUIRefresh(-1)
-    is_session_active = true
+    is_session_active = true -- allow the shared cleanup path even on partial init
+    if not ok then
+        CancelAndRevert() -- restore the pre-init solo snapshot even after partial creation
+        setup_in_progress = false
+        is_valid, err_msg = false, "Preview setup failed: " .. tostring(err)
+        preview_enabled = false
+        return
+    end
+    setup_in_progress = false
     UpdatePreview("end")
 end
 
@@ -431,134 +563,225 @@ local function SetLoopItemFades(item, fade_in, fade_out)
     reaper.SetMediaItemInfo_Value(item, "D_FADEOUTLEN", math.max(0, fade_out or 0))
 end
 
+-- Retain the exact existing tile/fade algorithm. Both the UI bounds and the
+-- preview builder must use this same result so source offsets cannot run past
+-- the selected item boundaries when Length / Crossfade change.
+local function CalculateLoopTilePlan(orig_len, loop_len, fade_len)
+    local eps = 0.000001
+    loop_len = math.max(0.01, loop_len)
+    local requested_fade = math.max(0, math.min(
+        fade_len, orig_len * 0.45, loop_len * 0.45
+    ))
+    local tile_count = 1
+    local step_len = loop_len
+    local actual_fade = 0
+
+    if orig_len > loop_len + eps then
+        tile_count = 1
+        step_len = loop_len
+        actual_fade = math.min(requested_fade, orig_len - loop_len)
+    elseif requested_fade <= eps then
+        tile_count = math.max(1, math.ceil(loop_len / math.max(orig_len, 0.01)))
+        step_len = loop_len / tile_count
+        actual_fade = 0
+    else
+        local max_count = math.max(2,
+            math.ceil(loop_len / math.max(0.01, requested_fade / 0.9)) + 4)
+        max_count = math.min(max_count, 10000)
+        local best_count, best_step, best_fade = nil, nil, -1
+        for count = 2, max_count do
+            local candidate_step = loop_len / count
+            local candidate_fade = math.min(
+                requested_fade, candidate_step * 0.9, orig_len - candidate_step
+            )
+            if candidate_fade > eps and candidate_fade > best_fade + eps then
+                best_count, best_step, best_fade = count, candidate_step, candidate_fade
+            end
+        end
+        if best_count then
+            tile_count, step_len, actual_fade = best_count, best_step, best_fade
+        else
+            tile_count = math.max(1, math.ceil(loop_len / math.max(orig_len, 0.01)))
+            step_len = loop_len / tile_count
+            actual_fade = 0
+        end
+    end
+    local tile_len = step_len + actual_fade
+    if tile_len > orig_len then
+        actual_fade = math.max(0, orig_len - step_len)
+        tile_len = step_len + actual_fade
+    end
+    tile_len = math.max(0.01, tile_len)
+    local seam_offset = (step_len + actual_fade) * 0.5
+    return tile_count, step_len, actual_fade, tile_len, seam_offset
+end
+
+-- Source Start is the point in the *original item*, in item-time seconds.
+-- This is not the REAPER arrange position. The seam needs half a tile of
+-- source media on each side, so its available range is computed dynamically.
+local function SourceStartBounds(orig_len, seam_offset)
+    local lo = math.max(0, seam_offset)
+    local hi = math.max(lo, orig_len - seam_offset)
+    return lo, hi
+end
+
+local function EffectiveSourceStart(orig_len, seam_offset)
+    local lo, hi = SourceStartBounds(orig_len, seam_offset)
+    return math.max(lo, math.min(hi, cfg.loop_src_start or lo))
+end
+
+local function DisplaySourceStartBounds()
+    local item = target_items[1]
+    if not item or not reaper.ValidatePtr(item, "MediaItem*") then return nil end
+    local len = (is_session_active and target_meta[1] and target_meta[1].len)
+        or reaper.GetMediaItemInfo_Value(item, "D_LENGTH")
+    if len <= 0 then return nil end
+    local _, _, _, _, seam = CalculateLoopTilePlan(len, cfg.loop_len, cfg.fade_len)
+    local lo, hi = SourceStartBounds(len, seam)
+    return lo, hi, EffectiveSourceStart(len, seam)
+end
+
+-- Move all previewed audio sources without deleting/recreating media items.
+-- Values are calculated from their offsets at build time (not accumulated),
+-- avoiding floating point drift and preserving the split seam offset.
+local function UpdatePreviewSourceStart()
+    if not preview_enabled or not is_session_active or not is_valid or cfg.active_tab ~= 0 then return end
+    local changed = false
+    for _, cache in ipairs(preview_loop_takes) do
+        local requested = EffectiveSourceStart(cache.orig_len, cache.seam_offset)
+        local delta = (requested - cache.built_source_start) * cache.playrate
+        if math.abs(requested - cache.current_source_start) > 1e-9 then
+            for _, entry in ipairs(cache.takes) do
+                if reaper.ValidatePtr(entry.take, "MediaItem_Take*") then
+                    reaper.SetMediaItemTakeInfo_Value(entry.take, "D_STARTOFFS", entry.built_offset + delta)
+                    changed = true
+                end
+            end
+            cache.current_source_start = requested
+        end
+    end
+    if changed then reaper.UpdateArrange() end
+end
+
+-- Normal sliders refresh continuously while held, with a small rate limit to
+-- prevent massive Sequencer rebuilds from monopolizing the UI/audio thread.
+local function QueuePreviewUpdate(mode)
+    pending_preview_mode = mode or "default"
+end
+
+local function FlushPreviewUpdate(force)
+    if not pending_preview_mode then return end
+    if not (preview_enabled and is_session_active and is_valid) then
+        pending_preview_mode = nil
+        return
+    end
+    local now = reaper.time_precise()
+    if not force and now - last_preview_rebuild < PREVIEW_REBUILD_INTERVAL then return end
+    local mode = pending_preview_mode
+    pending_preview_mode = nil
+    UpdatePreview(mode == "default" and nil or mode)
+end
+
 function UpdatePreviewLoop(cursor_mode)
+    preview_loop_takes = {}
     local first_start, first_end, first_xfade = 0, 0, 0
     local first_result_set = false
     local start_base = original_env.cursor
     local eps = 0.000001
 
-    local old_splitautoxfade = BeginLoopmakerNoAutoFades()
-
+    -- Explicit pieces (rather than SplitMediaItem) do not depend on project
+    -- automatic-fade/split settings; fades are assigned to each piece.
     for i, orig_item in ipairs(target_items) do
         local prev_track = preview_tracks[i]
         local orig_len = target_meta[i].len
         local loop_len = math.max(0.01, cfg.loop_len)
 
-        local requested_fade = math.max(0, math.min(
-            cfg.fade_len,
-            orig_len * 0.45,
-            loop_len * 0.45
-        ))
-
-        local tile_count = 1
-        local step_len = loop_len
-        local actual_fade = 0
-
-        if orig_len > loop_len + eps then
-            tile_count = 1
-            step_len = loop_len
-            actual_fade = math.min(requested_fade, orig_len - loop_len)
-        elseif requested_fade <= eps then
-            tile_count = math.max(1, math.ceil(loop_len / math.max(orig_len, 0.01)))
-            step_len = loop_len / tile_count
-            actual_fade = 0
-        else
-            local max_count = math.max(2,
-                math.ceil(loop_len / math.max(0.01, requested_fade / 0.9)) + 4)
-            max_count = math.min(max_count, 10000)
-
-            local best_count, best_step, best_fade = nil, nil, -1
-
-            for count = 2, max_count do
-                local candidate_step = loop_len / count
-                local candidate_fade = math.min(
-                    requested_fade,
-                    candidate_step * 0.9,
-                    orig_len - candidate_step
-                )
-
-                if candidate_fade > eps and candidate_fade > best_fade + eps then
-                    best_count = count
-                    best_step = candidate_step
-                    best_fade = candidate_fade
-                end
+        local tile_count, step_len, actual_fade, tile_len, seam_offset =
+            CalculateLoopTilePlan(orig_len, loop_len, cfg.fade_len)
+        local src_start = EffectiveSourceStart(orig_len, seam_offset)
+        local src_shift = (src_start - seam_offset) * target_meta[i].playrate
+        if not ValidSessionTrack(prev_track) then
+            error(string.format("Missing preview track for source item %d", i))
+        end
+        local chunk_ok, chunk = reaper.GetItemStateChunk(orig_item, "", false)
+        if not chunk_ok or not chunk or chunk == "" then
+            error(string.format("Unable to copy source item %d", i))
+        end
+        -- Build the *same* wrapped-seam geometry without splitting an item at
+        -- a potentially negative project time. This is critical at cursor 0:
+        -- older code first positioned the full tile at start_base-seam_offset
+        -- and then SplitMediaItem() at start_base. Some REAPER project settings
+        -- disallow negative item starts, so the split can fail silently.
+        --
+        -- The seam begins at Source Start (item-local time). The ending half
+        -- reads the source immediately BEFORE that point. Their end/start
+        -- therefore meet at precisely the same source sample when repeated.
+        local function PlacePiece(pos, len, offset_from_segment, fade_in, fade_out)
+            local item = reaper.AddMediaItemToTrack(prev_track)
+            if not item or not reaper.SetItemStateChunk(item, chunk, false) then
+                error(string.format("Unable to create loop piece for source item %d", i))
             end
-
-            if best_count then
-                tile_count = best_count
-                step_len = best_step
-                actual_fade = best_fade
-            else
-                tile_count = math.max(1, math.ceil(loop_len / math.max(orig_len, 0.01)))
-                step_len = loop_len / tile_count
-                actual_fade = 0
+            local take = reaper.GetActiveTake(item)
+            if not take then
+                error(string.format("Missing take for source item %d", i))
             end
+            reaper.SetMediaItemInfo_Value(item, "B_LOOPSRC", 0)
+            reaper.SetMediaItemInfo_Value(item, "I_GROUPID", 0) -- Never group preview fragments with source items.
+            reaper.SetMediaItemInfo_Value(item, "C_BEHAVIOR", 1)
+            reaper.SetMediaItemSelected(item, false)
+            reaper.SetMediaItemInfo_Value(item, "D_POSITION", pos)
+            reaper.SetMediaItemInfo_Value(item, "D_LENGTH", len)
+            -- Set source offset after geometry, so no long source-item length
+            -- is present when REAPER validates the new take start position.
+            local original_offs = reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS")
+            local adjusted = original_offs + src_shift
+                + offset_from_segment * target_meta[i].playrate
+            if math.abs(adjusted - original_offs) > eps then
+                reaper.SetMediaItemTakeInfo_Value(take, "D_STARTOFFS", adjusted)
+            end
+            SetLoopItemFades(item, fade_in, fade_out)
+            reaper.SetMediaItemInfo_Value(item, "C_FADEINSHAPE", cfg.shape_idx)
+            reaper.SetMediaItemInfo_Value(item, "C_FADEOUTSHAPE", cfg.shape_idx)
+            return item
         end
 
-        local tile_len = step_len + actual_fade
-        if tile_len > orig_len then
-            actual_fade = math.max(0, orig_len - step_len)
-            tile_len = step_len + actual_fade
-        end
-        tile_len = math.max(0.01, tile_len)
+        -- First half of the seam: output begins at Source Start.
+        -- tile_len / 2 == seam_offset by construction.
+        PlacePiece(start_base, tile_len - seam_offset,
+            seam_offset, 0, actual_fade)
 
-        local seam_offset = (step_len + actual_fade) * 0.5
-        local gen_start = start_base - seam_offset
-        local _, chunk = reaper.GetItemStateChunk(orig_item, "", false)
-        local placed_tiles = {}
-
-        for tile_idx = 0, tile_count - 1 do
-            local tile_item = reaper.AddMediaItemToTrack(prev_track)
-            reaper.SetItemStateChunk(tile_item, chunk, false)
-
-            reaper.SetMediaItemInfo_Value(tile_item, "B_LOOPSRC", 0)
-            reaper.SetMediaItemInfo_Value(tile_item, "C_BEHAVIOR", 1)
-            reaper.SetMediaItemSelected(tile_item, false)
-            reaper.SetMediaItemInfo_Value(tile_item, "D_POSITION", gen_start + tile_idx * step_len)
-            reaper.SetMediaItemInfo_Value(tile_item, "D_LENGTH", tile_len)
-
-            SetLoopItemFades(tile_item, actual_fade, actual_fade)
-            reaper.SetMediaItemInfo_Value(tile_item, "C_FADEINSHAPE", cfg.shape_idx)
-            reaper.SetMediaItemInfo_Value(tile_item, "C_FADEOUTSHAPE", cfg.shape_idx)
-
-            placed_tiles[#placed_tiles + 1] = tile_item
+        -- Full middle tiles. Because actual_fade < step_len, all start at or
+        -- after start_base, including when the project cursor is at 0.
+        for tile_idx = 1, tile_count - 1 do
+            PlacePiece(start_base - seam_offset + tile_idx * step_len,
+                tile_len, 0, actual_fade, actual_fade)
         end
 
-        local seam_tile = placed_tiles[1]
-        if seam_tile then
-            local seam_item_pos = reaper.GetMediaItemInfo_Value(seam_tile, "D_POSITION")
-            local seam_item_len = reaper.GetMediaItemInfo_Value(seam_tile, "D_LENGTH")
-            local seam_item_end = seam_item_pos + seam_item_len
+        -- Other half of the seam: wrap the original source immediately before
+        -- Source Start to the last seam_offset seconds of the final loop.
+        PlacePiece(start_base + loop_len - seam_offset, seam_offset,
+            0, actual_fade, 0)
 
-            if start_base > seam_item_pos + eps and start_base < seam_item_end - eps then
-                local right_item = reaper.SplitMediaItem(seam_tile, start_base)
+        local built_count = reaper.CountTrackMediaItems(prev_track)
+        if built_count ~= tile_count + 1 then
+            error(string.format("Source %d: Expected %d loop pieces, got %d",
+                i, tile_count + 1, built_count))
+        end
 
-                if right_item then
-                    local left_len = start_base - seam_item_pos
-                    local right_len = seam_item_end - start_base
-
-                    reaper.SetMediaItemInfo_Value(seam_tile, "D_POSITION", seam_item_pos)
-                    reaper.SetMediaItemInfo_Value(seam_tile, "D_LENGTH", left_len)
-                    SetLoopItemFades(seam_tile, actual_fade, 0)
-                    reaper.SetMediaItemInfo_Value(seam_tile, "C_FADEINSHAPE", cfg.shape_idx)
-                    reaper.SetMediaItemInfo_Value(seam_tile, "C_FADEOUTSHAPE", cfg.shape_idx)
-
-                    reaper.SetMediaItemInfo_Value(right_item, "D_POSITION", start_base)
-                    reaper.SetMediaItemInfo_Value(right_item, "D_LENGTH", right_len)
-                    SetLoopItemFades(right_item, 0, actual_fade)
-                    reaper.SetMediaItemInfo_Value(right_item, "C_FADEINSHAPE", cfg.shape_idx)
-                    reaper.SetMediaItemInfo_Value(right_item, "C_FADEOUTSHAPE", cfg.shape_idx)
-
-                    reaper.SetMediaItemInfo_Value(seam_tile, "D_POSITION", seam_item_pos + loop_len)
-                end
+        local cache = {
+            orig_len = orig_len, seam_offset = seam_offset,
+            playrate = target_meta[i].playrate, built_source_start = src_start,
+            current_source_start = src_start, takes = {}
+        }
+        for idx = 0, reaper.CountTrackMediaItems(prev_track) - 1 do
+            local take = reaper.GetActiveTake(reaper.GetTrackMediaItem(prev_track, idx))
+            if take then
+                cache.takes[#cache.takes + 1] = {
+                    take = take, built_offset = reaper.GetMediaItemTakeInfo_Value(take, "D_STARTOFFS")
+                }
             end
         end
-
-        for _, tile_item in ipairs(placed_tiles) do
-            if reaper.ValidatePtr(tile_item, "MediaItem*") then
-                ClearItemAutoFades(tile_item)
-            end
-        end
+        preview_loop_takes[i] = cache
 
         if not first_result_set then
             first_start = start_base
@@ -567,8 +790,6 @@ function UpdatePreviewLoop(cursor_mode)
             first_result_set = true
         end
     end
-
-    EndLoopmakerNoAutoFades(old_splitautoxfade)
 
     if first_end > 0 then
         reaper.GetSet_LoopTimeRange(true, false, first_start, first_end, false)
@@ -709,138 +930,248 @@ function UpdatePreviewSeq()
 end
 
 function UpdatePreview(cursor_mode)
-    if not is_valid or not is_session_active then return end
-    
+    if not preview_enabled or not is_valid or not is_session_active then return false end
+    ObserveExternalChanges()
     reaper.PreventUIRefresh(1)
-    
-    for _, tr in ipairs(preview_tracks) do
-        while reaper.CountTrackMediaItems(tr) > 0 do
-            reaper.DeleteTrackMediaItem(tr, reaper.GetTrackMediaItem(tr, 0))
+    local ok, why = xpcall(function()
+        for _, tr in ipairs(preview_tracks) do
+            if not ValidSessionTrack(tr) then error("Preview track was removed") end
+            while reaper.CountTrackMediaItems(tr) > 0 do
+                local item = reaper.GetTrackMediaItem(tr, 0)
+                if not item or not reaper.DeleteTrackMediaItem(tr, item) then
+                    error("Cannot clear an earlier preview segment")
+                end
+            end
         end
-    end
-    
-    if cfg.active_tab == 0 then UpdatePreviewLoop(cursor_mode)
-    else UpdatePreviewSeq() end
-    
-    local max_used = 0
-    for i, tr in ipairs(preview_tracks) do
-        if reaper.CountTrackMediaItems(tr) > 0 then max_used = i end
-    end
-    
-    for i, tr in ipairs(preview_tracks) do
-        if i <= max_used then
-            reaper.SetMediaTrackInfo_Value(tr, "B_SHOWINTCP", 1)
-            reaper.SetMediaTrackInfo_Value(tr, "B_SHOWINMIXER", 1)
-            reaper.SetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH", (i == max_used) and -1 or 0)
+
+        if cfg.active_tab == 0 then UpdatePreviewLoop(cursor_mode)
         else
-            reaper.SetMediaTrackInfo_Value(tr, "B_SHOWINTCP", 0)
-            reaper.SetMediaTrackInfo_Value(tr, "B_SHOWINMIXER", 0)
-            reaper.SetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH", 0)
-        end
-    end
-    
-    if preview_folder_track then
-        reaper.SetMediaTrackInfo_Value(preview_folder_track, "I_FOLDERDEPTH", max_used > 0 and 1 or 0)
-    end
-    
-    reaper.PreventUIRefresh(-1)
-    reaper.UpdateArrange()
-end
-
--- ==========================================
--- Apply & Revert
--- ==========================================
-function ApplyAndClose()
-    if not is_valid or not is_session_active then return end
-    reaper.Undo_BeginBlock()
-    reaper.PreventUIRefresh(1)
-    
-    if cfg.active_tab == 0 and cfg.glue_res then
-        local old_splitautoxfade = BeginLoopmakerNoAutoFades()
-
-        reaper.Main_OnCommand(40289, 0)
-        local item_cnt = reaper.CountTrackMediaItems(preview_tracks[1])
-        for k = 0, item_cnt - 1 do
-            reaper.SetMediaItemSelected(reaper.GetTrackMediaItem(preview_tracks[1], k), true)
-        end
-        reaper.Main_OnCommand(41588, 0)
-
-        local glued = reaper.GetSelectedMediaItem(0, 0)
-        if glued then
-            reaper.SetMediaItemInfo_Value(glued, "B_LOOPSRC", 1)
-            SetLoopItemFades(glued, 0, 0)
+            preview_loop_takes = {}
+            UpdatePreviewSeq()
         end
 
-        EndLoopmakerNoAutoFades(old_splitautoxfade)
-    end
+        local max_used = 0
+        for i, tr in ipairs(preview_tracks) do
+            if reaper.CountTrackMediaItems(tr) > 0 then max_used = i end
+        end
+        if max_used == 0 then error("No preview items were generated") end
 
-    if cfg.src_mode == 0 then
-        for _, orig_item in ipairs(target_items) do
-            local orig_track = reaper.GetMediaItem_Track(orig_item)
-            reaper.DeleteTrackMediaItem(orig_track, orig_item)
-        end
-    elseif cfg.src_mode == 1 then
-        for _, orig_item in ipairs(target_items) do
-            reaper.SetMediaItemInfo_Value(orig_item, "B_MUTE", 1)
-        end
-    end
-    
-    local max_used = 0
-    for i, tr in ipairs(preview_tracks) do
-        if reaper.ValidatePtr(tr, "MediaTrack*") and reaper.CountTrackMediaItems(tr) > 0 then max_used = i end
-    end
-    
-    for i, tr in ipairs(preview_tracks) do
-        if reaper.ValidatePtr(tr, "MediaTrack*") then 
+        for i, tr in ipairs(preview_tracks) do
             if i <= max_used then
                 reaper.SetMediaTrackInfo_Value(tr, "B_SHOWINTCP", 1)
                 reaper.SetMediaTrackInfo_Value(tr, "B_SHOWINMIXER", 1)
                 reaper.SetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH", (i == max_used) and -1 or 0)
             else
-                reaper.DeleteTrack(tr)
+                reaper.SetMediaTrackInfo_Value(tr, "B_SHOWINTCP", 0)
+                reaper.SetMediaTrackInfo_Value(tr, "B_SHOWINMIXER", 0)
+                reaper.SetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH", 0)
             end
         end
-    end
-    
-    if preview_folder_track and reaper.ValidatePtr(preview_folder_track, "MediaTrack*") then
-        reaper.SetMediaTrackInfo_Value(preview_folder_track, "I_FOLDERDEPTH", max_used > 0 and 1 or 0)
-        reaper.SetMediaTrackInfo_Value(preview_folder_track, "I_SOLO", 0)
-    end
-    
-    for tr, solo in pairs(original_solos) do
-        if reaper.ValidatePtr(tr, "MediaTrack*") then reaper.SetMediaTrackInfo_Value(tr, "I_SOLO", solo) end
-    end
-    
+        if preview_folder_track then
+            reaper.SetMediaTrackInfo_Value(preview_folder_track, "I_FOLDERDEPTH", max_used > 0 and 1 or 0)
+        end
+    end, debug.traceback)
+
+    -- Always balance UI refresh even when cloning or building an item fails.
     reaper.PreventUIRefresh(-1)
     reaper.UpdateArrange()
-    reaper.Undo_EndBlock(cfg.active_tab == 0 and "Create Loopmaker" or "Create Sequencer Arrangement", -1)
+    if not ok then
+        preview_loop_takes = {}
+        is_valid = false
+        err_msg = "Preview build failed (see REAPER console)."
+        reaper.ShowConsoleMsg("JKK_Loopmaker preview: " .. tostring(why) .. "\n")
+        return false
+    end
+    CaptureExpectedTimeline()
+    last_preview_rebuild = reaper.time_precise()
+    return true
+end
+
+-- ==========================================
+-- Apply & Revert
+-- ==========================================
+-- Each selected source has its own preview track. Finalizing only the first
+-- preview track silently left other loops split into multiple items.
+-- Do not use the time-selection-based Glue action (41588): users may change
+-- the time selection while Preview is running, so it is not a safe input.
+-- 40362 is "Item: Glue items, ignoring time selection".
+local GLUE_IGNORE_TIME_SELECTION = 40362
+local LOOP_GLUE_EPS = 0.002 -- 2 ms tolerance for render/sample-frame rounding.
+
+local function GlueAndVerifyLoopTracks()
+    local expected_start = original_env.cursor
+    local expected_len = math.max(0.01, cfg.loop_len)
+    for i = 1, #target_items do
+        local tr = preview_tracks[i]
+        if not ValidSessionTrack(tr) then
+            return false, string.format("Preview track %d is missing", i)
+        end
+        local n = reaper.CountTrackMediaItems(tr)
+        if n < 2 then
+            return false, string.format("Preview track %d has %d pieces; the loop preview is incomplete", i, n)
+        end
+        -- The Glue action works on the selection, not on a passed track.  Always
+        -- select ONLY the pieces belonging to this source/preview track.
+        reaper.Main_OnCommand(40289, 0) -- Unselect all media items.
+        for j = 0, n - 1 do
+            local item = reaper.GetTrackMediaItem(tr, j)
+            if item then reaper.SetMediaItemSelected(item, true) end
+        end
+        reaper.Main_OnCommand(GLUE_IGNORE_TIME_SELECTION, 0)
+
+        local remaining = reaper.CountTrackMediaItems(tr)
+        if remaining ~= 1 then
+            return false, string.format(
+                "Source %d: Glue returned %d items (expected 1)", i, remaining)
+        end
+        -- REAPER may change selection during Glue. Always inspect the actual
+        -- result on the relevant track, never GetSelectedMediaItem(0, 0).
+        local glued = reaper.GetTrackMediaItem(tr, 0)
+        local start_pos = reaper.GetMediaItemInfo_Value(glued, "D_POSITION")
+        local length = reaper.GetMediaItemInfo_Value(glued, "D_LENGTH")
+        if math.abs(start_pos - expected_start) > LOOP_GLUE_EPS
+            or math.abs(length - expected_len) > LOOP_GLUE_EPS then
+            return false, string.format(
+                "Source %d: Glue bounds mismatch (start %.4f, length %.4f; expected %.4f, %.4f)",
+                i, start_pos, length, expected_start, expected_len)
+        end
+        if not reaper.GetActiveTake(glued) then
+            return false, string.format("Source %d: Glue returned an item without an active take", i)
+        end
+        reaper.SetMediaItemInfo_Value(glued, "B_LOOPSRC", 1)
+        SetLoopItemFades(glued, 0, 0)
+    end
+    return true
+end
+
+function ApplyAndClose()
+    if not preview_enabled or not is_valid or not is_session_active then return false end
+    ObserveExternalChanges()
+    -- Never discard source items before we know that every source has a valid
+    -- glued result. Failure leaves the window open and the originals intact.
+    if cfg.active_tab == 0 and cfg.glue_res then
+        reaper.Undo_BeginBlock()
+        reaper.PreventUIRefresh(1)
+        local old_splitautoxfade = BeginLoopmakerNoAutoFades()
+        local ran, finished, glue_error = xpcall(GlueAndVerifyLoopTracks, debug.traceback)
+        EndLoopmakerNoAutoFades(old_splitautoxfade)
+        reaper.PreventUIRefresh(-1)
+        if not ran or not finished then
+            apply_error = "Unable to glue loop. Originals were kept (see REAPER console)."
+            reaper.ShowConsoleMsg("JKK_Loopmaker glue: " .. tostring(ran and glue_error or finished) .. "\n")
+            -- The built-in action may have changed one of the temporary items;
+            -- close the Undo block first, then regenerate from the originals.
+            reaper.Undo_EndBlock(Undo.Label("loopmaker.glue_incomplete"), -1)
+            UpdatePreview("end")
+            return false
+        end
+    else
+        reaper.Undo_BeginBlock()
+    end
+
+    reaper.PreventUIRefresh(1)
+    local ok, err = xpcall(function()
+        if cfg.src_mode == 0 then
+            for _, orig_item in ipairs(target_items) do
+                if reaper.ValidatePtr(orig_item, "MediaItem*") then
+                    local orig_track = reaper.GetMediaItem_Track(orig_item)
+                    reaper.DeleteTrackMediaItem(orig_track, orig_item)
+                end
+            end
+        elseif cfg.src_mode == 1 then
+            for _, orig_item in ipairs(target_items) do
+                if reaper.ValidatePtr(orig_item, "MediaItem*") then
+                    reaper.SetMediaItemInfo_Value(orig_item, "B_MUTE", 1)
+                end
+            end
+        end
+
+        local max_used = 0
+        for i, tr in ipairs(preview_tracks) do
+            if ValidSessionTrack(tr) and reaper.CountTrackMediaItems(tr) > 0 then max_used = i end
+        end
+        for i = #preview_tracks, 1, -1 do
+            local tr = preview_tracks[i]
+            if ValidSessionTrack(tr) then
+                if i <= max_used then
+                    reaper.SetMediaTrackInfo_Value(tr, "B_SHOWINTCP", 1)
+                    reaper.SetMediaTrackInfo_Value(tr, "B_SHOWINMIXER", 1)
+                    reaper.SetMediaTrackInfo_Value(tr, "I_FOLDERDEPTH", (i == max_used) and -1 or 0)
+                else
+                    reaper.DeleteTrack(tr)
+                end
+            end
+        end
+        RestoreOriginalSolos()
+        if ValidSessionTrack(preview_folder_track) then
+            reaper.SetMediaTrackInfo_Value(preview_folder_track, "I_FOLDERDEPTH", max_used > 0 and 1 or 0)
+            reaper.SetMediaTrackInfo_Value(preview_folder_track, "I_SOLO", 0)
+        end
+    end, debug.traceback)
+    reaper.PreventUIRefresh(-1)
+    reaper.UpdateArrange()
+    reaper.Undo_EndBlock(cfg.active_tab == 0 and Undo.Label("loopmaker.create_loop") or Undo.Label("loopmaker.create_sequence"), -1)
+    if not ok then
+        -- This is an unexpected REAPER-side failure, not an ordinary Glue
+        -- validation failure. Keep a clear trace rather than claiming success.
+        reaper.ShowConsoleMsg("JKK_Loopmaker apply: " .. tostring(err) .. "\n")
+        apply_error = "Could not finish loop (see REAPER console)."
+        return false
+    end
     SaveSettings()
     is_session_active = false
+    preview_loop_takes = {}
+    pending_preview_mode = nil
+    apply_error = nil
+    return true
 end
 
 function CancelAndRevert()
-    reaper.PreventUIRefresh(1)
-    reaper.Main_OnCommand(1016, 0)
-    for _, tr in ipairs(preview_tracks) do
-        if reaper.ValidatePtr(tr, "MediaTrack*") then reaper.DeleteTrack(tr) end
+    if not is_session_active then return end
+    local ok, err = WithSessionProject(function()
+        ObserveExternalChanges()
+        reaper.PreventUIRefresh(1)
+        local cleaned, cleanup_err = xpcall(function()
+            -- Do not stop transport: playback may have been started by the user.
+            for _, tr in ipairs(preview_tracks) do
+                if ValidSessionTrack(tr) then reaper.DeleteTrack(tr) end
+            end
+            if ValidSessionTrack(preview_folder_track) then
+                reaper.DeleteTrack(preview_folder_track)
+            end
+            preview_tracks, preview_folder_track = {}, nil
+            RestoreOriginalSolos()
+            if original_env.ts_start and not env_changed_by_user.range then
+                reaper.GetSet_LoopTimeRange(true, false, original_env.ts_start, original_env.ts_end, false)
+            end
+            if original_env.cursor and not env_changed_by_user.cursor then
+                reaper.SetEditCurPos(original_env.cursor, false, false)
+            end
+            if not env_changed_by_user.repeat_state
+                and (reaper.GetToggleCommandState(1068) == 1) ~= original_env.loop then
+                reaper.Main_OnCommand(1068, 0)
+            end
+        end, debug.traceback)
+        reaper.PreventUIRefresh(-1)
+        reaper.UpdateArrange()
+        if not cleaned then error(cleanup_err) end
+    end)
+    if not ok then
+        reaper.ShowConsoleMsg("JKK_Loopmaker cleanup: " .. tostring(err) .. "\n")
     end
-    if preview_folder_track and reaper.ValidatePtr(preview_folder_track, "MediaTrack*") then
-        reaper.DeleteTrack(preview_folder_track)
-    end
-    preview_tracks = {}; preview_folder_track = nil
-    
-    for tr, solo in pairs(original_solos) do
-        if reaper.ValidatePtr(tr, "MediaTrack*") then reaper.SetMediaTrackInfo_Value(tr, "I_SOLO", solo) end
-    end
-    if original_env.ts_start then
-        reaper.GetSet_LoopTimeRange(true, false, original_env.ts_start, original_env.ts_end, false)
-        reaper.SetEditCurPos(original_env.cursor, false, false)
-        if not original_env.loop and reaper.GetToggleCommandState(1068) == 1 then reaper.Main_OnCommand(1068, 0) end
-    end
-    reaper.PreventUIRefresh(-1)
-    reaper.UpdateArrange()
     is_session_active = false
+    preview_tracks, preview_folder_track = {}, nil
+    original_solos, expected_env = {}, nil
+    preview_loop_takes = {}
+    pending_preview_mode = nil
+    session_project = nil
 end
+
+-- Ensure temporary preview tracks and solo overrides are cleaned even when
+-- execution aborts (e.g. a ReaScript runtime error or user stops the script).
+reaper.atexit(function()
+    if is_session_active then pcall(CancelAndRevert) end
+end)
 
 -- ==========================================
 -- 6. 메인 UI 루프
@@ -864,7 +1195,12 @@ function Loop()
         local enter_pressed = ImGui.IsKeyPressed(ctx, ImGui.Key_Enter) or ImGui.IsKeyPressed(ctx, ImGui.Key_KeypadEnter)
         if ImGui.IsKeyPressed(ctx, ImGui.Key_Escape) then open = false end
         if ImGui.IsKeyPressed(ctx, ImGui.Key_Space) then reaper.Main_OnCommand(40044, 0) end
-        if is_valid and enter_pressed then ApplyAndClose(); open = false end
+        -- Ctrl+Click slider numeric input uses Enter to commit, not to Make Loop.
+        if preview_enabled and is_session_active and is_valid and enter_pressed
+            and not ImGui.IsAnyItemActive(ctx) then
+            FlushPreviewUpdate(true)
+            if ApplyAndClose() then open = false end
+        end
 
         local avail_w = ImGui.GetContentRegionAvail(ctx)
         
@@ -882,29 +1218,64 @@ function Loop()
                 ImGui.Spacing(ctx)
                 local label_w = 90
                 
-                -- Length 슬라이더: 오직 드래그가 끝난(DeactivatedAfterEdit) 시점이나 우클릭 리셋 시에만 갱신
+                -- Length: update while dragging; save ExtState only on mouse release.
                 ImGui.AlignTextToFramePadding(ctx)
                 ImGui.Text(ctx, "Length")
                 ImGui.SameLine(ctx, label_w)
                 ImGui.SetNextItemWidth(ctx, avail_w - label_w)
                 local changed_len, new_len = ImGui.SliderDouble(ctx, "##loop_len", cfg.loop_len, 1.0, 30.0, "%.1f s")
-                if ImGui.IsItemHovered(ctx) and ImGui.IsMouseClicked(ctx, 1) then new_len = 5.0; changed_len = true end
-                if changed_len then cfg.loop_len = new_len; SaveSettings() end
-                if ImGui.IsItemDeactivatedAfterEdit(ctx) or (changed_len and ImGui.IsMouseClicked(ctx, 1)) then 
-                    UpdatePreview("end") 
+                local reset_len = ImGui.IsItemHovered(ctx) and ImGui.IsMouseClicked(ctx, 1)
+                if reset_len then new_len = 5.0; changed_len = true end
+                if changed_len then cfg.loop_len = new_len; QueuePreviewUpdate("end") end
+                if ImGui.IsItemDeactivatedAfterEdit(ctx) or reset_len then
+                    SaveSettings(); FlushPreviewUpdate(true)
                 end
-                
-                -- Crossfade 슬라이더: 오직 드래그가 끝난 시점이나 우클릭 리셋 시에만 갱신
+
+                -- Source Start uses item-local seconds (Ctrl+Click to type).
+                ImGui.AlignTextToFramePadding(ctx)
+                ImGui.Text(ctx, "Source Start")
+                ImGui.SameLine(ctx, label_w)
+                ImGui.SetNextItemWidth(ctx, avail_w - label_w)
+                local start_min, start_max, source_start = DisplaySourceStartBounds()
+                if start_min then
+                    local locked = start_max - start_min < 0.000001
+                    if locked then ImGui.BeginDisabled(ctx, true) end
+                    local changed_start, new_start = ImGui.SliderDouble(
+                        ctx, "##loop_src_start", source_start, start_min,
+                        locked and (start_min + 0.001) or start_max, "%.2f s")
+                    if locked then ImGui.EndDisabled(ctx) end
+                    local reset_start = ImGui.IsItemHovered(ctx) and ImGui.IsMouseClicked(ctx, 1)
+                    if reset_start then changed_start = true; cfg.loop_src_start = nil end
+                    if changed_start then
+                        if not reset_start then
+                            cfg.loop_src_start = math.max(start_min, math.min(start_max, new_start))
+                        end
+                        UpdatePreviewSourceStart() -- in-place, no rebuild; every drag frame
+                    end
+                    if ImGui.IsItemDeactivatedAfterEdit(ctx) or reset_start then SaveSettings() end
+                    if ImGui.IsItemHovered(ctx) then
+                        ImGui.SetTooltip(ctx, string.format(
+                            "Offset within the original item (%.2f - %.2f s). Ctrl+Click: input. Right-click: Auto. For multiple items, each source is safely clamped to its own usable range.",
+                            start_min, start_max))
+                    end
+                else
+                    ImGui.BeginDisabled(ctx, true)
+                    ImGui.SliderDouble(ctx, "##loop_src_start", 0, 0, 1, "%.2f s")
+                    ImGui.EndDisabled(ctx)
+                end
+
+                -- Crossfade: apply during the drag.
                 ImGui.AlignTextToFramePadding(ctx)
                 ImGui.Text(ctx, "Crossfade")
                 ImGui.SameLine(ctx, label_w)
                 local btn_w, spacing = 38, 10
                 ImGui.SetNextItemWidth(ctx, avail_w - label_w - btn_w - spacing)
                 local changed_fade, new_fade = ImGui.SliderDouble(ctx, "##fade_len", cfg.fade_len, 0.1, 5.0, "%.2f s")
-                if ImGui.IsItemHovered(ctx) and ImGui.IsMouseClicked(ctx, 1) then new_fade = 1.0; changed_fade = true end
-                if changed_fade then cfg.fade_len = new_fade; SaveSettings() end
-                if ImGui.IsItemDeactivatedAfterEdit(ctx) or (changed_fade and ImGui.IsMouseClicked(ctx, 1)) then 
-                    UpdatePreview("xfade") 
+                local reset_fade = ImGui.IsItemHovered(ctx) and ImGui.IsMouseClicked(ctx, 1)
+                if reset_fade then new_fade = 1.0; changed_fade = true end
+                if changed_fade then cfg.fade_len = new_fade; QueuePreviewUpdate("xfade") end
+                if ImGui.IsItemDeactivatedAfterEdit(ctx) or reset_fade then
+                    SaveSettings(); FlushPreviewUpdate(true)
                 end
                 
                 ImGui.SameLine(ctx)
@@ -935,10 +1306,11 @@ function Loop()
                 ImGui.SameLine(ctx, label_w)
                 ImGui.SetNextItemWidth(ctx, content_w)
                 local c_len, n_len = ImGui.SliderDouble(ctx, "##seq_len", cfg.seq_len, 1.0, 10.0, "%.1f s")
-                if ImGui.IsItemHovered(ctx) and ImGui.IsMouseClicked(ctx, 1) then n_len = 5.0; c_len = true end
-                if c_len then cfg.seq_len = n_len; SaveSettings() end
-                if ImGui.IsItemDeactivatedAfterEdit(ctx) or (c_len and ImGui.IsMouseClicked(ctx, 1)) then 
-                    UpdatePreview() 
+                local reset_seq_len = ImGui.IsItemHovered(ctx) and ImGui.IsMouseClicked(ctx, 1)
+                if reset_seq_len then n_len = 5.0; c_len = true end
+                if c_len then cfg.seq_len = n_len; QueuePreviewUpdate() end
+                if ImGui.IsItemDeactivatedAfterEdit(ctx) or reset_seq_len then
+                    SaveSettings(); FlushPreviewUpdate(true)
                 end
                 
                 -- 2. Interval
@@ -958,14 +1330,14 @@ function Loop()
                     local chg, val = ImGui.SliderInt(ctx, "##seq_int", cfg.seq_int_rpm, 60, 1200, seq_int_formats[3])
                     if chg then cfg.seq_int_rpm = val; c_val = true end
                 end
-                if ImGui.IsItemHovered(ctx) and ImGui.IsMouseClicked(ctx, 1) then
+                local cycle_interval = ImGui.IsItemHovered(ctx) and ImGui.IsMouseClicked(ctx, 1)
+                if cycle_interval then
                     cfg.seq_int_mode = (cfg.seq_int_mode + 1) % 3
                     c_val = true
                 end
-
-                if c_val then SaveSettings() end
-                if ImGui.IsItemDeactivatedAfterEdit(ctx) or (c_val and ImGui.IsMouseClicked(ctx, 1)) then 
-                    UpdatePreview() 
+                if c_val then QueuePreviewUpdate() end
+                if ImGui.IsItemDeactivatedAfterEdit(ctx) or cycle_interval then
+                    SaveSettings(); FlushPreviewUpdate(true)
                 end
                 
                 -- 3. Polyphony
@@ -974,8 +1346,12 @@ function Loop()
                 ImGui.SameLine(ctx, label_w)
                 ImGui.SetNextItemWidth(ctx, content_w)
                 local c_poly, n_poly = ImGui.SliderInt(ctx, "##seq_poly", cfg.seq_poly, 1, 8, "%d Voices")
-                if ImGui.IsItemHovered(ctx) and ImGui.IsMouseClicked(ctx, 1) then n_poly = 1; c_poly = true end
-                if c_poly then cfg.seq_poly = n_poly; SaveSettings(); UpdatePreview() end
+                local reset_poly = ImGui.IsItemHovered(ctx) and ImGui.IsMouseClicked(ctx, 1)
+                if reset_poly then n_poly = 1; c_poly = true end
+                if c_poly then cfg.seq_poly = n_poly; QueuePreviewUpdate() end
+                if ImGui.IsItemDeactivatedAfterEdit(ctx) or reset_poly then
+                    SaveSettings(); FlushPreviewUpdate(true)
+                end
                 
                 -- 4. Release
                 ImGui.AlignTextToFramePadding(ctx)
@@ -983,9 +1359,12 @@ function Loop()
                 ImGui.SameLine(ctx, label_w)
                 ImGui.SetNextItemWidth(ctx, content_w)
                 local c_rel, n_rel = ImGui.SliderDouble(ctx, "##seq_rel", cfg.seq_rel, 0.0, 3.0, "%.2f s")
-                if ImGui.IsItemHovered(ctx) and ImGui.IsMouseClicked(ctx, 1) then n_rel = 0.0; c_rel = true end
-                if c_rel then cfg.seq_rel = n_rel; SaveSettings() end
-                if ImGui.IsItemDeactivatedAfterEdit(ctx) or (c_rel and ImGui.IsMouseClicked(ctx, 1)) then UpdatePreview() end
+                local reset_rel = ImGui.IsItemHovered(ctx) and ImGui.IsMouseClicked(ctx, 1)
+                if reset_rel then n_rel = 0.0; c_rel = true end
+                if c_rel then cfg.seq_rel = n_rel; QueuePreviewUpdate() end
+                if ImGui.IsItemDeactivatedAfterEdit(ctx) or reset_rel then
+                    SaveSettings(); FlushPreviewUpdate(true)
+                end
                 
                 ImGui.Spacing(ctx); ImGui.Separator(ctx); ImGui.Spacing(ctx)
                 
@@ -995,9 +1374,12 @@ function Loop()
                 ImGui.SameLine(ctx, label_w)
                 ImGui.SetNextItemWidth(ctx, content_w)
                 local c_ptc, n_ptc = ImGui.SliderDouble(ctx, "##seq_pitch", cfg.seq_pitch, 0.0, 3.0, "%.2f st")
-                if ImGui.IsItemHovered(ctx) and ImGui.IsMouseClicked(ctx, 1) then n_ptc = 0.0; c_ptc = true end
-                if c_ptc then cfg.seq_pitch = n_ptc; SaveSettings() end
-                if ImGui.IsItemDeactivatedAfterEdit(ctx) or (c_ptc and ImGui.IsMouseClicked(ctx, 1)) then UpdatePreview() end
+                local reset_ptc = ImGui.IsItemHovered(ctx) and ImGui.IsMouseClicked(ctx, 1)
+                if reset_ptc then n_ptc = 0.0; c_ptc = true end
+                if c_ptc then cfg.seq_pitch = n_ptc; QueuePreviewUpdate() end
+                if ImGui.IsItemDeactivatedAfterEdit(ctx) or reset_ptc then
+                    SaveSettings(); FlushPreviewUpdate(true)
+                end
 
                 -- 6. Rand mode, Checkbox, Shuffle
                 ImGui.AlignTextToFramePadding(ctx)
@@ -1053,19 +1435,21 @@ function Loop()
         ImGui.Separator(ctx)
         ImGui.Spacing(ctx)
         
-        -- Preview Vol 슬라이더: 드래그 중 실시간 볼륨 적용 및 마우스 뗄 때 저장
+        -- Preview Vol: set track gain immediately, persist only when finished.
         ImGui.AlignTextToFramePadding(ctx)
         ImGui.Text(ctx, "Preview Vol")
         ImGui.SameLine(ctx, label_w)
         ImGui.SetNextItemWidth(ctx, avail_w - label_w)
         local changed_vol, new_vol = ImGui.SliderDouble(ctx, "##preview_vol", cfg.preview_vol, -60.0, 12.0, "%.1f dB")
-        if ImGui.IsItemHovered(ctx) and ImGui.IsMouseClicked(ctx, 1) then new_vol = 0.0; changed_vol = true end
-        if changed_vol then 
-            cfg.preview_vol = new_vol; SaveSettings()
+        local reset_vol = ImGui.IsItemHovered(ctx) and ImGui.IsMouseClicked(ctx, 1)
+        if reset_vol then new_vol = 0.0; changed_vol = true end
+        if changed_vol then
+            cfg.preview_vol = new_vol
             if preview_folder_track and reaper.ValidatePtr(preview_folder_track, "MediaTrack*") then
                 reaper.SetMediaTrackInfo_Value(preview_folder_track, "D_VOL", 10 ^ (new_vol / 20.0))
             end
         end
+        if ImGui.IsItemDeactivatedAfterEdit(ctx) or reset_vol then SaveSettings() end
         
         -- Handling 콤보박스
         local modes = {"Replace in place", "Create new track & Mute original", "Create new track & Keep original"}
@@ -1088,24 +1472,49 @@ function Loop()
             ImGui.Dummy(ctx, 0, fh)
         end
         
-        if not is_valid then
-            ImGui.TextColored(ctx, GetColor("accent"), "[!] " .. err_msg)
-            ImGui.BeginDisabled(ctx, true)
+        local can_apply = preview_enabled and is_session_active and is_valid
+        if apply_error then
+            ImGui.TextColored(ctx, GetColor("accent"), "[!] " .. apply_error)
+        elseif not can_apply then
+            local status = (not preview_enabled and "Enable Preview to create a loop or sequence.")
+                or ((not is_valid and err_msg ~= "") and err_msg or "Preparing preview...")
+            ImGui.TextColored(ctx, GetColor("accent"), "[!] " .. status)
         else
             ImGui.Dummy(ctx, 0, ImGui.GetTextLineHeight(ctx))
         end
-        
-        ImGui.PushFont(ctx, font_btn)
-        PushButton(ctx, "confirm")
 
+        -- Bottom action row: persistent toggle, dark = OFF / bright = ON.
+        -- Preview must remain clickable even while Make Loop/Arrange Items
+        -- is disabled; disabling the entire row would make Preview unusable.
+        ImGui.PushFont(ctx, font_btn)
+        local preview_button_width = 110
+        local action_gap = 10
+        PushButton(ctx, preview_enabled and "highlight" or "primary")
+        if ImGui.Button(ctx, "Preview##JKK_PreviewToggle", preview_button_width, btn_height) then
+            preview_enabled = not preview_enabled
+            apply_error = nil
+            if not preview_enabled and is_session_active then CancelAndRevert() end
+        end
+        PopButton(ctx)
+
+        ImGui.SameLine(ctx, 0, action_gap)
+        -- Re-evaluate after the toggle. A newly enabled preview still has to
+        -- finish setup before applying; a disabled preview can never apply.
+        can_apply = preview_enabled and is_session_active and is_valid
+        if not can_apply then ImGui.BeginDisabled(ctx, true) end
+        PushButton(ctx, "confirm")
         local btn_text = (cfg.active_tab == 0) and " Make Loop " or " Arrange Items "
         if ImGui.Button(ctx, btn_text, -1, btn_height) then
-            ApplyAndClose(); open = false
+            FlushPreviewUpdate(true)
+            if ApplyAndClose() then open = false end
         end
+        PopButton(ctx)
+        if not can_apply then ImGui.EndDisabled(ctx) end
+        ImGui.PopFont(ctx)
 
-        PopButton(ctx); ImGui.PopFont(ctx)
-        if not is_valid then ImGui.EndDisabled(ctx) end
-
+        -- Drags rebuild the preview continuously; the queued final value is
+        -- flushed on release and before Apply.
+        FlushPreviewUpdate(false)
     end
     ImGui.End(ctx)
 
@@ -1118,9 +1527,7 @@ function Loop()
         reaper.defer(Loop)
     else
         SaveSettings()
-        if is_session_active and not (ImGui.IsKeyPressed(ctx, ImGui.Key_Enter) or ImGui.IsKeyPressed(ctx, ImGui.Key_KeypadEnter)) then 
-            CancelAndRevert() 
-        end
+        if is_session_active then CancelAndRevert() end
     end
 end
 
