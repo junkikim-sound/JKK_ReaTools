@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 1.0.2
+-- @version 1.0.21
 -- @provides
 --     [main] Actions/JKK_TrackManager_Open.lua
 --     [main] Actions/JKK_TrackManager_TrackActivation.lua
@@ -12,7 +12,6 @@
 --     [main] JKK_Theme.lua
 --     [main] JKK_TrackManager.lua
 --     [main] JKK_XYPad.lua
---     [main] JKK_Search.lua
 --     [nomain] Modules/JKK_ColorPalette_Data.lua
 --     [nomain] Modules/JKK_ColorPalette_UI.lua
 --     [nomain] Modules/JKK_ReaTools_NEW_ItemTool.lua
