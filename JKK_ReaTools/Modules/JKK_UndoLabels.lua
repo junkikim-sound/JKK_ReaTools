@@ -84,6 +84,12 @@ local LABELS = {
     ["track_manager.rename_track"] = "JKK_Rename Track",  -- Track Manager에서 트랙 이름 변경
     ["track_manager.toggle_active"] = "JKK_Toggle Track Active",  -- Track Manager에서 단일 트랙 활성 상태 토글
     ["track_manager.toggle_selected"] = "JKK_Toggle Selected Tracks Active",  -- 선택한 여러 트랙의 활성 상태 토글
+
+    -- Search
+    ["search.insert_fx"] = "JKK_Search Insert FX: %s",  -- 검색 결과 FX를 선택된 트랙/아이템에 삽입
+    ["search.insert_fx_chain"] = "JKK_Search Insert FX Chain: %s",  -- 검색 결과 FX Chain을 선택된 트랙/아이템에 삽입
+    ["search.insert_instrument_track"] = "JKK_Search Insert Instrument Track: %s",  -- 가상악기를 새 트랙에 삽입
+    ["search.insert_fx_multi"] = "JKK_Search Insert %s FX",  -- 여러 FX를 한 번에 선택된/드롭한 대상에 삽입
 }
 local M = {}
 
