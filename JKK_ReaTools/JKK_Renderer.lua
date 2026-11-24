@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Renderer
 -- @author Junki Kim
--- @version 1.1.11
+-- @version 1.1.12
 -- @noindex
 --========================================================
 
@@ -270,8 +270,8 @@ local open = true
 -- =======================================================
 -- File name shortcut helpers
 -- =======================================================
--- Grouped renders a FOLDER MIX, not an individual item's source format.
--- Auto rates/channels are therefore undefined. Keep explicit settings instead.
+-- Grouped retains the v1.1.8 selected-media-item rendering path.
+-- Auto rates/channels stay disabled as requested for Grouped mode.
 local function NormalizeGroupedFormat(tab)
   if tab and tab.render_source == 4 then
     if tab.channels == 0 then tab.channels = 2 end     -- Stereo
@@ -720,16 +720,11 @@ local function ApplyRenderSettingsToProject(tab, p_item, explicit_pattern)
   elseif tab.render_source == 1 then
     if tab.via_master then settings_val = settings_val | 128 else settings_val = settings_val | 3 end
   elseif tab.render_source == 2 or tab.render_source == 3 then settings_val = settings_val | 8
-  elseif tab.render_source == 4 then
-    -- One folder track is selected per folder-item anchor. REAPER renders all
-    -- audible descendants through the parent-folder bus, independently of
-    -- which child media items are selected.
-    if tab.via_master then settings_val = settings_val | 128 else settings_val = settings_val | 2 end
-  elseif tab.render_source == 5 then
+  elseif tab.render_source == 4 or tab.render_source == 5 then
     if tab.via_master then settings_val = settings_val | 64 else settings_val = settings_val | 32 end
   end
 
-  if tab.embed_take_marker and tab.render_source == 5 then settings_val = settings_val | 1024 end
+  if tab.embed_take_marker and (tab.render_source == 4 or tab.render_source == 5) then settings_val = settings_val | 1024 end
   
   if tab.embed_meta then settings_val = settings_val | 512 end
   if tab.preserve_meta then settings_val = settings_val | 32768 end
@@ -740,15 +735,11 @@ local function ApplyRenderSettingsToProject(tab, p_item, explicit_pattern)
   if tab.render_source == 0 or tab.render_source == 1 then
     if tab.render_bounds == 1 then bounds_val = 2 else bounds_val = 1 end
   elseif tab.render_source == 2 or tab.render_source == 3 then bounds_val = 3
-  elseif tab.render_source == 4 then bounds_val = 0 -- Custom: selected folder item's exact bounds
-  elseif tab.render_source == 5 then bounds_val = 4 end
+  elseif tab.render_source == 4 or tab.render_source == 5 then bounds_val = 4 end
 
   r.GetSetProjectInfo(proj, "RENDER_BOUNDSFLAG", bounds_val, true)
 
-  if tab.render_source == 4 and p_item then
-    r.GetSetProjectInfo(proj, "RENDER_STARTPOS", p_item.start_pos, true)
-    r.GetSetProjectInfo(proj, "RENDER_ENDPOS", p_item.end_pos, true)
-  elseif tab.render_source == 0 or tab.render_source == 1 then
+  if tab.render_source == 0 or tab.render_source == 1 then
     r.GetSetProjectInfo(proj, "RENDER_STARTPOS", tab.bounds_start or 0.0, true)
     r.GetSetProjectInfo(proj, "RENDER_ENDPOS", tab.bounds_end or 0.0, true)
   end
@@ -772,8 +763,8 @@ local function ApplyRenderSettingsToProject(tab, p_item, explicit_pattern)
 
   -- Pad Start (Lead Silence) & Tail
   local pad_start_flag = 0
-  if tab.enable_pad_start and tab.render_source ~= 4 then
-    if tab.render_source == 5 then pad_start_flag = 16
+  if tab.enable_pad_start then
+    if tab.render_source == 4 or tab.render_source == 5 then pad_start_flag = 16
     elseif tab.render_source == 2 or tab.render_source == 3 then pad_start_flag = 8
     elseif tab.render_bounds == 0 then pad_start_flag = 2
     elseif tab.render_bounds == 1 then pad_start_flag = 4 end
@@ -782,8 +773,8 @@ local function ApplyRenderSettingsToProject(tab, p_item, explicit_pattern)
   r.GetSetProjectInfo(proj, "RENDER_STARTTAILMS", (tab.pad_start_len or 0.0) * 1000, true)
   
   local tail_flag = 0
-  if tab.enable_tail and tab.render_source ~= 4 then
-    if tab.render_source == 5 then tail_flag = 16
+  if tab.enable_tail then
+    if tab.render_source == 4 or tab.render_source == 5 then tail_flag = 16
     elseif tab.render_source == 2 or tab.render_source == 3 then tail_flag = 8
     elseif tab.render_bounds == 0 then tail_flag = 2
     elseif tab.render_bounds == 1 then tail_flag = 4 end
@@ -1048,51 +1039,60 @@ local function ParseWildcards(tab, pattern, sel_track, sel_item, sel_region, fil
   return out
 end
 
--- A selected media item ON a folder track is an output anchor (name + bounds).
--- Its selected state does NOT limit the audio. All audible child-track items
--- within the time range are mixed by REAPER's native folder-track stem render.
--- In particular, no child item has to be selected, and folder FX are retained.
-local function GetGroupedFolderItems()
-  local targets = {}
-  for i = 0, r.CountSelectedMediaItems(0) - 1 do
+-- v1.1.8 Grouped selection filter (kept unchanged): selected items on
+-- child tracks are omitted from the target list only when they overlap a
+-- selected parent-folder item. Rendering still uses REAPER's media-item mode.
+local function GetFilteredRenderItems()
+  local count = r.CountSelectedMediaItems(0)
+  if count == 0 then return {} end
+  
+  local sel_items = {}
+  local folder_items = {}
+  
+  for i = 0, count - 1 do
     local item = r.GetSelectedMediaItem(0, i)
     local track = r.GetMediaItem_Track(item)
-    if track and r.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") > 0 then
-      local start_pos = r.GetMediaItemInfo_Value(item, "D_POSITION")
-      local length = r.GetMediaItemInfo_Value(item, "D_LENGTH")
-      if length > 0 then
-        targets[#targets + 1] = {
-          item = item, track = track,
-          start_pos = start_pos, end_pos = start_pos + length, selection_idx = i,
-        }
-      end
+    table.insert(sel_items, {item = item, track = track})
+    
+    if r.GetMediaTrackInfo_Value(track, "I_FOLDERDEPTH") == 1 then
+      local pos = r.GetMediaItemInfo_Value(item, "D_POSITION")
+      local len = r.GetMediaItemInfo_Value(item, "D_LENGTH")
+      table.insert(folder_items, {item = item, track = track, start_pos = pos, end_pos = pos + len})
     end
   end
-  table.sort(targets, function(a, b)
-    if a.start_pos ~= b.start_pos then return a.start_pos < b.start_pos end
-    local a_idx = r.GetMediaTrackInfo_Value(a.track, "IP_TRACKNUMBER") or 0
-    local b_idx = r.GetMediaTrackInfo_Value(b.track, "IP_TRACKNUMBER") or 0
-    if a_idx ~= b_idx then return a_idx < b_idx end
-    return a.selection_idx < b.selection_idx
-  end)
-  return targets
-end
-
--- Folder items are often empty placeholders. Prefer their take name / notes,
--- then fall back to the folder-track name instead of generating "NoItem.wav".
-local function GetFolderAnchorName(target)
-  local take = r.GetActiveTake(target.item)
-  if take then
-    local _, name = r.GetSetMediaItemTakeInfo_String(take, "P_NAME", "", false)
-    if name and name ~= "" then return name end
+  
+  if #folder_items == 0 then return sel_items end
+  
+  local filtered_items = {}
+  for _, s_item in ipairs(sel_items) do
+    local is_child_of_selected_folder = false
+    
+    for _, f_item in ipairs(folder_items) do
+      if s_item.item ~= f_item.item then
+        local parent = r.GetParentTrack(s_item.track)
+        local is_child = false
+        while parent do
+          if parent == f_item.track then
+            is_child = true
+            break
+          end
+          parent = r.GetParentTrack(parent)
+        end
+        
+        if is_child then
+          local pos = r.GetMediaItemInfo_Value(s_item.item, "D_POSITION")
+          local len = r.GetMediaItemInfo_Value(s_item.item, "D_LENGTH")
+          if pos < f_item.end_pos and (pos + len) > f_item.start_pos then
+            is_child_of_selected_folder = true
+            break
+          end
+        end
+      end
+    end
+    
+    if not is_child_of_selected_folder then table.insert(filtered_items, s_item) end
   end
-  local _, note = r.GetSetMediaItemInfo_String(target.item, "P_NOTES", "", false)
-  if note and note ~= "" then
-    local title = note:match("^([^\r\n]+)")
-    if title and title ~= "" then return title end
-  end
-  local _, track_name = r.GetTrackName(target.track)
-  return (track_name and track_name ~= "") and track_name or "Folder"
+  return filtered_items
 end
 
 local function GetDisplaySR(tab, item)
@@ -1116,10 +1116,10 @@ local function GetDisplayCH(tab, track)
   end
 end
 
-local function GeneratePreviewList(tab)
+local function GeneratePreviewList(tab, force)
   if not tab then tab = tabs[active_tab_idx] or tabs[1] end
 
-  if sel_mgr.IsMouseDown() then
+  if not force and sel_mgr.IsMouseDown() then
     return cached_previews, cached_targets
   end
 
@@ -1129,7 +1129,7 @@ local function GeneratePreviewList(tab)
   
   if tab.render_source == 4 or tab.render_source == 5 then
     if tab.render_source == 4 then
-      items_to_process = GetGroupedFolderItems()
+      items_to_process = GetFilteredRenderItems()
     else
       local count = r.CountSelectedMediaItems(0)
       for i = 0, count - 1 do
@@ -1156,24 +1156,8 @@ local function GeneratePreviewList(tab)
     return {}, {} 
   end
   
-  local used_group_names = {}
   for _, p_item in ipairs(items_to_process) do
-    local anchor_name = (tab.render_source == 4) and GetFolderAnchorName(p_item) or nil
-    local pattern = ParseWildcards(tab, tab.file_pattern, p_item.track, p_item.item, p_item.region, num, anchor_name)
-    if tab.render_source == 4 then
-      -- Each anchor must have its own filename, even if the same folder has
-      -- multiple blank/named anchors or the pattern omits $filenumber.
-      if pattern == "" then pattern = anchor_name end
-      local stem = pattern
-      local serial = 1
-      while used_group_names[pattern:lower()] do
-        serial = serial + 1
-        pattern = stem .. string.format("_%02d", serial)
-      end
-      used_group_names[pattern:lower()] = true
-      p_item.render_pattern = pattern
-    end
-    local fname = pattern .. GetRenderFormatExtension(tab)
+    local fname = ParseWildcards(tab, tab.file_pattern, p_item.track, p_item.item, p_item.region, num) .. GetRenderFormatExtension(tab)
     table.insert(previews, {
       name = fname, 
       sr = GetDisplaySR(tab, p_item.item), 
@@ -1187,51 +1171,12 @@ local function GeneratePreviewList(tab)
   return previews, items_to_process
 end
 
--- Grouped = one folder bus stem per selected folder item. This is a series
--- of ordinary REAPER stem renders with custom bounds (folder anchor position
--- to its end). No child media selection, solo state or item content is modified.
--- Render queue entries are enqueued while each folder/interval is active.
-local function RenderGroupedFolderMixes(tab, targets)
-  NormalizeGroupedFormat(tab)
-  local proj = 0
-  local number_props = {
-    "RENDER_SETTINGS", "RENDER_BOUNDSFLAG", "RENDER_STARTPOS", "RENDER_ENDPOS",
-    "RENDER_STARTTAILFLAG", "RENDER_TAILFLAG", "RENDER_STARTTAILMS", "RENDER_TAILMS",
-  }
-  local snapshot = {}
-  for _, key in ipairs(number_props) do
-    snapshot[key] = r.GetSetProjectInfo(proj, key, 0, false)
-  end
-  local _, original_pattern = r.GetSetProjectInfo_String(proj, "RENDER_PATTERN", "", false)
-
-  local function restore()
-    for _, key in ipairs(number_props) do
-      r.GetSetProjectInfo(proj, key, snapshot[key], true)
-    end
-    r.GetSetProjectInfo_String(proj, "RENDER_PATTERN", original_pattern, true)
-  end
-
-  local ok, err = xpcall(function()
-    for _, anchor in ipairs(targets) do
-      if r.ValidatePtr(anchor.track, "MediaTrack*") and r.ValidatePtr(anchor.item, "MediaItem*") then
-        r.Main_OnCommand(40297, 0) -- Unselect all tracks; only this folder bus is rendered
-        r.SetTrackSelected(anchor.track, true)
-        ApplyRenderSettingsToProject(tab, anchor, anchor.render_pattern)
-        if tab.add_to_queue then
-          r.Main_OnCommand(41823, 0)
-        else
-          r.Main_OnCommand(41824, 0)
-        end
-      end
-    end
-  end, debug.traceback)
-  restore()
-  if not ok then
-    r.ShowConsoleMsg("[JKK Renderer / Grouped] " .. tostring(err) .. "\n")
-    if r.MB then r.MB("Grouped render encountered an error. See REAPER console.", "JKK Renderer", 0) end
-  end
-end
-
+-- The selected ITEMS, not the selected tracks, are the audio contributors.
+-- REAPER cannot stem-render an arbitrary subset of media items via the normal
+-- folder stem source. We temporarily mute every unselected/out-of-group item,
+-- preserve selected items' own mute state, and render the root's stem once.
+-- Routing through any selected nested folder bus (and its FX) remains intact.
+-- Both track and item mute/solo are restored after EACH render or queue add.
 local function Main()
   r.ImGui_PushFont(ctx, font, 14)
   r.ImGui_SetNextWindowSize(ctx, 960, 900, r.ImGui_Cond_FirstUseEver())
@@ -1523,7 +1468,6 @@ local function Main()
       r.ImGui_TextColored(ctx, GetColor("accent"), "Post Processing")
       r.ImGui_Spacing(ctx)
 
-      if tab.render_source == 4 then r.ImGui_BeginDisabled(ctx) end
       local chk_ps_changed, new_ps_chk = r.ImGui_Checkbox(ctx, "##ps_chk", tab.enable_pad_start or false)
       if chk_ps_changed then tab.enable_pad_start = new_ps_chk end
       
@@ -1541,7 +1485,6 @@ local function Main()
       if tail_changed then tab.tail_len = new_tail_len; tab.enable_tail = true end
       if r.ImGui_IsItemClicked(ctx, 1) then tab.tail_len = 1.000; tab.enable_tail = true end
       r.ImGui_SameLine(ctx); r.ImGui_Text(ctx, " Tail")
-      if tab.render_source == 4 then r.ImGui_EndDisabled(ctx) end
       
       local chk_fi_changed, new_fi_chk = r.ImGui_Checkbox(ctx, "##fi_chk", tab.enable_fadein)
       if chk_fi_changed then tab.enable_fadein = new_fi_chk end
@@ -1608,7 +1551,7 @@ local function Main()
         r.ImGui_EndDisabled(ctx)
       end
 
-      if tab.render_source == 5 then
+      if tab.render_source == 4 or tab.render_source == 5 then
         _, tab.embed_take_marker = r.ImGui_Checkbox(ctx, ' Embed take marker', tab.embed_take_marker)
       else
         r.ImGui_BeginDisabled(ctx)
@@ -1675,9 +1618,7 @@ local function Main()
           matrix_snapshot = ApplyTimeSelectionMatrix()
         end
 
-        if tab.render_source == 4 then
-          RenderGroupedFolderMixes(tab, items_to_process)
-        elseif need_sequential then
+        if need_sequential then
           for _, p_item in ipairs(items_to_process) do
             r.Main_OnCommand(40289, 0)
             r.Main_OnCommand(40297, 0)
@@ -1688,6 +1629,14 @@ local function Main()
             if tab.add_to_queue then r.Main_OnCommand(41823, 0) else r.Main_OnCommand(41824, 0) end
           end
         else
+          if tab.render_source == 4 then
+            r.Main_OnCommand(40289, 0) 
+            for _, f_item in ipairs(items_to_process) do
+              if f_item.item then r.SetMediaItemSelected(f_item.item, true) end
+            end
+            r.UpdateArrange()
+          end
+          
           ApplyRenderSettingsToProject(tab, items_to_process[1])
           if tab.add_to_queue then r.Main_OnCommand(41823, 0) else r.Main_OnCommand(41824, 0) end
         end
@@ -2102,7 +2051,7 @@ local function Main()
           [0] = "Master Mix to Render:", [1] = "Stems to Render (" .. tostring(#previews) .. "):",
           [2] = "Matrix Regions to Render (" .. tostring(#previews) .. "):",
           [3] = "Time Selection Regions to Render (" .. tostring(#previews) .. "):",
-          [4] = "Folder Mixes to Render (" .. tostring(#previews) .. "):",
+          [4] = "Items to Render (" .. tostring(#previews) .. "):",
           [5] = "Items to Render Separately (" .. tostring(#previews) .. "):"
         }
         local box_title = render_title_map[tab.render_source] or ("Items to Render (" .. tostring(#previews) .. "):")
@@ -2112,7 +2061,7 @@ local function Main()
         if #previews == 0 then
           local empty_msg_map = {
             [0] = " (Master mix ready)", [1] = " (No tracks selected)", [2] = " (No Matrix regions selected)",
-            [3] = " (No regions overlap the Time Selection)", [4] = " (Select an item on a folder track)", [5] = " (No items selected)"
+            [3] = " (No regions overlap the Time Selection)", [4] = " (No items selected)", [5] = " (No items selected)"
           }
           local empty_msg = empty_msg_map[tab.render_source] or " (No items selected)"
           r.ImGui_SetCursorPosX(ctx, 16)
