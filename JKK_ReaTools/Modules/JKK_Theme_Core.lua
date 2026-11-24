@@ -370,7 +370,8 @@ local function ApplyTheme(ctx, scale)
 
     local child_bg      = ShiftBrightness(base_bg, -5)
     local title_active  = ShiftBrightness(base_bg, -12)
-    local popup_bg      = ShiftBrightness(base_bg, -17, 240)
+    local popup_bg      = ShiftBrightness(child_bg, -8, 255)
+    if (popup_bg & 0xFFFFFF00) == 0 then popup_bg = RGBA(3, 3, 3, 255) end
     local ctrl_hover    = ShiftBrightness(ctrl_bg, 16)
     local ctrl_active   = ShiftBrightness(ctrl_bg, 32)
     local border_col    = ShiftBrightness(ctrl_bg, 27)

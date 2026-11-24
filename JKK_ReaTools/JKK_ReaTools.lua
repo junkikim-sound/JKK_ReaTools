@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 1.0.21
+-- @version 1.0.22
 -- @provides
 --     [main] Actions/JKK_TrackManager_Open.lua
 --     [main] Actions/JKK_TrackManager_TrackActivation.lua
