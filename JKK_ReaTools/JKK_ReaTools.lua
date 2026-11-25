@@ -1,8 +1,11 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 1.0.3
+-- @version 1.0.31
 -- @provides
+--     [main] Actions/JKK_FolderItems_Create.lua
+--     [main] Actions/JKK_FolderItems_GroupTracks.lua
+--     [main] Actions/JKK_FolderItems_Toggle.lua
 --     [main] Actions/JKK_TrackManager_Open.lua
 --     [main] Actions/JKK_TrackManager_TrackActivation.lua
 --     [main] JKK_ColorPalette.lua
@@ -12,6 +15,9 @@
 --     [main] JKK_Theme.lua
 --     [main] JKK_TrackManager.lua
 --     [main] JKK_XYPad.lua
+--     [main] JKK_Search.lua
+--     [main] JKK_FolderItems_Setup.lua
+--     [main] JKK_Variator.lua
 --     [nomain] Modules/JKK_ColorPalette_Data.lua
 --     [nomain] Modules/JKK_ColorPalette_UI.lua
 --     [nomain] Modules/JKK_ReaTools_NEW_ItemTool.lua
@@ -34,6 +40,22 @@
 --     [nomain] Modules/JKK_WindowChrome.lua
 --     [nomain] Modules/JKK_TrackManager_Core.lua
 --     [nomain] Modules/JKK_TrackManager_UI.lua
+--     [nomain] Modules/JKK_Search_Actions.lua
+--     [nomain] Modules/JKK_Search_Index.lua
+--     [nomain] Modules/JKK_Search_Library.lua
+--     [nomain] Modules/JKK_Search_MediaBrowser.lua
+--     [nomain] Modules/JKK_Search_Query.lua
+--     [nomain] Modules/JKK_Search_Store.lua
+--     [nomain] Modules/JKK_Search_UI.lua
+--     [nomain] Modules/JKK_FolderItems_Core.lua
+--     [nomain] Modules/JKK_Variator_Item.lua
+--     [nomain] Modules/JKK_Variator_Layout.lua
+--     [nomain] Modules/JKK_Variator_Math.lua
+--     [nomain] Modules/JKK_Variator_Model.lua
+--     [nomain] Modules/JKK_Variator_Preview.lua
+--     [nomain] Modules/JKK_Variator_Random.lua
+--     [nomain] Modules/JKK_Variator_Session.lua
+--     [nomain] Modules/JKK_Variator_UI.lua
 --========================================================
 
 local RPR = reaper
