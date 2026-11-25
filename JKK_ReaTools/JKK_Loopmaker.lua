@@ -1,13 +1,19 @@
 --========================================================
 -- @title JKK_Loopmaker
 -- @author Junki Kim
--- @version 1.3.0
+-- @version 1.4.0
 -- @noindex
 --========================================================
 
 package.path = reaper.ImGui_GetBuiltinPath() .. '/?.lua'
 local ImGui = require 'imgui' '0.9'
 local RPR = reaper
+
+-- 토글 액션: 실행 중에는 액션 State가 On, 다시 실행하면 창이 닫힘 (다중 인스턴스 방지)
+if reaper.set_action_options then reaper.set_action_options(1 | 4) end
+reaper.atexit(function()
+    if reaper.set_action_options then reaper.set_action_options(8) end
+end)
 
 -- The preview rebuilds complex REAPER items; cap rebuild frequency while dragging.
 -- Source Start uses a lightweight take-offset update and is not throttled.
@@ -19,6 +25,15 @@ local PREVIEW_REBUILD_INTERVAL = 0.04 -- seconds (25 updates/s max for Length / 
 local script_path = debug.getinfo(1, "S").source:sub(2):match("(.*[/\\])") or ""
 local Undo = dofile(script_path .. "Modules/JKK_UndoLabels.lua")
 local WindowChrome = dofile(script_path .. "Modules/JKK_WindowChrome.lua")
+-- Shared JKK language setting (JKK_ReaTools Settings > Language).
+local i18n_path = script_path .. "Modules/JKK_I18n.lua"
+local I18n = RPR.file_exists(i18n_path) and dofile(i18n_path) or nil
+local T = (I18n and I18n.T) or function(text) return text end
+if I18n then
+    I18n.Add({
+        ["No Same Consec."] = "같은 소스 연속 금지",
+    })
+end
 local theme_paths = {
     script_path .. "Modules/JKK_Theme_Core.lua",
     script_path .. "../Modules/JKK_Theme_Core.lua",
@@ -93,6 +108,9 @@ local cfg = {
     
     -- Tab 1: Loopmaker
     loop_len = tonumber(reaper.GetExtState("JKK_Loopmaker", "loop_len")) or 5.0,
+    -- Length unit: 0 = seconds, 1 = project grid divisions (loop_len is then derived).
+    loop_len_mode = tonumber(reaper.GetExtState("JKK_Loopmaker", "loop_len_mode")) or 0,
+    loop_len_grid = math.floor(tonumber(reaper.GetExtState("JKK_Loopmaker", "loop_len_grid")) or 8),
     -- nil = automatic (the original Loopmaker seam position); numeric = seconds into the original item.
     loop_src_start = tonumber(reaper.GetExtState("JKK_Loopmaker", "loop_src_start")),
     fade_len = tonumber(reaper.GetExtState("JKK_Loopmaker", "fade_len")) or 1.0,
@@ -225,6 +243,8 @@ function SaveSettings()
     reaper.SetExtState("JKK_Loopmaker", "preview_vol", tostring(cfg.preview_vol), true)
     reaper.SetExtState("JKK_Loopmaker", "src_mode", tostring(cfg.src_mode), true)
     reaper.SetExtState("JKK_Loopmaker", "loop_len", tostring(cfg.loop_len), true)
+    reaper.SetExtState("JKK_Loopmaker", "loop_len_mode", tostring(cfg.loop_len_mode), true)
+    reaper.SetExtState("JKK_Loopmaker", "loop_len_grid", tostring(cfg.loop_len_grid), true)
     reaper.SetExtState("JKK_Loopmaker", "loop_src_start", tostring(cfg.loop_src_start or ""), true)
     reaper.SetExtState("JKK_Loopmaker", "fade_len", tostring(cfg.fade_len), true)
     reaper.SetExtState("JKK_Loopmaker", "glue_res", tostring(cfg.glue_res), true)
@@ -576,10 +596,18 @@ local function CalculateLoopTilePlan(orig_len, loop_len, fade_len)
     local step_len = loop_len
     local actual_fade = 0
 
-    if orig_len > loop_len + eps then
+    -- A single tile can only crossfade with the material beyond loop_len.
+    -- When the item is only slightly longer than the loop (e.g. 14.02 s item
+    -- for a 14 s loop) that leaves almost no fade, so then compare against
+    -- the multi-tile plan (e.g. 2 x 7 s steps with ~8 s tiles) and keep
+    -- whichever gives the longer crossfade.
+    local single_fade = (orig_len > loop_len + eps)
+        and math.min(requested_fade, orig_len - loop_len) or nil
+
+    if single_fade and single_fade >= requested_fade - eps then
         tile_count = 1
         step_len = loop_len
-        actual_fade = math.min(requested_fade, orig_len - loop_len)
+        actual_fade = single_fade
     elseif requested_fade <= eps then
         tile_count = math.max(1, math.ceil(loop_len / math.max(orig_len, 0.01)))
         step_len = loop_len / tile_count
@@ -598,8 +626,10 @@ local function CalculateLoopTilePlan(orig_len, loop_len, fade_len)
                 best_count, best_step, best_fade = count, candidate_step, candidate_fade
             end
         end
-        if best_count then
+        if best_count and (not single_fade or best_fade > single_fade + eps) then
             tile_count, step_len, actual_fade = best_count, best_step, best_fade
+        elseif single_fade then
+            tile_count, step_len, actual_fade = 1, loop_len, single_fade
         else
             tile_count = math.max(1, math.ceil(loop_len / math.max(orig_len, 0.01)))
             step_len = loop_len / tile_count
@@ -680,6 +710,53 @@ local function FlushPreviewUpdate(force)
     local mode = pending_preview_mode
     pending_preview_mode = nil
     UpdatePreview(mode == "default" and nil or mode)
+end
+
+-- ==========================================
+-- Loop length in project grid units
+-- ==========================================
+-- Grid mode keeps an integer count of grid divisions; the seconds value
+-- (cfg.loop_len) used by the preview / glue logic is derived from it with the
+-- project's tempo map, starting at the loop start (the edit cursor).
+local LOOP_GRID_MIN, LOOP_GRID_MAX = 1, 24
+
+local function LoopStartTime()
+    if is_session_active and original_env.cursor then return original_env.cursor end
+    return reaper.GetCursorPosition()
+end
+
+-- Current project grid division in quarter notes (1/16 grid -> 0.25 QN).
+local function GridDivisionQN()
+    local _, division = reaper.GetSetProjectGrid(0, false)
+    division = tonumber(division) or 0.25
+    if division <= 0 then division = 0.25 end
+    return division * 4
+end
+
+local function GridCountToSeconds(count)
+    local start = LoopStartTime()
+    local start_qn = reaper.TimeMap2_timeToQN(0, start)
+    local secs = reaper.TimeMap2_QNToTime(0, start_qn + count * GridDivisionQN()) - start
+    return math.max(0.01, secs)
+end
+
+local function SecondsToGridCount(secs)
+    local one = GridCountToSeconds(1)
+    local n = math.floor((secs or 0) / math.max(0.0001, one) + 0.5)
+    return math.max(LOOP_GRID_MIN, math.min(LOOP_GRID_MAX, n))
+end
+
+-- Grid mode: follow grid / tempo changes live (rebuilds the preview only when
+-- the derived length actually changed).
+local function SyncLoopLenFromGrid()
+    if cfg.loop_len_mode ~= 1 then return end
+    -- Also clamps a saved count from an older, wider range.
+    cfg.loop_len_grid = math.max(LOOP_GRID_MIN, math.min(LOOP_GRID_MAX, cfg.loop_len_grid))
+    local secs = GridCountToSeconds(cfg.loop_len_grid)
+    if math.abs(secs - cfg.loop_len) > 1e-6 then
+        cfg.loop_len = secs
+        QueuePreviewUpdate("end")
+    end
 end
 
 function UpdatePreviewLoop(cursor_mode)
@@ -1219,15 +1296,38 @@ function Loop()
                 local label_w = 90
                 
                 -- Length: update while dragging; save ExtState only on mouse release.
+                -- Seconds or project-grid units (button at the right toggles).
                 ImGui.AlignTextToFramePadding(ctx)
                 ImGui.Text(ctx, "Length")
                 ImGui.SameLine(ctx, label_w)
-                ImGui.SetNextItemWidth(ctx, avail_w - label_w)
-                local changed_len, new_len = ImGui.SliderDouble(ctx, "##loop_len", cfg.loop_len, 1.0, 30.0, "%.1f s")
-                local reset_len = ImGui.IsItemHovered(ctx) and ImGui.IsMouseClicked(ctx, 1)
-                if reset_len then new_len = 5.0; changed_len = true end
-                if changed_len then cfg.loop_len = new_len; QueuePreviewUpdate("end") end
-                if ImGui.IsItemDeactivatedAfterEdit(ctx) or reset_len then
+                local unit_btn_w, unit_spacing = 38, 10
+                ImGui.SetNextItemWidth(ctx, avail_w - label_w - unit_btn_w - unit_spacing)
+                if cfg.loop_len_mode == 1 then
+                    SyncLoopLenFromGrid()
+                    local grid_fmt = "%d Grid  (" .. string.format("%.2f", cfg.loop_len) .. " s)"
+                    local changed_grid, new_grid = ImGui.SliderInt(ctx, "##loop_len_grid",
+                        cfg.loop_len_grid, LOOP_GRID_MIN, LOOP_GRID_MAX, grid_fmt)
+                    if changed_grid then
+                        cfg.loop_len_grid = math.max(LOOP_GRID_MIN, math.min(LOOP_GRID_MAX, new_grid))
+                        SyncLoopLenFromGrid()
+                    end
+                else
+                    local changed_len, new_len = ImGui.SliderDouble(ctx, "##loop_len", cfg.loop_len, 1.0, 30.0, "%.1f s")
+                    if changed_len then cfg.loop_len = new_len; QueuePreviewUpdate("end") end
+                end
+                if ImGui.IsItemDeactivatedAfterEdit(ctx) then
+                    SaveSettings(); FlushPreviewUpdate(true)
+                end
+                ImGui.SameLine(ctx)
+                if ImGui.Button(ctx, (cfg.loop_len_mode == 1 and "Grid" or "Sec") .. "##loop_len_unit",
+                    unit_btn_w, ImGui.GetFrameHeight(ctx)) then
+                    if cfg.loop_len_mode == 1 then
+                        cfg.loop_len_mode = 0   -- keep the current seconds value
+                    else
+                        cfg.loop_len_mode = 1
+                        cfg.loop_len_grid = SecondsToGridCount(cfg.loop_len)
+                        SyncLoopLenFromGrid()
+                    end
                     SaveSettings(); FlushPreviewUpdate(true)
                 end
 
@@ -1253,11 +1353,6 @@ function Loop()
                         UpdatePreviewSourceStart() -- in-place, no rebuild; every drag frame
                     end
                     if ImGui.IsItemDeactivatedAfterEdit(ctx) or reset_start then SaveSettings() end
-                    if ImGui.IsItemHovered(ctx) then
-                        ImGui.SetTooltip(ctx, string.format(
-                            "Offset within the original item (%.2f - %.2f s). Ctrl+Click: input. Right-click: Auto. For multiple items, each source is safely clamped to its own usable range.",
-                            start_min, start_max))
-                    end
                 else
                     ImGui.BeginDisabled(ctx, true)
                     ImGui.SliderDouble(ctx, "##loop_src_start", 0, 0, 1, "%.2f s")
@@ -1387,8 +1482,14 @@ function Loop()
                 ImGui.SameLine(ctx, label_w)
                 
                 local combo_w = 135
+                -- Preview text is drawn centered over the combo frame (the
+                -- built-in preview is always left-aligned), so pass "" here.
+                local combo_x, combo_y = ImGui.GetCursorScreenPos(ctx)
+                local combo_h = ImGui.GetFrameHeight(ctx)
+                local combo_dl = ImGui.GetWindowDrawList(ctx)
+                local combo_text = rand_modes[cfg.seq_rand_mode + 1] or ""
                 ImGui.SetNextItemWidth(ctx, combo_w)
-                if ImGui.BeginCombo(ctx, "##rand_mode", rand_modes[cfg.seq_rand_mode + 1]) then
+                if ImGui.BeginCombo(ctx, "##rand_mode", "") then
                     for i, mode in ipairs(rand_modes) do
                         if ImGui.Selectable(ctx, mode, cfg.seq_rand_mode == (i-1)) then
                             cfg.seq_rand_mode = i - 1; SaveSettings(); UpdatePreview()
@@ -1396,9 +1497,17 @@ function Loop()
                     end
                     ImGui.EndCombo(ctx)
                 end
-                
+                do
+                    -- Center in the text area (frame minus the arrow button).
+                    local tw = ImGui.CalcTextSize(ctx, combo_text)
+                    local area_w = combo_w - combo_h
+                    local tx = combo_x + math.max(0, (area_w - tw) * 0.5)
+                    local ty = combo_y + (combo_h - ImGui.GetTextLineHeight(ctx)) * 0.5
+                    ImGui.DrawList_AddText(combo_dl, tx, ty, ImGui.GetColor(ctx, ImGui.Col_Text), combo_text)
+                end
+
                 ImGui.SameLine(ctx)
-                local chg_c, val_c = ImGui.Checkbox(ctx, "No Same Consec.", cfg.seq_no_consec)
+                local chg_c, val_c = ImGui.Checkbox(ctx, T("No Same Consec.") .. "##seq_no_consec", cfg.seq_no_consec)
                 if chg_c then cfg.seq_no_consec = val_c; SaveSettings(); UpdatePreview() end
                 
                 ImGui.SameLine(ctx)

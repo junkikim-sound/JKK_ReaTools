@@ -135,6 +135,20 @@ local arrange_drag_active = false
 local arrange_drag_is_range_selection = false
 local ARRANGE_DRAG_THRESHOLD = 4
 
+-- After an item gesture ends (item click/drag, Alt/Ctrl-drag copy, marquee),
+-- REAPER often commits the final selection one or more defer cycles AFTER the
+-- mouse-up: the copied items become selected late, and a marquee released over
+-- a track lane can also change the TRACK selection afterwards. For this short
+-- window the gesture still counts as an item interaction, so those late
+-- changes keep Item mode instead of being missed or switching to Track mode.
+-- Any new mouse press ends the window immediately.
+local ITEM_GESTURE_SETTLE = 0.6 -- seconds
+local item_gesture_until = 0
+
+local function Now()
+    return RPR.time_precise and RPR.time_precise() or os.clock()
+end
+
 local prev_item_sig = ""
 local prev_track_sig = ""
 local prev_track_count = 0
@@ -243,6 +257,7 @@ local function ResetArrangeInteraction()
 end
 
 local function BeginMouseInteraction(area)
+    item_gesture_until = 0 -- a new click always starts a fresh decision
     mouse_press_area = area
     mouse_press_item = nil
     mouse_press_x, mouse_press_y = nil, nil
@@ -622,8 +637,13 @@ function M.Update(is_imgui_focused)
         arrange_drag_is_range_selection = true
     end
 
-    local item_interaction_detected = item_interaction_active
+    local live_item_gesture = item_interaction_active
         or (arrange_drag_active and not arrange_drag_is_range_selection)
+    if live_item_gesture and mouse_released then
+        item_gesture_until = Now() + ITEM_GESTURE_SETTLE
+    end
+    local item_interaction_detected = live_item_gesture
+        or (not is_mouse_down and Now() < item_gesture_until)
 
     -- 1. 직접적인 Region/Marker 선택 변경
     if rm_changed and (#sel_r > 0 or #sel_m > 0) then

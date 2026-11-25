@@ -20,6 +20,34 @@
 
 local M = {}
 
+-- Shared JKK language setting (JKK_ReaTools Settings > Language).
+-- T() translates only the longer explanatory English; short labels stay English.
+local I18N_PATH = ((debug.getinfo(1, "S").source or ""):match("^@(.+[\\/])") or "") .. "JKK_I18n.lua"
+local I18n = reaper.file_exists(I18N_PATH) and dofile(I18N_PATH) or nil
+local T = (I18n and I18n.T) or function(text) return text end
+if I18n then
+    I18n.Add({
+        ["Close window after running"] = "실행 후 창 닫기",
+        ["%s or Alt + click does the opposite"] = "%s 또는 Alt + 클릭 시 반대로 동작",
+        ["Open window at mouse cursor"] = "마우스 커서 위치에 창 열기",
+        ["Close window when it loses focus"] = "포커스를 잃으면 창 닫기",
+        ["After inserting, show"] = "삽입 후 표시할 창",
+        ["New instrument tracks: MIDI input + arm + monitor"]
+            = "새 악기 트랙: MIDI 입력 + 녹음 대기(arm) + 모니터링 자동 설정",
+        ["Search the current Media Browser tab with:"] = "현재 Media Browser 탭을 검색할 단축키:",
+        ["Locked filter blocks are kept.  !UCS and @folder use Media Browser's engine."]
+            = "잠긴 필터 블록은 유지됩니다.  !UCS와 @folder는 Media Browser의 검색 엔진을 사용합니다.",
+        ["@ folders shared by Media Browser: %d"] = "Media Browser와 공유하는 @ 폴더: %d개",
+        ["Hide VST2 when a VST3 version exists"] = "VST3 버전이 있으면 VST2 숨기기",
+        ["Fuzzy / initials matching (e.g. \"rba\" → RBass)"] = "유사 / 초성(이니셜) 검색 (예: \"rba\" → RBass)",
+        ["Open projects in a new tab"] = "프로젝트를 새 탭에서 열기",
+        ["Refresh: scan for new plugins and re-index"] = "Refresh: 새 플러그인을 스캔하고 검색 인덱스를 다시 만듭니다",
+        ["Detailed list (developer below name)"] = "Detailed list (제조사를 이름 아래에 표시)",
+        ["Type filter  (click a label in the list to set it)"] = "타입 필터  (목록의 배지를 클릭해도 설정됩니다)",
+        ["Auto (current selection)"] = "Auto (현재 선택 대상)",
+    })
+end
+
 function M.Create(deps)
 local RPR     = reaper
 local Theme   = deps.theme
@@ -113,6 +141,30 @@ local focus_search  = true
 local expanded      = Store.Get("expanded") and true or false
 local collapsed_h   = nil
 local sidebar_w     = Store.Get("sidebar_w")
+
+-- 패널 애니메이션 (사이드 패널 너비 / 결과 패널 펼침·접힘)
+local ANIM_DURATION = 0.18          -- 초
+local sidebar_anim = Store.Get("show_sidebar") and 1 or 0
+local last_anim_time = nil
+local body_hold = false             -- 접히는 애니메이션 동안 본문을 계속 그린다 (JKK_Search.lua가 설정)
+local function AnimStep(v, target, dt)
+    local step = dt / ANIM_DURATION
+    if v < target then return math.min(target, v + step) end
+    if v > target then return math.max(target, v - step) end
+    return v
+end
+local function EaseOutCubic(t) return 1 - (1 - t) ^ 3 end
+local function EaseInOutCubic(t)
+    if t < 0.5 then return 4 * t * t * t end
+    return 1 - ((-2 * t + 2) ^ 3) / 2
+end
+UI.AnimDuration = ANIM_DURATION
+UI.EaseOutCubic = EaseOutCubic
+function UI.SetBodyHold(v) body_hold = v and true or false end
+
+-- 접힌 상태에서 검색할 때 검색줄 아래에 뜨는 미니 결과 팝업 (별도 창, 포커스를 빼앗지 않음)
+local mini_anchor   = { x = 0, y = 0, w = 0 }
+local mini_focused  = false     -- 지난 프레임에 미니 팝업이 포커스를 가졌는지
 
 local status_msg, status_ok, status_time = nil, true, 0
 local pending         = nil
@@ -397,6 +449,16 @@ function ICONS.close(dl, x, y, s, col)
     RPR.ImGui_DrawList_AddLine(dl, cx - r, cy + r, cx + r, cy - r, col, 1.8 * S)
 end
 ICONS.clear = ICONS.close
+function ICONS.fxbrowser(dl, x, y, s, col)
+    -- REAPER FX 브라우저: 창 테두리 + 목록 줄
+    local x1, y1, x2, y2 = x + s * 0.24, y + s * 0.26, x + s * 0.76, y + s * 0.74
+    RPR.ImGui_DrawList_AddRect(dl, x1, y1, x2, y2, col, 2 * S, 0, 1.5 * S)
+    RPR.ImGui_DrawList_AddLine(dl, x1, y1 + s * 0.12, x2, y1 + s * 0.12, col, 1.5 * S)
+    for k = 0, 1 do
+        local ly = y1 + s * (0.24 + k * 0.12)
+        RPR.ImGui_DrawList_AddLine(dl, x1 + s * 0.08, ly, x2 - s * 0.08, ly, col, 1.2 * S)
+    end
+end
 function ICONS.settings(dl, x, y, s, col)
     -- 톱니바퀴: 원 + 8개의 톱니
     local cx, cy = x + s / 2, y + s / 2
@@ -444,6 +506,7 @@ local ICON_FILES = {
     compact     = "Icon_ViewCompact",
     detailed    = "Icon_ViewDetailed",
     refresh     = "Icon_Refresh",
+    fxbrowser   = "Icon_FXBrowser",
     settings    = "Icon_Settings",
     sidebar     = "Icon_SidePanel",
     expand      = "Icon_Expand",
@@ -507,7 +570,7 @@ local function HoverTip(ctx, text)
     RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_WindowPadding(), 12 * S, 9 * S)
     if RPR.ImGui_BeginTooltip(ctx) then
         RPR.ImGui_PushTextWrapPos(ctx, RPR.ImGui_GetCursorPosX(ctx) + 380 * S)
-        RPR.ImGui_Text(ctx, text)
+        RPR.ImGui_Text(ctx, T(text))
         RPR.ImGui_PopTextWrapPos(ctx)
         RPR.ImGui_EndTooltip(ctx)
     end
@@ -641,6 +704,8 @@ function UI.Scale() return S end
 
 -- 사용자가 직접 펼치거나 접은 상태는 저장 (입력 시 자동 펼침은 저장하지 않음)
 local function SetExpanded(v, remember)
+    -- 접기 시작한 프레임부터 본문을 유지 (애니메이션 중 빈 화면이 번쩍이지 않게)
+    if expanded and not v then body_hold = true end
     expanded = v and true or false
     if remember then Store.Set("expanded", expanded) end
 end
@@ -759,6 +824,14 @@ local function DoRefresh()
     UI.SetStatus(true, ran and ("Scanned for new plugins  (" .. name .. ")") or "Re-indexing FX, chains, templates and actions...")
 end
 
+-- REAPER 기본 FX 브라우저 (View: Show FX browser window)
+local FX_BROWSER_CMD = 40271
+local function OpenReaperFXBrowser()
+    -- 이미 열려 있으면 닫았다가 다시 열어 앞으로 가져온다
+    if RPR.GetToggleCommandState(FX_BROWSER_CMD) == 1 then RPR.Main_OnCommand(FX_BROWSER_CMD, 0) end
+    RPR.Main_OnCommand(FX_BROWSER_CMD, 0)
+end
+
 local function DrawHeader(ctx, P)
     local close = false
     local start_x = RPR.ImGui_GetCursorPosX(ctx)
@@ -766,7 +839,7 @@ local function DrawHeader(ctx, P)
     local bs = math.floor(RPR.ImGui_GetFrameHeight(ctx))
     local gap = 2
     local group_gap = 8 * S
-    local buttons_w = bs * 7 + gap * 5 + group_gap
+    local buttons_w = bs * 8 + gap * 6 + group_gap
 
     local count_text
     if Index.building and #results == 0 then count_text = "Indexing..."
@@ -823,6 +896,12 @@ local function DrawHeader(ctx, P)
     if DrawnIconButton(ctx, P, "##jkk_search_refresh_btn", bs, false,
         "Refresh: scan for new plugins and re-index", "refresh") then
         DoRefresh()
+    end
+    RPR.ImGui_SameLine(ctx, 0, gap)
+    if DrawnIconButton(ctx, P, "##jkk_search_fxbrowser_btn", bs, false,
+        "Open REAPER FX Browser", "fxbrowser") then
+        OpenReaperFXBrowser()
+        if Store.Get("close_after_run") then close = true end
     end
     RPR.ImGui_SameLine(ctx, 0, gap)
     if DrawnIconButton(ctx, P, "##jkk_search_settings_btn", bs, false, "Settings", "settings") then
@@ -947,10 +1026,9 @@ local function DrawSearchRow(ctx, P)
             or "Search FX, instruments, actions, tracks, items...", query,
         RPR.ImGui_InputTextFlags_EscapeClearsAll())
     RPR.ImGui_PopStyleVar(ctx, 2)
-    if changed then
-        query = new_q
-        if query ~= "" and not expanded and Store.Get("auto_expand") then SetExpanded(true, false) end
-    end
+    if changed then query = new_q end
+    -- 미니 결과 팝업 위치: 검색줄(타입 필터 ~ 입력창) 바로 아래, 같은 너비
+    mini_anchor.x, mini_anchor.y, mini_anchor.w = fx0, y0 + frame_h, (x0 + input_w) - fx0
     DrawIcon(ctx, RPR.ImGui_GetWindowDrawList(ctx), "search", x0 + 11 * S, y0 + (frame_h - line_h) / 2, line_h, P.muted, 0)
 
     if query ~= "" then
@@ -1037,7 +1115,6 @@ local function HandleKeys(ctx, query_before, rows_per_page)
                 anchor = sel
             end
             scroll_to_sel = true
-            if not expanded then SetExpanded(true, false) end
         end
 
         if ctrl and Pressed(ctx, RPR.ImGui_Key_D(), false) and results[sel] then
@@ -1485,6 +1562,69 @@ local function DrawResults(ctx, P, w, h)
 end
 
 ----------------------------------------------------------
+-- 미니 결과 팝업 (접힌 상태에서 검색할 때)
+--  * 창을 펼치지 않고 검색줄 아래에 별도 창으로 띄운다 (JKK_Renamer의 $ / ! 팝업과 같은 방식)
+--  * 검색어가 비면 사라지고, 포커스를 빼앗지 않으므로 입력을 계속할 수 있다
+--  * 행 동작(클릭 실행, 즐겨찾기, ⋮ 메뉴, 드래그 & 드롭, 다중 선택)은 펼친 목록과 같다
+----------------------------------------------------------
+local MINI_MAX_ROWS = { compact = 8, detailed = 5 }
+
+local function DrawMiniPopup(ctx, P)
+    local detailed = Store.Get("view_mode") == "detailed"
+    local line_h = RPR.ImGui_GetTextLineHeight(ctx)
+    local row_h = math.floor(line_h * (detailed and 3.1 or 2.0) + 0.5)
+    local head_h = math.floor(line_h * 1.5 + 0.5)
+    BuildLayout(row_h, head_h)
+    local n = #results
+    local list_h
+    if n == 0 then
+        list_h = math.floor(48 * S + line_h)       -- 안내 문구 한 줄
+    else
+        local max_rows = detailed and MINI_MAX_ROWS.detailed or MINI_MAX_ROWS.compact
+        list_h = math.min(TotalHeight(), RowTop(math.min(n, max_rows) + 1))
+    end
+
+    local border = 1
+    local flags = RPR.ImGui_WindowFlags_NoTitleBar()
+        | RPR.ImGui_WindowFlags_NoResize()
+        | RPR.ImGui_WindowFlags_NoMove()
+        | RPR.ImGui_WindowFlags_NoCollapse()
+        | RPR.ImGui_WindowFlags_NoSavedSettings()
+        | RPR.ImGui_WindowFlags_NoFocusOnAppearing()
+        | RPR.ImGui_WindowFlags_NoScrollbar()
+        | RPR.ImGui_WindowFlags_NoScrollWithMouse()
+    if RPR.ImGui_WindowFlags_NoDocking then flags = flags | RPR.ImGui_WindowFlags_NoDocking() end
+    if RPR.ImGui_WindowFlags_TopMost then flags = flags | RPR.ImGui_WindowFlags_TopMost() end
+
+    RPR.ImGui_SetNextWindowPos(ctx, mini_anchor.x, mini_anchor.y + 4 * S, RPR.ImGui_Cond_Always())
+    RPR.ImGui_SetNextWindowSize(ctx, math.max(120, mini_anchor.w), list_h + border * 2, RPR.ImGui_Cond_Always())
+    RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_WindowPadding(), border, border)
+    RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_WindowBorderSize(), border)
+    RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_WindowRounding(), 0)
+    RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_WindowBg(), P.list_bg)
+    RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Border(), P.row_border)
+    local visible = RPR.ImGui_Begin(ctx, "JKK Search Results##jkk_search_mini", nil, flags)
+    RPR.ImGui_PopStyleVar(ctx, 3)
+    RPR.ImGui_PopStyleColor(ctx, 2)
+
+    local rows_per_page = 8
+    mini_focused = false
+    if visible then
+        mini_focused = RPR.ImGui_IsWindowFocused(ctx, RPR.ImGui_FocusedFlags_RootAndChildWindows())
+        local w, h = RPR.ImGui_GetContentRegionAvail(ctx)
+        rows_per_page = DrawResults(ctx, P, w, h)
+    end
+    RPR.ImGui_End(ctx)
+
+    -- 팝업을 클릭한 뒤(마우스를 놓으면) 키 입력이 계속 검색창으로 가도록 포커스를 돌려준다
+    if mini_focused and not RPR.ImGui_IsMouseDown(ctx, 0) and not drag.entries
+        and not marquee.pending and not AnyPopupOpen(ctx) then
+        focus_search = true
+    end
+    return rows_per_page
+end
+
+----------------------------------------------------------
 -- 사이드 패널 (직접 그린 트리: ImGui TreeNode / TreePush 를 사용하지 않음)
 ----------------------------------------------------------
 local SB = { right = 0, tall_h = 24, leaf_h = 20, isz = 16, icon_text_x = 30 }
@@ -1638,7 +1778,7 @@ local function DrawTargetBox(ctx, P, w, h)
     end
 
     local dd_w = math.floor(26 * S)
-    local main_w = w - dd_w - 4 * S
+    local main_w = math.max(1, w - dd_w - 4 * S)   -- ImGui 버튼 너비는 0보다 커야 한다
     local x, y = RPR.ImGui_GetCursorScreenPos(ctx)
     local clicked = RPR.ImGui_InvisibleButton(ctx, "##jkk_search_target_main", main_w, h)
     local hovered = RPR.ImGui_IsItemHovered(ctx)
@@ -1808,7 +1948,8 @@ end
 -- 팝업
 ----------------------------------------------------------
 local function Check(ctx, label, key)
-    local changed, v = RPR.ImGui_Checkbox(ctx, label, Store.Get(key) and true or false)
+    -- Stable ID per setting key, so a translated label never changes the ID.
+    local changed, v = RPR.ImGui_Checkbox(ctx, T(label) .. "##chk_" .. key, Store.Get(key) and true or false)
     if changed then Store.Set(key, v) end
 end
 
@@ -1818,14 +1959,14 @@ end
 
 local function SectionLabel(ctx, P, text)
     RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Text(), P.muted)
-    RPR.ImGui_Text(ctx, text)
+    RPR.ImGui_Text(ctx, T(text))
     RPR.ImGui_PopStyleColor(ctx, 1)
 end
 
 local function DrawTargetOptions(ctx, P)
     SectionLabel(ctx, P, "Insert FX on")
     for _, m in ipairs(Actions.TARGET_MODES) do
-        Radio(ctx, m.label .. "##tm_" .. m.id, "target_mode", m.id)
+        Radio(ctx, T(m.label) .. "##tm_" .. m.id, "target_mode", m.id)
     end
     RPR.ImGui_Separator(ctx)
     SectionLabel(ctx, P, "Chain position")
@@ -1872,9 +2013,8 @@ local function DrawSettingsPopup(ctx, P)
 
     Check(ctx, "Close window after running", "close_after_run")
     RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Text(), P.faint)
-    RPR.ImGui_Text(ctx, "      " .. KeepOpenLabel() .. " or Alt + click does the opposite")
+    RPR.ImGui_Text(ctx, "      " .. string.format(T("%s or Alt + click does the opposite"), KeepOpenLabel()))
     RPR.ImGui_PopStyleColor(ctx, 1)
-    Check(ctx, "Expand results automatically while typing", "auto_expand")
     Check(ctx, "Open window at mouse cursor", "open_at_mouse")
     Check(ctx, "Close window when it loses focus", "close_on_unfocus")
     RPR.ImGui_Separator(ctx)
@@ -1886,14 +2026,14 @@ local function DrawSettingsPopup(ctx, P)
     -- JKK MediaBrowser 연동 (설치되어 있을 때만 이 항목 자체가 보인다)
     if MB then
         SectionLabel(ctx, P, "JKK MediaBrowser")
-        RPR.ImGui_Text(ctx, "Search the current Media Browser tab with:")
+        RPR.ImGui_Text(ctx, T("Search the current Media Browser tab with:"))
         for i, k in ipairs(MB_KEYS) do
             if i > 1 then RPR.ImGui_SameLine(ctx) end
             Radio(ctx, k.label .. "##mbkey_" .. k.id, "mb_key", k.id)
         end
         RPR.ImGui_PushStyleColor(ctx, RPR.ImGui_Col_Text(), P.faint)
-        RPR.ImGui_Text(ctx, "      Locked filter blocks are kept.  !UCS and @folder use Media Browser's engine.")
-        RPR.ImGui_Text(ctx, string.format("      @ folders shared by Media Browser: %d", MB.FolderCount()))
+        RPR.ImGui_Text(ctx, "      " .. T("Locked filter blocks are kept.  !UCS and @folder use Media Browser's engine."))
+        RPR.ImGui_Text(ctx, "      " .. string.format(T("@ folders shared by Media Browser: %d"), MB.FolderCount()))
         RPR.ImGui_PopStyleColor(ctx, 1)
         RPR.ImGui_Separator(ctx)
     end
@@ -2206,7 +2346,9 @@ function UI.Draw(ctx)
     if was_building and not Index.building then OnIndexBuilt() end
     was_building = Index.building
 
+    -- 미니 결과 팝업(별도 창)에 포커스가 있어도 JKK Search가 포커스를 가진 것으로 본다
     local focused = RPR.ImGui_IsWindowFocused(ctx, RPR.ImGui_FocusedFlags_RootAndChildWindows())
+        or mini_focused
     if Sel and Sel.Update then Sel.Update(focused) end
 
     local now = RPR.time_precise()
@@ -2223,24 +2365,53 @@ function UI.Draw(ctx)
 
     local rows_per_page = 8
     -- 펼침/접힘이 이번 프레임에 바뀌었으면 창 크기가 반영되는 다음 프레임부터 본문을 그린다
+    -- (접히는 애니메이션 동안에는 body_hold로 본문을 계속 그려 빈 공간이 줄어드는 것처럼 보이지 않게)
     local avail_w, avail_h = RPR.ImGui_GetContentRegionAvail(ctx)
-    if expanded and expanded_at_start and avail_h >= 80 then
+    local anim_dt = math.max(0, math.min(0.1, now - (last_anim_time or now)))
+    last_anim_time = now
+    if ((expanded and expanded_at_start) or body_hold) and avail_h >= 40 then
         local body_h = avail_h
-        local show_sidebar = Store.Get("show_sidebar") and avail_w > 380 * S
-        local split_w = math.floor(8 * S)
+        -- 사이드 패널 열기/닫기 애니메이션: 너비를 0 ↔ 저장된 너비로 부드럽게
+        local want_sidebar = Store.Get("show_sidebar") and avail_w > 380 * S
+        sidebar_anim = AnimStep(sidebar_anim, want_sidebar and 1 or 0, anim_dt)
+        local sb_t = EaseInOutCubic(sidebar_anim)
+        local split_full = math.floor(8 * S)
         local sw = 0
-        if show_sidebar then
+        local split_w = 0
+        if sidebar_anim > 0 then
             sidebar_w = math.max(150 * S, math.min(avail_w * 0.6, sidebar_w))
-            sw = math.floor(sidebar_w)
+            sw = math.floor(sidebar_w * sb_t)
+            split_w = math.floor(split_full * sb_t)
         end
+        local show_sidebar = sw >= 2
+        split_w = math.max(1, split_w)
         local results_w = avail_w - (show_sidebar and (sw + split_w) or 0)
         if show_sidebar then
-            DrawSidebar(ctx, P, sw, body_h)
-            RPR.ImGui_SameLine(ctx, 0, 0)
+            local full_w = math.floor(sidebar_w)
+            if sw < full_w then
+                -- 열리고/닫히는 중: 패널은 항상 원래 너비로 그리고 보이는 부분만 잘라서
+                -- 왼쪽에서 미끄러져 나오게 한다. (좁은 너비로 그리면 Insert 대상 상자 등의
+                -- 너비가 0 이하가 되어 ImGui 오류가 났다)
+                local x0, y0 = RPR.ImGui_GetCursorScreenPos(ctx)
+                RPR.ImGui_PushClipRect(ctx, x0, y0, x0 + sw, y0 + body_h, true)
+                RPR.ImGui_SetCursorScreenPos(ctx, x0 - (full_w - sw), y0)
+                DrawSidebar(ctx, P, full_w, body_h)
+                RPR.ImGui_PopClipRect(ctx)
+                RPR.ImGui_SetCursorScreenPos(ctx, x0 + sw, y0)
+            else
+                DrawSidebar(ctx, P, sw, body_h)
+                RPR.ImGui_SameLine(ctx, 0, 0)
+            end
             DrawSplitter(ctx, split_w, body_h)
             RPR.ImGui_SameLine(ctx, 0, 0)
         end
         rows_per_page = DrawResults(ctx, P, results_w, body_h)
+        mini_focused = false
+    elseif not expanded and not expanded_at_start and not body_hold and query ~= ""
+        and (focused or drag.entries or AnyPopupOpen(ctx)) then
+        rows_per_page = DrawMiniPopup(ctx, P)
+    else
+        mini_focused = false
     end
     -- 목록이 그려지지 않은 프레임에 마우스를 놓아도 마키가 남지 않도록
     if marquee.pending and not RPR.ImGui_IsMouseDown(ctx, 0) then

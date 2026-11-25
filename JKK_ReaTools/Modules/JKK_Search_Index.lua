@@ -3,7 +3,7 @@
 -- @author Junki Kim
 -- @noindex
 -- 검색 대상 인덱스 구축
---  * FX       : REAPER가 열거한 설치 목록. INI 캐시는 이름과 메타데이터 보완용.
+--  * FX       : VST / VST3 / CLAP / JS (+ EnumInstalledFX로 LV2/DX/AU 등 보충)
 --  * FX 메타  : Category / Developer (reaper-fxtags.ini), Folders(Tags) (reaper-fxfolders.ini)
 --  * FX Chain / Track Template / Action / 최근 프로젝트
 --  * 현재 프로젝트의 Track / Item / Marker / Region (변경 감지 시 자동 갱신)
@@ -82,6 +82,7 @@ local by_key = {}       -- 정적 항목 key -> entry
 local dyn_by_key = {}   -- 프로젝트 항목 key -> entry
 local lookup = {}       -- 정규화된 파일키/ident -> { entries }
 local fx_dedupe = {}    -- "TYPE|full lower" -> entry
+local fx_dedupe2 = {}   -- "TYPE|base lower" -> entry
 
 M.categories = {}       -- 정렬된 { name, count, set }
 M.developers = {}
@@ -97,7 +98,7 @@ local last_project_check = -1
 
 local function ResetStatic()
     for _, src in ipairs(M.SOURCES) do lists[src] = {} end
-    by_key, dyn_by_key, lookup, fx_dedupe = {}, {}, {}, {}
+    by_key, dyn_by_key, lookup, fx_dedupe, fx_dedupe2 = {}, {}, {}, {}, {}
     M.categories, M.developers, M.folders = {}, {}, {}
     project_sig = nil
 end
@@ -175,7 +176,7 @@ end
 ----------------------------------------------------------
 -- FX 항목 생성
 ----------------------------------------------------------
-local function AddFX(ftype, inst, full, keys)
+local function AddFX(ftype, inst, full, add_names, keys)
     full = Trim(full)
     if full == "" then return nil end
     local dkey = ftype .. "|" .. Lower(full)
@@ -191,11 +192,15 @@ local function AddFX(ftype, inst, full, keys)
     e.is_instrument = inst and true or false
     e.full_name     = full
     e.vendor        = vendor
+    e.add_names     = add_names
     e.categories    = {}
     e.folders       = {}
     e.key           = "fx:" .. ftype .. ":" .. full
 
     fx_dedupe[dkey] = e
+    local k2 = ftype .. "|" .. Lower(base)
+    if not fx_dedupe2[k2] then fx_dedupe2[k2] = e end
+    Register("fx", e)
     for _, k in ipairs(keys or {}) do AddLookup(k, e) end
     return e
 end
@@ -235,12 +240,16 @@ local function ParseVST()
         local file = key:match("^[^<]+") or key
         local ext = Lower(file:match("%.([%w]+)$") or "")
         local ftype = (ext == "vst3") and "VST3" or "VST"
+        local prefix = ftype .. (inst and "i" or "") .. ": "
+        local add_names = { prefix .. name }
+        if inst then add_names[#add_names + 1] = ftype .. ": " .. name end
+        add_names[#add_names + 1] = name
 
         local keys = { NormKey(key), NormKey(file) }
         local uid_num = (uid or ""):match("^(%-?%d+)")
         if uid_num then keys[#keys + 1] = NormKey(file) .. "<" .. uid_num end
 
-        local e = AddFX(ftype, inst, name, keys)
+        local e = AddFX(ftype, inst, name, add_names, keys)
         if e then
             SetInstrument(e, inst)
             e.file_key = NormKey(key)
@@ -270,7 +279,9 @@ local function ParseCLAP()
         local id, flags, name = line:match("^([^=]+)=(%d+)|(.*)$")
         if not id or id == "_" or not name or name == "" then return end
         local inst = ((tonumber(flags) or 0) & 1) == 1
-        local e = AddFX("CLAP", inst, name, { Lower(id), NormKey(cur_file) })
+        local add_names = { (inst and "CLAPi: " or "CLAP: ") .. name }
+        if inst then add_names[#add_names + 1] = "CLAP: " .. name end
+        local e = AddFX("CLAP", inst, name, add_names, { Lower(id), NormKey(cur_file) })
         if e then SetInstrument(e, inst) end
     end)
 end
@@ -286,7 +297,7 @@ local function ParseJS()
         if name == "" then name = ident end
         local slash = ident:gsub("\\", "/")
         local keys = { "js:" .. Lower(slash), "js:" .. Lower((slash:gsub("%.jsfx$", ""))) }
-        local e = AddFX("JS", false, name, keys)
+        local e = AddFX("JS", false, name, { "JS:" .. ident, "JS: " .. name }, keys)
         if e then
             e.js_ident = ident
             if e.vendor == "" then
@@ -300,105 +311,72 @@ local function ParseJS()
     end)
 end
 
--- Reject a removed binary when REAPER supplies its absolute path.
--- A relative identifier is resolved by REAPER's installed-FX registry.
-local function VSTBinaryExists(ftype, ident, checked)
-    if ftype ~= "VST" and ftype ~= "VST3" then return true end
-    if not ident:match("^%a:[/\\]") and not ident:match("^/") and not ident:match("^\\\\") then return true end
-    local path = ident:match("^[^<{]+")
-    local ext = path and Lower(path:match("%.([%w]+)$"))
-    if ext ~= "dll" and ext ~= "vst3" and ext ~= "vst" and ext ~= "so" and ext ~= "dylib" then return true end
-    if checked[path] == nil then
-        local exists = FileExists(path)
-        if not exists and (ext == "vst3" or ext == "vst") then
-            -- VST bundles can be directories.
-            RPR.EnumerateSubdirectories(path, -1)
-            RPR.EnumerateFiles(path, -1)
-            exists = RPR.EnumerateSubdirectories(path, 0) ~= nil or RPR.EnumerateFiles(path, 0) ~= nil
-        end
-        checked[path] = not not exists
-    end
-    return checked[path]
-end
-
-local function FindCachedFX(ftype, rest, keys)
-    local full = Lower(rest)
-    for _, key in ipairs(keys) do
-        local hits = lookup[key]
-        for _, entry in ipairs(hits or {}) do
-            if entry.fx_type == ftype then
-                local shell_without_id = entry.file_key and entry.file_key:find("<", 1, true)
-                    and not key:find("<", 1, true)
-                if Lower(entry.full_name) == full or (#hits == 1 and not shell_without_id) then
-                    return entry
-                end
-            end
-        end
-    end
-    return fx_dedupe[ftype .. "|" .. full]
-end
-
+-- REAPER가 실제로 보고하는 FX 목록으로 보충 (LV2 / DX / AU 등, 그리고 정식 표기 이름 확보)
 local function ParseEnumInstalled()
-    local installed, checked_paths = {}, {}
+    if not RPR.EnumInstalledFX then return end
     local i = 0
     while true do
         local ok, name, ident = RPR.EnumInstalledFX(i)
         if not ok then break end
         i = i + 1
         local prefix, rest = (name or ""):match("^([%w]+):%s*(.+)$")
-        if prefix then
-            local inst = #prefix > 2 and prefix:sub(-1) == "i"
-            local ftype = inst and prefix:sub(1, -2) or prefix
+        if prefix and rest then
+            local ftype, inst = prefix, false
+            if #prefix > 2 and prefix:sub(-1) == "i" then
+                ftype = prefix:sub(1, -2); inst = true
+            end
             if ftype == "VST2" then ftype = "VST" end
-            ident = ident or ""
-            if VSTBinaryExists(ftype, ident, checked_paths) then
-                local slash = Lower(ident:gsub("\\", "/"))
-                local keys = { NormKey(ident), Lower(ident) }
-                if ftype == "JS" and slash ~= "" then
-                    keys[#keys + 1] = "js:" .. slash
-                    keys[#keys + 1] = "js:" .. slash:gsub("%.jsfx$", "")
-                end
-                local e = FindCachedFX(ftype, rest, keys) or AddFX(ftype, inst, rest)
-                if e then
-                    if not installed[e] then
-                        installed[e] = true
-                        if Lower(e.full_name) ~= Lower(rest) then
-                            e.alt_name = e.name
-                            local base, vendor = SplitVendor(rest)
-                            e.name, e.lname = base, Lower(base)
-                            if vendor ~= "" then e.vendor, e.detail = vendor, vendor end
+            local base_rest = Lower((SplitVendor(rest)))
+            -- 1) 파일/ident 로 같은 플러그인인지 먼저 연결 (이름이 달라도 중복 생성 방지)
+            local e, linked_by_ident = nil, false
+            local id_slash = (ident or ""):gsub("\\", "/")
+            for _, k in ipairs({ NormKey(ident or ""), Lower(ident or ""), "js:" .. Lower(id_slash),
+                                 "js:" .. Lower((id_slash:gsub("%.jsfx$", ""))) }) do
+                local hits = (k ~= "" and k ~= "js:") and lookup[k] or nil
+                if hits then
+                    for _, h in ipairs(hits) do
+                        if h.fx_type == ftype and (#hits == 1 or Lower(h.full_name) == Lower(rest) or h.lname == base_rest) then
+                            e = h; linked_by_ident = true; break
                         end
-                        -- Keep the library key while using the currently enumerated name to insert.
-                        e.add_names = { name }
-                        if ftype == "JS" and e.js_ident then
-                            table.insert(e.add_names, 1, "JS:" .. e.js_ident)
-                        elseif inst then
-                            local insert_type = ftype == "VST" and "VST2" or ftype
-                            e.add_names[#e.add_names + 1] = insert_type .. ": " .. rest
-                        end
-                        SetInstrument(e, inst)
-                        Register("fx", e)
                     end
-                    for _, key in ipairs(keys) do AddLookup(key, e) end
                 end
+                if e then break end
+            end
+            -- 2) 이름으로 연결
+            if not e then e = fx_dedupe[ftype .. "|" .. Lower(rest)] end
+            if e and linked_by_ident and Lower(e.full_name) ~= Lower(rest) then
+                -- REAPER에서 이름을 바꾼 플러그인(vstrenames) 등은 REAPER 표기를 따른다
+                local nb, nv = SplitVendor(rest)
+                e.alt_name = e.name   -- 원래 이름으로도 검색되도록 보관
+                e.name, e.lname = nb, Lower(nb)
+                if nv ~= "" then e.vendor, e.detail = nv, nv end
+            end
+            if not e then
+                local base, vendor = SplitVendor(rest)
+                local cand = fx_dedupe2[ftype .. "|" .. Lower(base)]
+                if cand and (cand.vendor == "" or cand.vendor == vendor) then e = cand end
+            end
+            local keys = { NormKey(ident or ""), Lower(ident or "") }
+            if e then
+                -- REAPER 정식 표기를 우선 시도 이름으로 (JS는 ident가 더 정확하므로 두 번째)
+                local exists = false
+                for _, n in ipairs(e.add_names) do if n == name then exists = true break end end
+                if not exists then
+                    table.insert(e.add_names, (ftype == "JS") and 2 or 1, name)
+                end
+                SetInstrument(e, inst)
+                if e.vendor == "" then
+                    local _, vendor = SplitVendor(rest)
+                    if vendor ~= "" then e.vendor = vendor; e.detail = vendor end
+                end
+                for _, k in ipairs(keys) do AddLookup(k, e) end
+            else
+                local ne = AddFX(ftype, inst, rest, { name }, keys)
+                if ne then SetInstrument(ne, inst) end
             end
         end
         if i % 400 == 0 then coroutine.yield() end
     end
-
-    -- Remove cache-only entries before resolving categories and folders.
-    for key, entries in pairs(lookup) do
-        local count = 0
-        for _, entry in ipairs(entries) do
-            if installed[entry] then
-                count = count + 1
-                entries[count] = entry
-            end
-        end
-        for index = #entries, count + 1, -1 do entries[index] = nil end
-        if count == 0 then lookup[key] = nil end
-    end
-    fx_dedupe = {}
 end
 
 ----------------------------------------------------------
@@ -752,12 +730,10 @@ end
 ----------------------------------------------------------
 local function BuildAll()
     M.status = "Indexing FX..."
-    if RPR.EnumInstalledFX then
-        ParseVST(); coroutine.yield()
-        ParseCLAP()
-        ParseJS(); coroutine.yield()
-        ParseEnumInstalled()
-    end
+    ParseVST();  coroutine.yield()
+    ParseCLAP()
+    ParseJS();   coroutine.yield()
+    ParseEnumInstalled()
     BuildChains()
     SortList(lists.fx)
     BuildMeta()

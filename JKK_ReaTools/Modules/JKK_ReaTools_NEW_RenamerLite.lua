@@ -19,6 +19,10 @@ local function S(v) return v * (JKK_UI_SCALE or 1) end
 -- JKK_ReaTools가 먼저 로드한 SelectionManager 참조 (단독 로드 시 폴백 포함)
 local script_dir = (debug.getinfo(1, "S").source or ""):match("^@(.+[\\/])") or ""
 local Undo = dofile(script_dir .. "JKK_UndoLabels.lua")
+-- Shared language setting: T() translates long tooltips only.
+local i18n_path = script_dir .. "JKK_I18n.lua"
+local I18n = reaper.file_exists(i18n_path) and dofile(i18n_path) or nil
+local T = (I18n and I18n.T) or function(text) return text end
 local sel_path = script_dir .. "JKK_SelectionManager.lua"
 if not reaper.file_exists(sel_path) then
     sel_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_SelectionManager.lua"
@@ -503,25 +507,11 @@ local function DrawRenamerLite(ctx, mode, active)
         end
     end
     if reaper.ImGui_IsItemHovered(ctx, reaper.ImGui_HoveredFlags_AllowWhenDisabled()) then
-        reaper.ImGui_SetTooltip(ctx, "Click: one region around each group of overlapping items (longest extent),\nnamed from the text field\nShift+Click: one region per item, named after the item")
+        reaper.ImGui_SetTooltip(ctx, T("Click: one region around each group of overlapping items (longest extent),\nnamed from the text field\nShift+Click: one region per item, named after the item"))
     end
 
-    local open_button_width = S(100)
-    local open_button_height = S(22)
-    reaper.ImGui_SameLine(ctx, 0, 0)
-    reaper.ImGui_SetCursorPosX(ctx, row_start_x + math.max(0, available_width - open_button_width))
-    reaper.ImGui_SetCursorPosY(ctx, options_row_y + math.max(0, (checkbox_height - open_button_height) * 0.5))
-
-    if JKK_Theme then JKK_Theme.PushButton(ctx, "primary") end
-    if reaper.ImGui_Button(ctx, "Renamer", open_button_width, open_button_height) then
-        local command_id = reaper.NamedCommandLookup("_RS2343473a341aa2705a7b16c73d17d2fba2912208")
-        if command_id and command_id ~= 0 then
-            reaper.Main_OnCommand(command_id, 0)
-        else
-            reaper.ShowMessageBox("JKK_Renamer command could not be found. Check the ReaScript action ID.", "JKK_ReaTools", 0)
-        end
-    end
-    if JKK_Theme then JKK_Theme.PopButton(ctx) end
+    -- (The standalone "Renamer" launcher was removed: the JKK_ReaTools top bar
+    -- launcher opens the very same window.)
     reaper.ImGui_PopStyleVar(ctx, 1)
 
     input_was_focused = input_focused

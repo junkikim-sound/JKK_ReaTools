@@ -35,7 +35,6 @@ local DEFAULTS = {
     sidebar_w            = 210,     -- 우측 패널 너비 (px, 배율 적용 전)
     expanded_h           = 480,     -- 펼친 상태의 창 높이
     collapsed_h          = 96,      -- 접힌 상태(검색창만)의 창 높이 (자동 측정값)
-    auto_expand          = true,    -- 검색어 입력 시 자동으로 결과 펼치기
     expanded             = false,   -- 결과 패널 펼침 상태 (사용자가 펼치면 기억)
     view_mode            = "compact", -- "compact" | "detailed" (이름 아래 제조사 표시)
     font_size            = 0,       -- JKK Search 전용 글자 크기(px). 0 = 테마 기본 크기

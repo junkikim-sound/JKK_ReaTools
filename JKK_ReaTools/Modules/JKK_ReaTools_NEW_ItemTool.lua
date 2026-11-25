@@ -10,6 +10,10 @@ local reaper = reaper
 local script_dir = (debug.getinfo(1, "S").source or ""):match("^@(.+[\\/])") or ""
 local Undo = dofile(script_dir .. "JKK_UndoLabels.lua")
 local GestureUndo = _G.JKK_GestureUndo or dofile(script_dir .. "JKK_GestureUndo.lua")
+-- Shared language setting: T() translates long tooltips only.
+local i18n_path = script_dir .. "JKK_I18n.lua"
+local I18n = reaper.file_exists(i18n_path) and dofile(i18n_path) or nil
+local T = (I18n and I18n.T) or function(text) return text end
 local sel_path = script_dir .. "JKK_SelectionManager.lua"
 if not reaper.file_exists(sel_path) then
     sel_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_SelectionManager.lua"
@@ -53,6 +57,76 @@ math.randomseed(os.time())
         local adjust_rate = 1.0
         local group_stretch_ratio = 1.0
         local prev_group_stretch_ratio = 1.0
+
+        -- Relative mode (Abs/Rel switch in the JKK_ReaTools Controller header,
+        -- shared through the JKK_RELATIVE_MODE global).
+        -- The sliders show the FIRST selected item's real value (same as Abs).
+        -- Dragging moves every selected item by the same amount the slider
+        -- moved (dB / pan / semitones added, play rate multiplied), measured
+        -- from a snapshot taken when the drag starts. The slider keeps its value.
+        local rel_base, rel_start = nil, nil
+        local REL_MAX_VOL_LIN = 10 ^ (24 / 20) -- never above +24 dB per take
+        local function JKK_IT_IsRelative() return JKK_RELATIVE_MODE == true end
+        -- Call BEFORE the slider variable is overwritten with the new value.
+        local function JKK_IT_RelCapture()
+            if rel_base then return end
+            rel_start = { vol = adjust_vol, pan = adjust_pan, pitch = adjust_pitch, rate = adjust_rate }
+            rel_base = {}
+            for i = 0, reaper.CountSelectedMediaItems(0) - 1 do
+                local item = reaper.GetSelectedMediaItem(0, i)
+                local take = item and reaper.GetActiveTake(item)
+                if take then
+                    rel_base[#rel_base + 1] = {
+                        item = item, take = take,
+                        vol = reaper.GetMediaItemTakeInfo_Value(take, "D_VOL"),
+                        pan = reaper.GetMediaItemTakeInfo_Value(take, "D_PAN"),
+                        pitch = reaper.GetMediaItemTakeInfo_Value(take, "D_PITCH"),
+                        rate = reaper.GetMediaItemTakeInfo_Value(take, "D_PLAYRATE"),
+                        len = reaper.GetMediaItemInfo_Value(item, "D_LENGTH"),
+                    }
+                end
+            end
+        end
+        local function JKK_IT_RelRelease()
+            rel_base, rel_start = nil, nil
+        end
+        local function JKK_IT_RelEach(fn)
+            JKK_IT_RelCapture()
+            for _, b in ipairs(rel_base) do
+                if reaper.ValidatePtr(b.take, "MediaItem_Take*") then fn(b) end
+            end
+            reaper.UpdateArrange()
+        end
+        local function JKK_IT_ApplyRelVolume()
+            local delta_db = adjust_vol - rel_start.vol
+            JKK_IT_RelEach(function(b)
+                local mag = math.abs(b.vol)
+                local lin = (mag > 1e-8) and math.min(mag * 10 ^ (delta_db / 20), REL_MAX_VOL_LIN) or 0
+                reaper.SetMediaItemTakeInfo_Value(b.take, "D_VOL", (b.vol < 0) and -lin or lin)
+            end)
+        end
+        local function JKK_IT_ApplyRelPan()
+            local delta = adjust_pan - rel_start.pan
+            JKK_IT_RelEach(function(b)
+                reaper.SetMediaItemTakeInfo_Value(b.take, "D_PAN", math.max(-1, math.min(1, b.pan + delta)))
+            end)
+        end
+        local function JKK_IT_ApplyRelPitch()
+            local delta = adjust_pitch - rel_start.pitch
+            JKK_IT_RelEach(function(b)
+                reaper.SetMediaItemTakeInfo_Value(b.take, "D_PITCH", b.pitch + delta)
+            end)
+        end
+        local function JKK_IT_ApplyRelRate()
+            local ratio = (rel_start.rate > 0) and (adjust_rate / rel_start.rate) or 1
+            JKK_IT_RelEach(function(b)
+                if b.rate <= 0 then return end
+                local new_rate = math.max(0.01, b.rate * ratio)
+                reaper.SetMediaItemInfo_Value(b.item, "B_PPITCH", 0)
+                reaper.SetMediaItemTakeInfo_Value(b.take, "D_PLAYRATE", new_rate)
+                reaper.SetMediaItemLength(b.item, b.len * b.rate / new_rate, true)
+            end)
+        end
         local function JKK_IT_ApplyBatchVolume()
             local cnt = reaper.CountSelectedMediaItems(0)
             if cnt == 0 then return end
@@ -744,8 +818,7 @@ math.randomseed(os.time())
             width = tonumber(reaper.GetExtState("JKK_ItemTool", "width")) or 5.0
             use_clustering = (tonumber(reaper.GetExtState("JKK_ItemTool", "use_clustering")) or 1) == 1
             use_center_marker = LoadFlag("JKK_ItemTool", "use_center_marker", false)
-            -- Invalid older preferences cannot activate both modes.
-            if use_center_marker then use_clustering = false end
+            -- Group and Center Marker are independent (both may be ON).
             spacing_mode = tonumber(reaper.GetExtState("JKK_ItemTool", "spacing_mode")) or 0
             use_gap_mode = LoadFlag("JKK_ItemTool", "use_gap_mode", false)
             pos_range = tonumber(reaper.GetExtState("JKK_ItemTool", "pos_range")) or 0.0
@@ -938,15 +1011,18 @@ math.randomseed(os.time())
 
             local start_pos = reaper.GetCursorPosition()
             local spacing = CalculateSpacingAmount(width)
-            local arrange_mode = use_clustering and "group"
-                or (use_center_marker and "marker" or "individual")
+            -- Group and Center Marker are independent:
+            --   Group ON  : connected-overlap groups across tracks (one global slot each)
+            --   Group OFF : every item is its own slot, left to right, per track
+            --   Center Marker: the arrange point is the first visible take marker
+            local arrange_mode = (use_clustering and "group" or "individual")
+                .. (use_center_marker and "+marker" or "")
 
             if cached_arrange_mode ~= arrange_mode
                 or not IsPersistentClustersValidForSelection(selected_items) then
-                if use_clustering or use_center_marker then
-                    -- Both options use the SAME connected-overlap groups,
-                    -- across all tracks. Keep membership and the original
-                    -- within-group positions stable during Width drags.
+                if use_clustering then
+                    -- Keep membership and the original within-group
+                    -- positions stable during Width drags.
                     persistentClusters = BuildClusters(selected_items)
                 else
                     persistentClusters = {}
@@ -970,7 +1046,7 @@ math.randomseed(os.time())
                 -- A group is a single global time slot. Only the plain
                 -- ungrouped mode uses independent slots for each track.
                 local track_key = "global"
-                if not use_clustering and not use_center_marker then
+                if not use_clustering then
                     track_key = reaper.GetMediaItem_Track(cluster.items_data[1].item)
                 end
                 local slot_index = track_counters[track_key] or 0
@@ -1049,7 +1125,7 @@ math.randomseed(os.time())
             local sorted_items = CollectAndSortSelectedItems()
             local clusters
             
-            if use_clustering or use_center_marker then
+            if use_clustering then
                 clusters = BuildClusters(sorted_items)
             else
                 clusters = {}
@@ -1106,8 +1182,8 @@ math.randomseed(os.time())
             -- Shuffle has intentionally replaced the cached slot assignment.
             -- Do not compare it to a pre-shuffle placement snapshot.
             last_arranged_geometry = nil
-            cached_arrange_mode = use_clustering and "group"
-                or (use_center_marker and "marker" or "individual")
+            cached_arrange_mode = (use_clustering and "group" or "individual")
+                .. (use_center_marker and "+marker" or "")
 
             -- arrange_items() 대신 위치(간격)만 재배열하는 함수 호출
             JKK_IT_apply_spacing_only()
@@ -2082,15 +2158,29 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
         reaper.ImGui_SetNextItemWidth(ctx, slider_width)
     end
 
+    -- Abs: every selected item gets the slider value.
+    -- Rel: the slider still shows the FIRST item's value, but dragging moves
+    -- every item by the same amount (each keeps its own offset). The slider
+    -- keeps the value it was dragged to.
+    local relative = JKK_IT_IsRelative()
+    local function BeginEdit()
+        if relative then JKK_IT_RelCapture() end   -- snapshot before the value changes
+    end
+    local function EndEditIfReleased()
+        if relative and reaper.ImGui_IsItemDeactivated(ctx) then JKK_IT_RelRelease() end
+    end
+
     -- Volume
     BeginLabeledRow("Volume")
     local changed_vol, new_vol = reaper.ImGui_SliderDouble(ctx, "##ItemVolume", adjust_vol, -30.0, 30.0, "%.2f dB")
     if changed_vol then
         JKK_ItemSliderUndoBegin(Undo.Label("item.batch_take_volume_applied"))
+        BeginEdit()
         adjust_vol = new_vol
-        JKK_IT_ApplyBatchVolume()
+        if relative then JKK_IT_ApplyRelVolume() else JKK_IT_ApplyBatchVolume() end
     end
     JKK_ItemSliderUndoEnd(ctx, Undo.Label("item.batch_take_volume_applied"))
+    EndEditIfReleased()
     if reaper.ImGui_IsItemClicked(ctx, 1) then
         GestureUndo.Finish()
         reaper.Undo_BeginBlock()
@@ -2111,10 +2201,12 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
     local changed_pan, new_pan = reaper.ImGui_SliderDouble(ctx, "##ItemPan", adjust_pan, -1.0, 1.0, pan_format)
     if changed_pan then
         JKK_ItemSliderUndoBegin(Undo.Label("item.batch_pan_applied"))
+        BeginEdit()
         adjust_pan = new_pan
-        JKK_IT_ApplyBatchPan()
+        if relative then JKK_IT_ApplyRelPan() else JKK_IT_ApplyBatchPan() end
     end
     JKK_ItemSliderUndoEnd(ctx, Undo.Label("item.batch_pan_applied"))
+    EndEditIfReleased()
     if reaper.ImGui_IsItemClicked(ctx, 1) then
         GestureUndo.Finish()
         reaper.Undo_BeginBlock()
@@ -2128,10 +2220,12 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
     local changed_pitch, new_pitch = reaper.ImGui_SliderDouble(ctx, "##ItemPitch", adjust_pitch, -12.0, 12.0, "%.1f st")
     if changed_pitch then
         JKK_ItemSliderUndoBegin(Undo.Label("item.batch_pitch_applied"))
+        BeginEdit()
         adjust_pitch = new_pitch
-        JKK_IT_ApplyBatchPitch()
+        if relative then JKK_IT_ApplyRelPitch() else JKK_IT_ApplyBatchPitch() end
     end
     JKK_ItemSliderUndoEnd(ctx, Undo.Label("item.batch_pitch_applied"))
+    EndEditIfReleased()
     if reaper.ImGui_IsItemClicked(ctx, 1) then
         GestureUndo.Finish()
         reaper.Undo_BeginBlock()
@@ -2148,10 +2242,12 @@ local function DrawItemBatchController(ctx, selected_item_count, prev_count, cur
     )
     if changed_rate then
         JKK_ItemSliderUndoBegin(Undo.Label("item.batch_playback_rate_applied"))
+        BeginEdit()
         adjust_rate = new_rate
-        JKK_IT_ApplyBatchRate()
+        if relative then JKK_IT_ApplyRelRate() else JKK_IT_ApplyBatchRate() end
     end
     JKK_ItemSliderUndoEnd(ctx, Undo.Label("item.batch_playback_rate_applied"))
+    EndEditIfReleased()
     if reaper.ImGui_IsItemClicked(ctx, 1) then
         GestureUndo.Finish()
         reaper.Undo_BeginBlock()
@@ -2476,7 +2572,7 @@ local function DrawIntervalWidthTools(ctx, layout)
         reaper.ImGui_SetTooltip(
             ctx,
             "Current: " .. mode_names[spacing_mode + 1]
-            .. "\nRight-click to toggle (Grid -> Sec -> RPM)"
+            .. "\n" .. T("Right-click to toggle (Grid -> Sec -> RPM)")
         )
     end
 
@@ -2518,11 +2614,12 @@ local function DrawIntervalWidthTools(ctx, layout)
         return checkbox_size + JKK_Scale(4) + txt_w
     end
 
-    -- Three right-aligned action buttons, responsive to narrow dock widths.
+    -- Two right-aligned action buttons, responsive to narrow dock widths.
+    -- (The Loopmaker launcher was removed: the JKK_ReaTools top bar launcher
+    -- and the Loopmaker action itself open the very same window.)
     local action_button_width = math.min(layout.button_width,
         math.max(JKK_Scale(30), math.floor(available_actions * 0.215)))
-    local loop_x = right_edge - action_button_width
-    local del_x = loop_x - tight_gap - action_button_width
+    local del_x = right_edge - action_button_width
     local peak_x = del_x - tight_gap - action_button_width
     local checks_end = peak_x - tight_gap
     local controls_space = checks_end - slider_x
@@ -2568,15 +2665,15 @@ local function DrawIntervalWidthTools(ctx, layout)
     if changed_gap then use_gap_mode = new_gap end
     if reaper.ImGui_IsItemHovered(ctx) then
         reaper.ImGui_SetTooltip(ctx,
-            "Checked: End-to-Start\nUnchecked: Start-to-Start")
+            T("Checked: End-to-Start\nUnchecked: Start-to-Start"))
     end
 
     reaper.ImGui_SetCursorPos(ctx, group_x, checkbox_y)
     local changed_group, new_group = reaper.ImGui_Checkbox(ctx,
         group_label .. "##Group", use_clustering)
     if changed_group then
+        -- Group and Center Marker are independent options.
         use_clustering = new_group
-        if new_group then use_center_marker = false end
         persistentClusters = {}
         last_arranged_geometry = nil
         cached_arrange_mode = nil
@@ -2585,7 +2682,7 @@ local function DrawIntervalWidthTools(ctx, layout)
     end
     if reaper.ImGui_IsItemHovered(ctx) then
         reaper.ImGui_SetTooltip(ctx,
-            "Checked: Move overlapping items as one group\nUnchecked: Move items individually")
+            T("Checked: Move overlapping items as one group\nUnchecked: Move items individually"))
     end
 
     reaper.ImGui_SetCursorPos(ctx, center_x, checkbox_y)
@@ -2593,7 +2690,6 @@ local function DrawIntervalWidthTools(ctx, layout)
         center_label .. "##CenterMarker", use_center_marker)
     if changed_center then
         use_center_marker = new_center
-        if new_center then use_clustering = false end
         persistentClusters = {}
         last_arranged_geometry = nil
         cached_arrange_mode = nil
@@ -2602,9 +2698,10 @@ local function DrawIntervalWidthTools(ctx, layout)
     end
     if reaper.ImGui_IsItemHovered(ctx) then
         reaper.ImGui_SetTooltip(ctx,
-            "Group overlapping items across tracks, then align their"
-            .. " first visible take markers within each group."
-            .. "\nIf none exists, align by item start.")
+            T("Use each item's first visible take marker as its arrange point"
+            .. " (falls back to the item start if there is none)."
+            .. "\nGroup ON: overlapping items move as one group, markers aligned within it."
+            .. "\nGroup OFF: items are placed one by one from the left, marker to marker."))
     end
 
     -- No action in this row may trigger Arrange Width.
@@ -2641,10 +2738,10 @@ local function DrawIntervalWidthTools(ctx, layout)
     reaper.ImGui_EndDisabled(ctx)
     if reaper.ImGui_IsItemHovered(ctx, reaper.ImGui_HoveredFlags_AllowWhenDisabled()) then
         reaper.ImGui_SetTooltip(ctx,
-            "One take marker per non-silent region using Split Dyn's current "
+            T("One take marker per non-silent region using Split Dyn's current "
             .. "Threshold / Min Length.\nEach marker is placed at the "
             .. "loudest audio sample in that region."
-            .. "\nNo items are moved. Existing user markers are preserved."
+            .. "\nNo items are moved. Existing user markers are preserved.")
             .. (peak_markers_last_result and ("\nLast: " .. peak_markers_last_result) or ""))
     end
 
@@ -2678,31 +2775,15 @@ local function DrawIntervalWidthTools(ctx, layout)
     reaper.ImGui_EndDisabled(ctx)
     if reaper.ImGui_IsItemHovered(ctx, reaper.ImGui_HoveredFlags_AllowWhenDisabled()) then
         reaper.ImGui_SetTooltip(ctx,
-            "Delete ALL take markers from every take of the selected items."
-            .. "\nManual markers are also deleted. Undo is supported.")
-    end
-
-    reaper.ImGui_SetCursorPos(ctx, loop_x, checkbox_y)
-    local loop_text = action_button_width >= JKK_Scale(75) and "Loopmaker"
-        or (action_button_width >= JKK_Scale(48) and "Loop" or "L")
-    PushJKKButtonStyle(ctx) -- Theme Manager: Important Button (primary)
-    local loopmaker_clicked = reaper.ImGui_Button(ctx,
-        loop_text .. "##JKK_Loopmaker", action_button_width, button_height)
-    PopJKKButtonStyle(ctx)
-    if loopmaker_clicked then
-        -- 창을 여는 행위 자체는 프로젝트 편집이 아니므로 Undo를 만들지 않는다.
-        -- 루프 확정(Make Loop)의 Undo는 JKK_Loopmaker.lua에서 별도로 기록한다.
-        local cmd_id = reaper.NamedCommandLookup("_RScca2c247e3eef55035a013459ae01e9beab07629")
-        if cmd_id ~= 0 then
-            reaper.Main_OnCommand(cmd_id, 0)
-        end
+            T("Delete ALL take markers from every take of the selected items."
+            .. "\nManual markers are also deleted. Undo is supported."))
     end
 
     -- A checkbox or action button is never a request to apply Arrange Width.
     -- This also protects against accidental slider events on narrow/overlapping
     -- docks. Group/Center only update their options; Peak Marker only adds markers.
     local other_control_clicked = changed_gap or changed_group or changed_center
-        or shuffle_clicked or peak_marker_clicked or del_marker_clicked or loopmaker_clicked
+        or shuffle_clicked or peak_marker_clicked or del_marker_clicked
     if arrange_width_requested and not other_control_clicked then
         JKK_ItemSliderUndoBegin(Undo.Label("item.update_interval_width"))
         JKK_IT_apply_spacing_only()
@@ -2986,7 +3067,7 @@ local function DrawGridSplitter(ctx, layout)
         local mode_name = (grid_live.mode == 0) and "Grid" or "Seconds"
         reaper.ImGui_SetTooltip(
             ctx,
-            "Current: " .. mode_name .. "\nRight-click to toggle (Grid <-> Sec)"
+            "Current: " .. mode_name .. "\n" .. T("Right-click to toggle (Grid <-> Sec)")
         )
     end
 

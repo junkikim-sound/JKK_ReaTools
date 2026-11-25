@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_ReaTools
 -- @author Junki Kim
--- @version 1.0.22
+-- @version 1.0.3
 -- @provides
 --     [main] Actions/JKK_TrackManager_Open.lua
 --     [main] Actions/JKK_TrackManager_TrackActivation.lua
@@ -18,19 +18,31 @@
 --     [nomain] Modules/JKK_ReaTools_NEW_TrackTool.lua
 --     [nomain] Modules/JKK_ReaTools_NEW_RenamerLite.lua
 --     [nomain] Modules/JKK_ReaTools_NEW_ColorPaletteLite.lua
+--     [nomain] Modules/JKK_ReaTools_Launcher.lua
+--     [nomain] Modules/JKK_Renamer_Engine.lua
+--     [nomain] Modules/JKK_Renamer_QueueUI.lua
 --     [nomain] Modules/JKK_Renamer_UCSList.lua
 --     [nomain] Modules/JKK_Renamer_WildcardList.lua
+--     [nomain] Modules/JKK_Renderer_Queue.lua
 --     [nomain] Modules/JKK_SelectionManager.lua
 --     [nomain] Modules/JKK_TakeMarker_Peaks.lua
 --     [nomain] Modules/JKK_Theme_Core.lua
 --     [nomain] Modules/JKK_UndoLabels.lua
 --     [nomain] Modules/JKK_GestureUndo.lua
+--     [nomain] Modules/JKK_I18n.lua
+--     [nomain] Modules/JKK_MiniPopup.lua
 --     [nomain] Modules/JKK_WindowChrome.lua
 --     [nomain] Modules/JKK_TrackManager_Core.lua
 --     [nomain] Modules/JKK_TrackManager_UI.lua
 --========================================================
 
 local RPR = reaper
+
+-- 토글 액션: 실행 중에는 액션 State가 On, 다시 실행하면 창이 닫힘 (다중 인스턴스 방지)
+if reaper.set_action_options then reaper.set_action_options(1 | 4) end
+reaper.atexit(function()
+    if reaper.set_action_options then reaper.set_action_options(8) end
+end)
 local ctx = RPR.ImGui_CreateContext("JKK_ReaTools")
 
 ---------------------------------------------------------
@@ -200,6 +212,9 @@ end
 local GestureUndo = load_module("JKK_GestureUndo.lua")
 _G.JKK_GestureUndo = GestureUndo
 local Undo = load_module("JKK_UndoLabels.lua")
+-- Shared language setting (ExtState JKK_ReaTools/language); T() translates long text.
+local I18n = load_module("JKK_I18n.lua")
+local T = (I18n and I18n.T) or function(text) return text end
 local sel_mgr              = load_module("JKK_SelectionManager.lua")
 local item_module          = load_module("JKK_ReaTools_NEW_ItemTool.lua")
 local track_module         = load_module("JKK_ReaTools_NEW_TrackTool.lua")
@@ -211,15 +226,19 @@ local track_manager_ui_lib = load_module("JKK_TrackManager_UI.lua")
 local track_manager_view   = (track_manager_ui_lib and track_manager_ui_lib.Create and track_manager_core)
     and track_manager_ui_lib.Create({core = track_manager_core, theme = Theme}) or nil
 
-local function OpenStandaloneTrackManager()
-    local action_path = script_dir .. "Actions/JKK_TrackManager_Open.lua"
-    if RPR.file_exists(action_path) then
-        -- Reuse the existing action: focus the standalone window if already open.
-        local ok, err = pcall(dofile, action_path)
-        if not ok then RPR.MB(tostring(err), "Track Manager", 0) end
-    else
-        RPR.MB("Track Manager open action was not found: " .. action_path, "JKK_ReaTools", 0)
-    end
+-- Top bar launcher for the JKK window scripts (Modules/JKK_ReaTools_Launcher.lua)
+local launcher_lib = load_module("JKK_ReaTools_Launcher.lua")
+local launcher = (launcher_lib and launcher_lib.Create) and launcher_lib.Create({
+    theme = Theme,
+    root_dir = script_dir:gsub("[^\\/]+[\\/]$", ""),   -- .../Scripts/JKK_ReaTools/
+    icon_dir = script_dir .. "Modules/Icons/JKK_ReaTools/",
+}) or nil
+
+-- Controller Abs/Rel mode, shared with the Item/Track tool modules.
+JKK_RELATIVE_MODE = (RPR.GetExtState("JKK_ReaTools", "relative_mode") == "1")
+local function SetRelativeMode(on)
+    JKK_RELATIVE_MODE = on and true or false
+    RPR.SetExtState("JKK_ReaTools", "relative_mode", JKK_RELATIVE_MODE and "1" or "0", true)
 end
 
 ---------------------------------------------------------
@@ -557,10 +576,10 @@ local function BuildSelectionStatus()
     return CaptureSelectionStatus()
 end
 
-local function DrawSelectionStatus()
+local function DrawSelectionStatus(max_width)
     local prefix, selected_name, suffix = BuildSelectionStatus()
-    local available_width = select(1, RPR.ImGui_GetContentRegionAvail(ctx))
-    local safe_width = math.max(1, available_width - S(200))
+    local available_width = max_width or select(1, RPR.ImGui_GetContentRegionAvail(ctx))
+    local safe_width = math.max(1, available_width - (max_width and 0 or S(200)))
 
     Theme.PushText(ctx, "status")
     if selected_name == nil then
@@ -726,6 +745,71 @@ end
 
 local pending_panel_swap = nil
 
+-- Controller Abs / Rel switch: a pill-shaped track with a sliding thumb
+-- (the thumb is drawn only; clicks go to the left/right half under the mouse).
+-- The thumb eases toward the selected side, so toggling animates left/right.
+local mode_switch_anim = JKK_RELATIVE_MODE and 1 or 0
+local mode_switch_time = nil
+
+local function ColorLuma(c)
+    return (((c >> 24) & 255) * 0.299 + ((c >> 16) & 255) * 0.587 + ((c >> 8) & 255) * 0.114) / 255
+end
+
+local function MixColor(a, b, t)
+    local function ch(c, s) return (c >> s) & 255 end
+    local function m(s) return math.floor(ch(a, s) + (ch(b, s) - ch(a, s)) * t + 0.5) end
+    return (m(24) << 24) | (m(16) << 16) | (m(8) << 8) | m(0)
+end
+
+local function DrawModeSwitch(width, height)
+    RPR.ImGui_SameLine(ctx, 0, 0)
+    local x, y = RPR.ImGui_GetCursorScreenPos(ctx)
+    local w, h = math.max(S(40), width), math.max(S(12), height)
+    if RPR.ImGui_InvisibleButton(ctx, "##JKK_CtrlModeSwitch", w, h) then
+        local mx = RPR.ImGui_GetMousePos(ctx)
+        SetRelativeMode(mx >= x + w / 2)
+    end
+    local hovered = RPR.ImGui_IsItemHovered(ctx)
+    if hovered then
+        local mx = RPR.ImGui_GetMousePos(ctx)
+        RPR.ImGui_SetTooltip(ctx, (mx >= x + w / 2)
+            and T("Relative: each item/track keeps its own value and moves by the same amount")
+            or T("Absolute: every selected item/track gets the same value"))
+    end
+
+    -- Animate the thumb (frame-rate independent ease toward the target side).
+    local now = RPR.time_precise()
+    local dt = mode_switch_time and math.min(0.1, now - mode_switch_time) or 0
+    mode_switch_time = now
+    local target = JKK_RELATIVE_MODE and 1 or 0
+    mode_switch_anim = mode_switch_anim + (target - mode_switch_anim) * math.min(1, dt * 16)
+    if math.abs(target - mode_switch_anim) < 0.002 then mode_switch_anim = target end
+
+    local dl = RPR.ImGui_GetWindowDrawList(ctx)
+    local base = Theme.GetColor("base_bg")
+    local track_col = Theme.GetColor("control_bg")
+    local text_col = Theme.GetColor("text_main")
+    local accent = Theme.GetColor("accent_main")
+    if hovered then track_col = MixColor(track_col, text_col, 0.08) end
+    local r = h / 2
+    RPR.ImGui_DrawList_AddRectFilled(dl, x, y, x + w, y + h, track_col, r)
+
+    local pad = math.max(1, math.floor(S(2)))
+    local half = (w - pad * 2) / 2
+    local tx = x + pad + half * mode_switch_anim
+    RPR.ImGui_DrawList_AddRectFilled(dl, tx, y + pad, tx + half, y + h - pad, accent, r - pad)
+
+    local on_thumb = (ColorLuma(accent) > 0.6) and MixColor(base, 0x000000FF, 0.3) or 0xFFFFFFFF
+    local muted = MixColor(text_col, base, 0.45)
+    for i, label in ipairs({ "Abs", "Rel" }) do
+        local cx = x + pad + half * (i - 1) + half / 2
+        local tw, th = RPR.ImGui_CalcTextSize(ctx, label)
+        -- Label color follows the thumb: fully "on" when the thumb is under it.
+        local cover = (i == 1) and (1 - mode_switch_anim) or mode_switch_anim
+        RPR.ImGui_DrawList_AddText(dl, cx - tw / 2, y + (h - th) / 2, MixColor(muted, on_thumb, cover), label)
+    end
+end
+
 local function DrawPanelHeader(panel_id)
     local available_width = select(1, RPR.ImGui_GetContentRegionAvail(ctx))
     local header_title = (panel_id == "D" and current_mode == "Track")
@@ -742,14 +826,22 @@ local function DrawPanelHeader(panel_id)
     RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_FrameBorderSize(), 0)
 
     local header_height = math.max(S(15), RPR.ImGui_GetTextLineHeight(ctx) + S(2))
-    RPR.ImGui_Button(ctx, label, math.max(1, available_width), header_height)
+    -- Controller panel: Abs / Rel toggle at the right end of its title row.
+    local show_mode_toggle = (panel_id == "B") and (current_mode == "Item" or current_mode == "Track")
+    local toggle_w = show_mode_toggle and S(76) or 0
+    RPR.ImGui_Button(ctx, label, math.max(1, available_width - toggle_w), header_height)
     RPR.ImGui_PopStyleVar(ctx, 3)
     Theme.PopText(ctx)
     Theme.PopFont(ctx)
     RPR.ImGui_PopStyleColor(ctx, 3)
 
     if RPR.ImGui_IsItemHovered(ctx) then
-        RPR.ImGui_SetTooltip(ctx, "Drag onto another panel title to swap their places.")
+        RPR.ImGui_SetTooltip(ctx, T("Drag onto another panel title to swap their places."))
+    end
+    -- Drawn after the drag/drop handlers below, which must stay bound to the title button.
+    local function DrawModeToggle()
+        if not show_mode_toggle then return end
+        DrawModeSwitch(toggle_w, header_height)
     end
 
     if RPR.ImGui_BeginDragDropSource(ctx) then
@@ -765,6 +857,8 @@ local function DrawPanelHeader(panel_id)
         end
         RPR.ImGui_EndDragDropTarget(ctx)
     end
+
+    DrawModeToggle()
 end
 
 local function DrawSplitter(index, left_id, right_id, fill, height, splitter_width)
@@ -815,7 +909,7 @@ local function DrawSettingsPopup()
     end
 
     -- 1. Selection & Range Detection
-    RPR.ImGui_TextDisabled(ctx, "Selection & Range Detection")
+    RPR.ImGui_TextDisabled(ctx, T("Selection & Range Detection"))
 
     local range_mode_items = { "Ignore", "Regions / Markers", "Items in Range" }
 
@@ -835,7 +929,7 @@ local function DrawSettingsPopup()
         RPR.ImGui_EndCombo(ctx)
     end
     if RPR.ImGui_IsItemHovered(ctx) then
-        RPR.ImGui_SetTooltip(ctx, "Choose what to target when Time Selection changes:\n- Ignore: Do not change target mode\n- Regions / Markers: Target regions & markers inside range\n- Items in Range: Auto-select media items overlapping range")
+        RPR.ImGui_SetTooltip(ctx, T("Choose what to target when Time Selection changes:\n- Ignore: Do not change target mode\n- Regions / Markers: Target regions & markers inside range\n- Items in Range: Auto-select media items overlapping range"))
     end
 
     RPR.ImGui_AlignTextToFramePadding(ctx)
@@ -854,7 +948,7 @@ local function DrawSettingsPopup()
         RPR.ImGui_EndCombo(ctx)
     end
     if RPR.ImGui_IsItemHovered(ctx) then
-        RPR.ImGui_SetTooltip(ctx, "Choose what to target when Loop Points change:\n- Ignore: Do not change target mode\n- Regions / Markers: Target regions & markers inside loop\n- Items in Range: Auto-select media items overlapping loop")
+        RPR.ImGui_SetTooltip(ctx, T("Choose what to target when Loop Points change:\n- Ignore: Do not change target mode\n- Regions / Markers: Target regions & markers inside loop\n- Items in Range: Auto-select media items overlapping loop"))
     end
 
     if sel_mgr then
@@ -862,6 +956,9 @@ local function DrawSettingsPopup()
         local arr_changed, new_arr = RPR.ImGui_Checkbox(ctx, "Arrange Click Selects Track", sel_settings.arrange_selects_track)
         if arr_changed then
             sel_mgr.SetSetting("arrange_selects_track", new_arr)
+        end
+        if RPR.ImGui_IsItemHovered(ctx) then
+            RPR.ImGui_SetTooltip(ctx, T("When on, clicking an item in the arrange view also selects its track."))
         end
     end
 
@@ -922,7 +1019,24 @@ local function DrawSettingsPopup()
         SaveZoomSettings()
     end
 
-    -- 4. Tools & Theme
+    -- 4. Language (shared with every JKK script via ExtState JKK_ReaTools/language)
+    if I18n then
+        RPR.ImGui_Spacing(ctx)
+        RPR.ImGui_Separator(ctx)
+        RPR.ImGui_TextDisabled(ctx, "Language")
+        local cur_lang = I18n.GetLanguage()
+        for i, lang in ipairs(I18n.LANGUAGES) do
+            if i > 1 then RPR.ImGui_SameLine(ctx, S(145)) end
+            if RPR.ImGui_RadioButton(ctx, lang.label .. "##JKK_Lang_" .. lang.id, cur_lang == lang.id) then
+                I18n.SetLanguage(lang.id)
+            end
+            if RPR.ImGui_IsItemHovered(ctx) then
+                RPR.ImGui_SetTooltip(ctx, T("Language for long tooltips and descriptions.\nShort UI labels stay in English."))
+            end
+        end
+    end
+
+    -- 5. Tools & Theme
     RPR.ImGui_Spacing(ctx)
     RPR.ImGui_Separator(ctx)
     RPR.ImGui_TextDisabled(ctx, "Tools & Theme")
@@ -1017,12 +1131,22 @@ local function GetValidHomeCommandId()
 end
 
 local function DrawTopBar()
+    -- Home / Memo / Settings and the launcher buttons share the Controller
+    -- slider height (frame height of the base font, measured before the
+    -- top bar font is pushed).
+    local bar_h = math.floor(RPR.ImGui_GetFrameHeight(ctx) + 0.5)
+    local row_x = RPR.ImGui_GetCursorPosX(ctx)
+    local row_y = RPR.ImGui_GetCursorPosY(ctx)
+    local row_w = select(1, RPR.ImGui_GetContentRegionAvail(ctx))
+    local launcher_w = launcher and launcher.Width(ctx, bar_h) or 0
+
     Theme.PushFont(ctx, JKK_UI_SCALE, "topbar")
+    RPR.ImGui_PushStyleVar(ctx, RPR.ImGui_StyleVar_FramePadding(), S(8), 0)
     local home_cmd_id = GetValidHomeCommandId()
     if home_cmd_id ~= 0 then
         RPR.ImGui_SameLine(ctx, 0, S(4))
         Theme.PushButton(ctx, "highlight")
-        if RPR.ImGui_SmallButton(ctx, "Home##JKK_HomeButton") then
+        if RPR.ImGui_Button(ctx, "Home##JKK_HomeButton", 0, bar_h) then
             RPR.Main_OnCommand(home_cmd_id, 0)
         end
         Theme.PopButton(ctx)
@@ -1033,7 +1157,7 @@ local function DrawTopBar()
     if memo_on then
         Theme.PushButton(ctx, "confirm")
     end
-    local memo_clicked = RPR.ImGui_SmallButton(ctx, "Memo##JKK_MemoToggle")
+    local memo_clicked = RPR.ImGui_Button(ctx, "Memo##JKK_MemoToggle", 0, bar_h)
     if memo_on then
         Theme.PopButton(ctx)
     end
@@ -1047,13 +1171,28 @@ local function DrawTopBar()
     end
 
     RPR.ImGui_SameLine(ctx, 0, S(4))
-    if RPR.ImGui_SmallButton(ctx, "Settings##JKK_SettingsButton") then
+    if RPR.ImGui_Button(ctx, "Settings##JKK_SettingsButton", 0, bar_h) then
         RPR.ImGui_OpenPopup(ctx, SETTINGS_POPUP_ID)
     end
+    RPR.ImGui_PopStyleVar(ctx, 1)
     DrawSettingsPopup()
 
+    -- Selection status fills the space up to the right-aligned launcher.
     RPR.ImGui_SameLine(ctx, 0, S(10))
-    DrawSelectionStatus()
+    local status_x = RPR.ImGui_GetCursorPosX(ctx)
+    local launcher_x = row_x + row_w - launcher_w
+    -- Taller buttons: center the status text vertically on the row.
+    RPR.ImGui_SetCursorPosY(ctx, row_y + math.max(0, (bar_h - RPR.ImGui_GetTextLineHeight(ctx)) * 0.5))
+    DrawSelectionStatus(math.max(1, launcher_x - status_x - S(10)))
+
+    if launcher then
+        RPR.ImGui_SameLine(ctx, 0, 0)
+        RPR.ImGui_SetCursorPosX(ctx, math.max(launcher_x, RPR.ImGui_GetCursorPosX(ctx) + S(10)))
+        RPR.ImGui_SetCursorPosY(ctx, row_y)
+        Theme.PopFont(ctx)          -- launcher letters use the base font
+        launcher.Draw(ctx, bar_h)
+        Theme.PushFont(ctx, JKK_UI_SCALE, "topbar")
+    end
 
     Theme.PopFont(ctx)
 end
@@ -1138,10 +1277,10 @@ local function DrawPanelD()
     if current_mode == "Track" then
         -- Embedded Track Manager owns the entire toolbar including the launcher.
         if track_manager_view then
+            -- No standalone launcher here: the top bar launcher opens Track Manager.
             track_manager_view.Draw(ctx, {
                 embedded = true,
                 scale = JKK_UI_SCALE,
-                onOpenStandalone = OpenStandaloneTrackManager,
             })
         else
             RPR.ImGui_TextDisabled(ctx, "Track Manager UI is unavailable.")
@@ -1183,7 +1322,7 @@ local function DrawPanels()
 
     local ids = GetVisiblePanelIds()
     if #ids == 0 then
-        RPR.ImGui_TextDisabled(ctx, "All panels are hidden. Turn them on in Settings.")
+        RPR.ImGui_TextDisabled(ctx, T("All panels are hidden. Turn them on in Settings."))
         return
     end
 

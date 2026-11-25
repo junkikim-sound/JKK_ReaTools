@@ -1,12 +1,17 @@
 --========================================================
 -- @title JKK_TrackManager
 -- @author Junki Kim
--- @version 1.0.2
+-- @version 1.0.3
 -- @noindex
 --========================================================
 
 local RPR = reaper
-if RPR.set_action_options then RPR.set_action_options(1) end
+
+-- 토글 액션: 실행 중에는 액션 State가 On, 다시 실행하면 창이 닫힘 (다중 인스턴스 방지)
+if reaper.set_action_options then reaper.set_action_options(1 | 4) end
+reaper.atexit(function()
+    if reaper.set_action_options then reaper.set_action_options(8) end
+end)
 local script_dir = (debug.getinfo(1, "S").source or ""):match("^@(.+[\\/])") or ""
 local installed_dir = RPR.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/"
 local function Path(filename)

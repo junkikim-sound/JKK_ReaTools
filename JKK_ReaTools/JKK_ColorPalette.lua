@@ -1,11 +1,17 @@
 --========================================================
 -- @title JKK_ColorPalette
 -- @author Junki Kim
--- @version 1.1.2
+-- @version 1.1.21
 -- @noindex
 --========================================================
 
 local reaper = reaper
+
+-- 토글 액션: 실행 중에는 액션 State가 On, 다시 실행하면 창이 닫힘 (다중 인스턴스 방지)
+if reaper.set_action_options then reaper.set_action_options(1 | 4) end
+reaper.atexit(function()
+    if reaper.set_action_options then reaper.set_action_options(8) end
+end)
 local ctx = reaper.ImGui_CreateContext("JKK_ColorPalette")
 
 local font = reaper.ImGui_CreateFont('Arial', 14)

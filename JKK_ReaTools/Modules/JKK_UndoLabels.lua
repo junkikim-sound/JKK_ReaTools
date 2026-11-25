@@ -49,7 +49,8 @@ local LABELS = {
 
     -- Renamer
     ["renamer.batch_rename"] = "JKK_Smart Batch Rename",  -- Renamer에서 선택 항목 이름 일괄 변경
-    ["renamer.find_replace"] = "JKK_Find & Replace",  -- Renamer에서 찾기 및 바꾸기를 적용
+    ["renamer.find_replace"] = "JKK_Find & Replace",  -- Renamer에서 찾기 및 바꾸기를 적용 (1.1.x, 현재 미사용)
+    ["renamer.queue_apply"] = "JKK_Rename Queue",  -- Renamer Queue 탭의 모든 활성 단계를 한 번에 적용
 
     -- Renamer Lite
     ["renamer_lite.create_regions_from_items"] = "JKK_Create Regions from Items",  -- Renamer Lite에서 선택 아이템으로 리전 생성
@@ -90,6 +91,17 @@ local LABELS = {
     ["search.insert_fx_chain"] = "JKK_Search Insert FX Chain: %s",  -- 검색 결과 FX Chain을 선택된 트랙/아이템에 삽입
     ["search.insert_instrument_track"] = "JKK_Search Insert Instrument Track: %s",  -- 가상악기를 새 트랙에 삽입
     ["search.insert_fx_multi"] = "JKK_Search Insert %s FX",  -- 여러 FX를 한 번에 선택된/드롭한 대상에 삽입
+
+    -- Folder Items
+    ["folder_items.create"] = "JKK_Create/Update Folder Items",  -- 선택 폴더 트랙의 폴더 아이템 생성/갱신(+접힌 폴더 그룹 재계산)
+    ["folder_items.collapse"] = "JKK_Collapse Folder (Folder Items)",  -- 폴더 접기 + 폴더 아이템별 그룹핑
+    ["folder_items.expand"] = "JKK_Expand Folder (Folder Items)",  -- 폴더 펼치기 + 그룹 해제/하위 접힌 폴더 그룹 복구
+    ["folder_items.group_tracks"] = "JKK_Group Selected Tracks into Folder",  -- 선택 트랙들을 새 상위(폴더) 트랙으로 묶기
+
+    -- Variator
+    ["variator.apply"] = "JKK_Create Variations",  -- Variator 미리보기 결과를 복제 아이템으로 확정 (Keep Original OFF면 원본 제거 포함)
+    ["variator.apply_failed"] = "JKK_Variator: Apply Failed (No Changes Kept)",  -- 확정 중 오류: 생성분을 지운 뒤 닫힌 Undo 블록
+    ["variator.cleanup_leftovers"] = "JKK_Variator: Clean Up Leftover Preview Items",  -- 비정상 종료로 남은 이전 세션 임시 아이템 삭제
 }
 local M = {}
 

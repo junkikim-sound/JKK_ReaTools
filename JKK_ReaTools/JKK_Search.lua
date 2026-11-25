@@ -1,7 +1,7 @@
 --========================================================
 -- @title JKK_Search
 -- @author Junki Kim
--- @version 1.0.0
+-- @version 1.1.0
 -- @noindex
 -- REAPER 안의 거의 모든 것을 검색하고 즉시 실행하는 검색 창
 --  FX(VST/VST3/CLAP/JS/VSTi...), FX Chain, Track Template, Action,
@@ -123,6 +123,7 @@ local first_frame = true
 local prev_expanded = nil
 local MIN_W, MIN_EXPANDED_H = 560, 340   -- 창 최소 크기
 local last_w, live_h, live_h_frame = nil, nil, nil
+local height_anim = nil   -- 펼침/접힘 애니메이션 { from, to, t0 }
 
 local function RunPending(p)
     if p.mb then
@@ -155,18 +156,41 @@ local function Main()
     local expanded = UI.IsExpanded()
     local saved_h = math.max(MIN_EXPANDED_H, Store.Get("expanded_h"))
     RPR.ImGui_SetNextWindowSize(ctx, 720, saved_h, RPR.ImGui_Cond_FirstUseEver())
-    if expanded then
+
+    -- 펼침/접힘 애니메이션: 현재 높이 → 목표 높이로 창 높이를 부드럽게 바꾼다
+    local now = RPR.time_precise()
+    if prev_expanded ~= nil and expanded ~= prev_expanded and live_h_frame then
+        if prev_expanded and live_h then Store.Set("expanded_h", math.floor(live_h)) end
+        height_anim = {
+            from = live_h_frame,
+            to = expanded and saved_h or UI.CollapsedHeight(),
+            t0 = now,
+        }
+    end
+    local animating = false
+    if height_anim then
+        local t = (now - height_anim.t0) / UI.AnimDuration
+        if t >= 1 then
+            height_anim = nil
+        else
+            local h = height_anim.from + (height_anim.to - height_anim.from) * UI.EaseOutCubic(t)
+            RPR.ImGui_SetNextWindowSizeConstraints(ctx, MIN_W, h, 16384, h)
+            animating = true
+        end
+    end
+    -- 접히는 동안에는 본문을 계속 그려 내용이 함께 줄어드는 것처럼 보이게
+    UI.SetBodyHold(animating and not expanded)
+
+    if animating then
+        -- 크기 제약은 위에서 설정
+    elseif expanded then
         if prev_expanded == nil then
             -- 펼친 상태로 시작: 저장된 높이를 첫 프레임에 강제 (너비는 그대로)
             RPR.ImGui_SetNextWindowSizeConstraints(ctx, MIN_W, saved_h, 16384, saved_h)
         else
             RPR.ImGui_SetNextWindowSizeConstraints(ctx, MIN_W, MIN_EXPANDED_H, 16384, 16384)
-            if prev_expanded == false and last_w then
-                RPR.ImGui_SetNextWindowSize(ctx, last_w, saved_h, RPR.ImGui_Cond_Always())
-            end
         end
     else
-        if prev_expanded and live_h then Store.Set("expanded_h", math.floor(live_h)) end
         local ch = UI.CollapsedHeight()
         RPR.ImGui_SetNextWindowSizeConstraints(ctx, MIN_W, ch, 16384, ch)
     end
@@ -178,7 +202,8 @@ local function Main()
     local visible, open_flag = RPR.ImGui_Begin(ctx, SCRIPT_TITLE, open, window_flags)
     if visible then
         last_w, live_h_frame = RPR.ImGui_GetWindowSize(ctx)
-        if expanded then live_h = live_h_frame end
+        -- 애니메이션 중간 높이는 "펼친 높이"로 기억하지 않는다
+        if expanded and not animating then live_h = live_h_frame end
         if UI.Draw(ctx) then open_flag = false end
     end
     RPR.ImGui_End(ctx)

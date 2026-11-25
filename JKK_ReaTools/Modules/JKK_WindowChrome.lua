@@ -15,7 +15,9 @@ end
 -- Returns true when the user presses the custom close button.
 -- No BeginChild/EndChild or window scope is introduced, so it can be used
 -- safely in each standalone script's existing ImGui_Begin/End scope.
-function M.header(ctx, title, id)
+-- subtitle (optional): muted text right after the title (e.g. "Selected 3 Items").
+-- Callers that omit it get exactly the previous header.
+function M.header(ctx, title, id, subtitle)
     local avail_w = select(1, R.ImGui_GetContentRegionAvail(ctx))
     local start_x = R.ImGui_GetCursorPosX(ctx)
     local button_size = math.max(20, math.min(28, R.ImGui_GetFrameHeight(ctx)))
@@ -31,6 +33,16 @@ function M.header(ctx, title, id)
     R.ImGui_PushStyleColor(ctx, R.ImGui_Col_Text(), title_color)
     R.ImGui_Text(ctx, tostring(title))
     R.ImGui_PopStyleColor(ctx, 1)
+    if subtitle and subtitle ~= '' then
+        local sub_color = 0x9A9A9AFF
+        if theme and type(theme.GetColor) == 'function' then
+            sub_color = theme.GetColor('status') or sub_color
+        end
+        R.ImGui_SameLine(ctx, 0, 10)
+        R.ImGui_PushStyleColor(ctx, R.ImGui_Col_Text(), sub_color)
+        R.ImGui_Text(ctx, tostring(subtitle))
+        R.ImGui_PopStyleColor(ctx, 1)
+    end
     R.ImGui_SameLine(ctx, 0, 0)
     R.ImGui_SetCursorPosX(ctx, start_x + math.max(0, avail_w - button_size))
     local close = R.ImGui_Button(ctx, '✕##jkk_header_close_' .. tostring(id), button_size, button_size)

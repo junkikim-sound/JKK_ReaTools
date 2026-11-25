@@ -1,11 +1,17 @@
 --========================================================
 -- @title JKK_Renamer
 -- @author Junki Kim
--- @version 1.1.7
+-- @version 1.2.0
 -- @noindex
 --========================================================
 
 local r = reaper
+
+-- 토글 액션: 실행 중에는 액션 State가 On, 다시 실행하면 창이 닫힘 (다중 인스턴스 방지)
+if reaper.set_action_options then reaper.set_action_options(1 | 4) end
+reaper.atexit(function()
+    if reaper.set_action_options then reaper.set_action_options(8) end
+end)
 
 -- 외부 모듈 로드
 local info = debug.getinfo(1, 'S')
@@ -14,6 +20,8 @@ local Undo = dofile(script_path .. "Modules/JKK_UndoLabels.lua")
 local w_list = dofile(script_path .. "Modules/JKK_Renamer_WildcardList.lua")
 local ucs_list = dofile(script_path .. "Modules/JKK_Renamer_UCSList.lua")
 local sel_mgr = _G.JKK_SelectionManager or dofile(script_path .. "Modules/JKK_SelectionManager.lua")
+local QueueUI = dofile(script_path .. "Modules/JKK_Renamer_QueueUI.lua")
+local MiniPopup = dofile(script_path .. "Modules/JKK_MiniPopup.lua")
 
 -- JKK_Theme.lua 안전 로드
 local theme_path = script_path .. "Modules/JKK_Theme_Core.lua"
@@ -63,7 +71,10 @@ r.ImGui_Attach(ctx, font_large)
 r.ImGui_Attach(ctx, font)
 r.ImGui_Attach(ctx, font_small)
 
--- InputText 키보드 콜백 (Tab 자동완성 / 위아래 화살표 선택)
+-- InputText 키보드 콜백
+--  * Tab 자동완성 / 위아래 화살표 선택
+--  * 미니 팝업에서 항목을 고른 뒤: (입력창이 켜진 채라면) 텍스트를 교체하고,
+--    전체 선택 없이 커서를 맨 오른쪽 끝에 둔다 (caret_end 프레임 동안 유지)
 local completion_callback = r.ImGui_CreateFunctionFromEEL([[
 EventFlag == InputTextFlags_CallbackCompletion ? (
     tab_requested = 1;
@@ -71,6 +82,23 @@ EventFlag == InputTextFlags_CallbackCompletion ? (
 EventFlag == InputTextFlags_CallbackHistory ? (
     EventKey == Key_UpArrow ? (up_requested = 1;);
     EventKey == Key_DownArrow ? (down_requested = 1;);
+);
+EventFlag == InputTextFlags_CallbackAlways ? (
+    len = strlen(#Buf);
+    replace_once ? (
+        strcmp(#Buf, #replace_text) != 0 ? (
+            InputTextCallback_DeleteChars(0, len);
+            InputTextCallback_InsertChars(0, #replace_text);
+            len = strlen(#replace_text);
+        );
+        replace_once = 0;
+    );
+    caret_end > 0 ? (
+        CursorPos = len;
+        SelectionStart = len;
+        SelectionEnd = len;
+        caret_end -= 1;
+    );
 );
 ]])
 
@@ -80,6 +108,10 @@ r.ImGui_Function_SetValue(completion_callback, "InputTextFlags_CallbackCompletio
     r.ImGui_InputTextFlags_CallbackCompletion())
 r.ImGui_Function_SetValue(completion_callback, "InputTextFlags_CallbackHistory",
     r.ImGui_InputTextFlags_CallbackHistory())
+r.ImGui_Function_SetValue(completion_callback, "InputTextFlags_CallbackAlways",
+    r.ImGui_InputTextFlags_CallbackAlways())
+r.ImGui_Function_SetValue(completion_callback, "replace_once", 0)
+r.ImGui_Function_SetValue(completion_callback, "caret_end", 0)
 r.ImGui_Function_SetValue(completion_callback, "Key_UpArrow", r.ImGui_Key_UpArrow())
 r.ImGui_Function_SetValue(completion_callback, "Key_DownArrow", r.ImGui_Key_DownArrow())
 r.ImGui_Function_SetValue(completion_callback, "tab_requested", 0)
@@ -106,30 +138,27 @@ local top_level_only = LoadBool("top_level_only", false)
 local number_start = tonumber(r.GetExtState(ext_section, "number_start")) or 1
 
 local input_buf = ""
-local find_buf = r.GetExtState(ext_section, "find_buf") or ""
-local replace_buf = r.GetExtState(ext_section, "replace_buf") or ""
-local replace_nth_only = LoadBool("replace_nth_only", false)
-local replace_nth = math.max(1, tonumber(r.GetExtState(ext_section, "replace_nth")) or 1)
-local remove_extension = LoadBool("remove_extension", false)
-local split_camel_case = LoadBool("split_camel_case", false)
-local case_mode = math.max(0, math.min(4, tonumber(r.GetExtState(ext_section, "case_mode")) or 0))
-local split_underscore = LoadBool("split_underscore", false)
 local active_tab = r.GetExtState(ext_section, "active_tab")
-if active_tab ~= "FindReplace" then active_tab = "Rename" end
+if active_tab == "FindReplace" then active_tab = "Queue" end -- 1.1.x Find & Replace 탭 → Queue 탭
+if active_tab ~= "Queue" then active_tab = "Rename" end
 local restore_saved_tab = true
+
+-- Queue 탭 초기화. 저장된 큐가 없으면 1.1.x Find & Replace 탭 설정을 첫 큐로 옮긴다.
+QueueUI.Init({ ext_section = ext_section }, {
+    find = r.GetExtState(ext_section, "find_buf"),
+    replace = r.GetExtState(ext_section, "replace_buf"),
+    nth_only = LoadBool("replace_nth_only", false),
+    nth = tonumber(r.GetExtState(ext_section, "replace_nth")),
+    remove_extension = LoadBool("remove_extension", false),
+    split_camel_case = LoadBool("split_camel_case", false),
+    case_mode = tonumber(r.GetExtState(ext_section, "case_mode")),
+    split_underscore = LoadBool("split_underscore", false),
+})
 
 local function SaveState()
     r.SetExtState(ext_section, "use_number", use_number and "1" or "0", true)
     r.SetExtState(ext_section, "top_level_only", top_level_only and "1" or "0", true)
     r.SetExtState(ext_section, "number_start", tostring(number_start), true)
-    r.SetExtState(ext_section, "find_buf", find_buf, true)
-    r.SetExtState(ext_section, "replace_buf", replace_buf, true)
-    r.SetExtState(ext_section, "replace_nth_only", replace_nth_only and "1" or "0", true)
-    r.SetExtState(ext_section, "replace_nth", tostring(replace_nth), true)
-    r.SetExtState(ext_section, "remove_extension", remove_extension and "1" or "0", true)
-    r.SetExtState(ext_section, "split_camel_case", split_camel_case and "1" or "0", true)
-    r.SetExtState(ext_section, "case_mode", tostring(case_mode), true)
-    r.SetExtState(ext_section, "split_underscore", split_underscore and "1" or "0", true)
     r.SetExtState(ext_section, "active_tab", active_tab, true)
 end
 
@@ -164,6 +193,67 @@ local popup_rect = nil
 local popup_sel_idx = 1
 local trigger_char = nil
 local filter_str = ""
+
+-- 미니 팝업 ($ / !) : JKK_Search와 같은 모양 (Modules/JKK_MiniPopup.lua)
+local mini_popup_state = {}
+local esc_dismissed_popup = false
+local last_popup_key = nil
+local popup_scroll_to_sel = false
+-- 열 너비 기준(전체 목록의 글자들): 입력 중에도 열 위치가 흔들리지 않는다
+local popup_columns = nil
+local function PopupColumns()
+    if popup_columns then return popup_columns end
+    local function Field(list, key)
+        local out = {}
+        for _, item in ipairs(list) do out[#out + 1] = tostring(item[key] or "") end
+        return out
+    end
+    popup_columns = {
+        dollar = {
+            { samples = Field(w_list, "insert") },
+            { samples = Field(w_list, "name"), color = "muted" },
+        },
+        ucs = {
+            { samples = Field(ucs_list, "insert"), flex = true },
+            { samples = Field(ucs_list, "cat") },
+            { samples = Field(ucs_list, "sub"), color = "muted" },
+        },
+    }
+    return popup_columns
+end
+local function PopupPalette()
+    local function Role(role, fallback)
+        if theme.GetColor then
+            local ok, c = pcall(theme.GetColor, role)
+            if ok and type(c) == "number" then return c end
+        end
+        return fallback
+    end
+    return MiniPopup.Palette(Role("base_bg", 0x1E1E22FF), Role("control_bg", nil),
+        Role("text_main", 0xEDEDEDFF), Role("accent_main", GetColor("accent")))
+end
+
+-- 팝업에서 고른 항목을 입력창에 넣는다: 뒤에 띄어쓰기 없음, 전체 선택 없이 커서는 맨 끝
+--  * 입력창이 비활성 상태면 다시 포커스될 때 input_buf를 새로 읽는다
+--  * 입력창이 켜진 채(Tab 자동완성)라면 콜백이 직접 텍스트를 교체한다
+local function SetInputTextFromPopup(new_text)
+    input_buf = new_text
+    if r.ImGui_Function_SetValue_String then
+        r.ImGui_Function_SetValue_String(completion_callback, "#replace_text", new_text)
+        r.ImGui_Function_SetValue(completion_callback, "replace_once", 1)
+    end
+    r.ImGui_Function_SetValue(completion_callback, "caret_end", 3)
+    popup_dismissed = true
+    set_focus = true
+end
+
+local function InsertPopupItem(clean_buf, trig, item)
+    if not item then return false end
+    local pattern = (trig == "$") and "%$[^%s$!]*$" or "![^%s$!]*$"
+    local new_text = clean_buf:gsub(pattern, function() return item.insert end, 1)
+    SetInputTextFromPopup(new_text)
+    return true
+end
 
 local current_mode = "None"
 local mode_focus_active = false
@@ -396,12 +486,55 @@ local function BuildHierarchyIndices(targets)
     return indices
 end
 
+-- gsub 치환 문자열로 쓸 때 '%' 이스케이프 (이름에 %가 있어도 오류 없이)
+local function Plain(text)
+    return (tostring(text or ""):gsub("%%", "%%%%"))
+end
+
+-- 아이템 활성 테이크의 원본 소스 파일 이름 (경로 제외, 확장자 포함). 섹션/리버스 소스는 부모를 따라간다.
+local function GetSourceFileName(item)
+    local take = item and r.GetActiveTake(item)
+    if not take or r.TakeIsMIDI(take) then return "" end
+    local src = r.GetMediaItemTake_Source(take)
+    local depth = 0
+    while src and depth < 8 do
+        local file_name = r.GetMediaSourceFileName(src, "")
+        if file_name and file_name ~= "" then
+            return file_name:match("[^/\\]+$") or file_name
+        end
+        src = r.GetMediaSourceParent(src)
+        depth = depth + 1
+    end
+    return ""
+end
+
+-- Queue 탭 토큰 값: $source(확장자 제외 파일 이름), $track
+local function GetTargetVars(target)
+    local vars = { source = "", track = "" }
+    if target.type == "Item" then
+        local file_name = GetSourceFileName(target.item)
+        vars.source_file = file_name
+        vars.source = (file_name:gsub("%.%w+$", ""))
+        if target.track then vars.track = select(2, r.GetTrackName(target.track)) or "" end
+    elseif target.type == "Track" then
+        vars.track = target.original_name or ""
+    end
+    return vars
+end
+
 local function EvaluateName(pattern, target, index, hierarchy_indices)
     local out = pattern
     if out == "" then return "" end
 
+    if target.type == "Item" and out:find("$source", 1, true) then
+        local source_name = GetSourceFileName(target.item):gsub("%.%w+$", "")
+        out = out:gsub("%$source", Plain(source_name))
+    else
+        out = out:gsub("%$source", "")
+    end
+
     local p_name = r.GetProjectName(0, ""):gsub("%.%w+$", "")
-    out = out:gsub("%$project", p_name)
+    out = out:gsub("%$project", Plain(p_name))
     out = out:gsub("%$date", os.date("%Y-%m-%d"))
     out = out:gsub("%$time", os.date("%H_%M_%S"))
     out = out:gsub("%$datetime", os.date("%Y-%m-%d %H_%M_%S"))
@@ -420,18 +553,18 @@ local function EvaluateName(pattern, target, index, hierarchy_indices)
 
     if target.type == "Item" then
         local _, t_name = r.GetTrackName(target.track)
-        out = out:gsub("%$track", t_name)
-        out = out:gsub("%$item", target.original_name)
+        out = out:gsub("%$track", Plain(t_name))
+        out = out:gsub("%$item", Plain(target.original_name))
         out = out:gsub("%$region", "")
         out = out:gsub("%$marker", "")
     elseif target.type == "Track" then
-        out = out:gsub("%$track", target.original_name)
+        out = out:gsub("%$track", Plain(target.original_name))
         out = out:gsub("%$item", "")
         out = out:gsub("%$region", "")
         out = out:gsub("%$marker", "")
     elseif target.type == "Region" or target.type == "Marker" then
-        out = out:gsub("%$region", target.original_name)
-        out = out:gsub("%$marker", target.original_name)
+        out = out:gsub("%$region", Plain(target.original_name))
+        out = out:gsub("%$marker", Plain(target.original_name))
         out = out:gsub("%$track", "")
         out = out:gsub("%$item", "")
     end
@@ -450,96 +583,6 @@ local function EvaluateName(pattern, target, index, hierarchy_indices)
         out = out .. "_" .. num_str
     end
     return out
-end
-
-local function ReplaceLiteral(text, find_text, replace_text, nth_only, nth)
-    if find_text == "" then return text end
-
-    local output = {}
-    local cursor = 1
-    local occurrence = 0
-
-    while cursor <= #text + 1 do
-        local first, last = text:find(find_text, cursor, true)
-        if not first then
-            table.insert(output, text:sub(cursor))
-            break
-        end
-
-        occurrence = occurrence + 1
-        table.insert(output, text:sub(cursor, first - 1))
-
-        if not nth_only or occurrence == nth then
-            table.insert(output, replace_text)
-        else
-            table.insert(output, text:sub(first, last))
-        end
-
-        cursor = last + 1
-
-        if nth_only and occurrence >= nth then
-            table.insert(output, text:sub(cursor))
-            break
-        end
-    end
-
-    return table.concat(output)
-end
-
-local function SplitCamelWords(text)
-    text = text:gsub("([%l%d])([%u])", "%1 %2")
-    text = text:gsub("([%u])([%u][%l])", "%1 %2")
-    return text
-end
-
-local function TransformCaseWord(word, mode)
-    if mode == 1 then
-        return word:lower()
-    elseif mode == 2 then
-        return word:upper()
-    elseif mode == 3 then
-        return word:lower():gsub("^%l", string.upper)
-    elseif mode == 4 then
-        if word:find("%a") and word == word:upper() then
-            return word
-        end
-        return word:lower():gsub("^%l", string.upper)
-    end
-    return word
-end
-
-local function ApplyFindReplaceName(original_name, index, hierarchy_indices)
-    local result = original_name or ""
-
-    result = ReplaceLiteral(result, find_buf, replace_buf, replace_nth_only, replace_nth)
-
-    if remove_extension then
-        result = result:gsub("%.[^%.]+$", "")
-    end
-
-    if split_camel_case then
-        result = SplitCamelWords(result)
-    end
-
-    if case_mode ~= 0 then
-        if split_underscore then
-            result = result:gsub("([^%s_]+)", function(word)
-                return TransformCaseWord(word, case_mode)
-            end)
-        else
-            result = result:gsub("([^%s]+)", function(word)
-                return TransformCaseWord(word, case_mode)
-            end)
-        end
-    end
-
-    if use_number then
-        local number_text = hierarchy_indices and hierarchy_indices[index]
-            or string.format("%02d", (number_start - 1) + index)
-        result = result .. "_" .. number_text
-    end
-
-    return result
 end
 
 local function GetFormattedSelectionText(target_count)
@@ -589,23 +632,6 @@ local function SetTargetName(target, new_name)
     end
 end
 
-local function ApplyFindReplace(targets, hierarchy_indices)
-    if find_buf == "" and not remove_extension and not split_camel_case
-        and case_mode == 0 and not use_number then
-        return
-    end
-
-    r.Undo_BeginBlock()
-    for i, target in ipairs(targets) do
-        local new_name = ApplyFindReplaceName(target.original_name, i, hierarchy_indices)
-        if new_name ~= (target.original_name or "") then
-            SetTargetName(target, new_name)
-        end
-    end
-    r.Undo_EndBlock(Undo.Label("renamer.find_replace"), -1)
-    r.UpdateArrange()
-end
-
 local function ApplyRename(targets, hierarchy_indices)
     if input_buf == "" then return end
     r.Undo_BeginBlock()
@@ -643,7 +669,57 @@ end
 local num_input_active = false
 local WindowChrome = dofile((debug.getinfo(1, "S").source or ""):match("^@(.+[\\/])") .. "Modules/JKK_WindowChrome.lua")
 
+-- Queue 탭(JKK_Renamer_QueueUI)에 넘길 호스트 인터페이스
+local queue_host = {
+    ext_section = ext_section,
+    Undo = Undo,
+    PushButton = PushButton,
+    PopButton = PopButton,
+    GetColor = GetColor,
+    targets = {},
+    hierarchy_indices = nil,
+    type_str = GetTargetTypeStr,
+    set_name = SetTargetName,
+    get_vars = GetTargetVars,
+}
+
+function queue_host.Tooltip(_, text)
+    ShowItemTooltip(text)
+end
+
+-- 공유 Number(_nn) 옵션: Rename 탭/RenamerLite와 같은 번호 규칙(계층 번호 포함)
+function queue_host.number_suffix(i)
+    if not use_number then return nil end
+    local indices = queue_host.hierarchy_indices
+    return "_" .. ((indices and indices[i]) or string.format("%02d", (number_start - 1) + i))
+end
+
+function queue_host.draw_shared_options(c)
+    local number_changed, number_value = r.ImGui_Checkbox(c, " Number (_nn)", use_number)
+    if number_changed then
+        use_number = number_value
+        SaveState()
+    end
+    if use_number then
+        r.ImGui_SameLine(c)
+        r.ImGui_SetNextItemWidth(c, 45)
+        local num_changed, num_value = r.ImGui_InputInt(c, "##QueueNumStart", number_start, 0)
+        if r.ImGui_IsItemActive(c) then num_input_active = true end
+        if num_changed then
+            number_start = math.max(1, num_value)
+            SaveState()
+        end
+    end
+    r.ImGui_SameLine(c, 0, 20)
+    local top_changed, top_value = r.ImGui_Checkbox(c, " Top-Level Only", top_level_only)
+    if top_changed then
+        top_level_only = top_value
+        SaveState()
+    end
+end
+
 local function Main()
+    esc_dismissed_popup = false
     r.ImGui_PushFont(ctx, font, 16)
     r.ImGui_SetNextWindowSize(ctx, 840, 480, r.ImGui_Cond_FirstUseEver())
     r.ImGui_SetNextWindowSizeConstraints(ctx, 700, 320, 16384, 16384)
@@ -653,8 +729,21 @@ local function Main()
     local visible, open_flag = r.ImGui_Begin(ctx, 'JKK_Renamer', open, WindowChrome.flags())
     open = open_flag
 
-    if r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_Escape()) then
-        open = false
+    -- Esc: 창 닫기. 단, 콤보/프리셋 등 팝업이 열려 있으면 팝업만 닫히도록 둔다.
+    -- $ / ! 미니 팝업이 떠 있으면 미니 팝업만 닫는다.
+    if r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_Escape())
+        and not r.ImGui_IsPopupOpen(ctx, "", r.ImGui_PopupFlags_AnyPopupId() | r.ImGui_PopupFlags_AnyPopupLevel()) then
+        if popup_was_open then
+            -- InputText는 Esc를 받으면 입력 전 값으로 되돌린다: 이번 프레임의 변경은 무시한다
+            esc_dismissed_popup = true
+            popup_dismissed = true
+            popup_was_open = false
+            popup_rect = nil
+            set_focus = true
+            r.ImGui_Function_SetValue(completion_callback, "caret_end", 3)
+        else
+            open = false
+        end
     end
 
     if visible then
@@ -708,7 +797,7 @@ local function Main()
         if r.ImGui_BeginTabBar(ctx, "RenamerTabs") then
         local rename_tab_flags = (restore_saved_tab and active_tab == "Rename")
             and r.ImGui_TabItemFlags_SetSelected() or 0
-        if r.ImGui_BeginTabItem(ctx, "Rename", rename_tab_flags) then
+        if r.ImGui_BeginTabItem(ctx, "Simple", rename_tab_flags) then
         if not restore_saved_tab and active_tab ~= "Rename" then
             active_tab = "Rename"
             SaveState()
@@ -742,6 +831,7 @@ local function Main()
 
         local input_flags = r.ImGui_InputTextFlags_CallbackCompletion()
                         | r.ImGui_InputTextFlags_CallbackHistory()
+                        | r.ImGui_InputTextFlags_CallbackAlways()
                         | initial_select_all_flag
 
         local changed, new_buf = r.ImGui_InputTextWithHint(
@@ -755,6 +845,11 @@ local function Main()
 
         local is_focused = r.ImGui_IsItemFocused(ctx)
         local is_input_hovered = r.ImGui_IsItemHovered(ctx)
+        -- 입력창이 꺼져 있으면 다시 켜질 때 input_buf를 새로 읽으므로 콜백 교체는 필요 없다
+        if not r.ImGui_IsItemActive(ctx) then
+            r.ImGui_Function_SetValue(completion_callback, "replace_once", 0)
+        end
+        if esc_dismissed_popup then changed = false end
 
         if pending_default_name and not is_focused and not input_user_edited then
             input_buf = pending_default_name
@@ -874,42 +969,35 @@ local function Main()
             if #filtered == 0 then show_popup = false end
         end
 
+        -- 필터 글자가 바뀌면 선택은 첫 항목으로 (JKK_Search와 같음)
+        local popup_key = tostring(trigger_char) .. "\1" .. tostring(filter_str)
+        if popup_key ~= last_popup_key then
+            last_popup_key = popup_key
+            popup_sel_idx = 1
+        end
         popup_sel_idx = math.max(1, math.min(popup_sel_idx, #filtered > 0 and #filtered or 1))
 
         if show_popup then
             if up_requested then
                 popup_sel_idx = math.max(1, popup_sel_idx - 1)
+                popup_scroll_to_sel = true
             elseif down_requested then
                 popup_sel_idx = math.min(#filtered, popup_sel_idx + 1)
+                popup_scroll_to_sel = true
             end
         end
 
+        -- Tab: 현재 선택된 항목 넣기 (예전에는 항상 첫 항목)
         if show_popup and tab_requested then
-            local selected = filtered[1]
-            if selected then
-                if trigger_char == "$" then
-                    input_buf = clean_search_buf:gsub("%$[^%s$!]*$", selected.insert .. " ")
-                elseif trigger_char == "!" then
-                    input_buf = clean_search_buf:gsub("![^%s$!]*$", selected.insert .. " ")
-                end
-                popup_dismissed = true
+            if InsertPopupItem(clean_search_buf, trigger_char, filtered[popup_sel_idx] or filtered[1]) then
                 show_popup = false
-                set_focus = true
             end
         end
 
         if r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_Enter()) or r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_KeypadEnter()) then
             if show_popup then
-                local selected = filtered[popup_sel_idx]
-                if selected then
-                    if trigger_char == "$" then
-                        input_buf = clean_search_buf:gsub("%$[^%s$!]*$", selected.insert .. " ")
-                    elseif trigger_char == "!" then
-                        input_buf = clean_search_buf:gsub("![^%s$!]*$", selected.insert .. " ")
-                    end
-                    popup_dismissed = true
+                if InsertPopupItem(clean_search_buf, trigger_char, filtered[popup_sel_idx]) then
                     show_popup = false
-                    set_focus = true
                 end
             else
                 ApplyRename(targets, hierarchy_indices)
@@ -992,260 +1080,66 @@ local function Main()
         r.ImGui_PopStyleVar(ctx, 2)
 
         if show_popup then
-            r.ImGui_SetNextWindowPos(ctx, input_rect_min_x, input_rect_max_y + 4)
-            r.ImGui_SetNextWindowSize(ctx, input_w, 420)
-            
-            local popup_flags = r.ImGui_WindowFlags_NoTitleBar() 
-                              | r.ImGui_WindowFlags_NoResize() 
-                              | r.ImGui_WindowFlags_NoMove() 
-                              | r.ImGui_WindowFlags_NoSavedSettings()
-                              | r.ImGui_WindowFlags_NoFocusOnAppearing()
-            
-            if r.ImGui_Begin(ctx, "AutoCompletePopup", true, popup_flags) then
-                popup_was_open = true
-                
-                r.ImGui_PushFont(ctx, font_small, 14)
-                
-                local table_flags = r.ImGui_TableFlags_RowBg() 
-                                  | r.ImGui_TableFlags_BordersInnerV()
-                                  | r.ImGui_TableFlags_ScrollX() 
-                                  | r.ImGui_TableFlags_ScrollY()
-
-                if r.ImGui_BeginTable(ctx, "PopupTable", trigger_char == "$" and 3 or 4, table_flags) then
-                    r.ImGui_TableSetupScrollFreeze(ctx, 0, 1)
-                    if trigger_char == "$" then
-                        r.ImGui_TableSetupColumn(ctx, "Wildcard", r.ImGui_TableColumnFlags_WidthFixed(), 140)
-                        r.ImGui_TableSetupColumn(ctx, "Name", r.ImGui_TableColumnFlags_WidthFixed(), 150)
-                        r.ImGui_TableSetupColumn(ctx, "Description", r.ImGui_TableColumnFlags_WidthStretch())
-                    else
-                        r.ImGui_TableSetupColumn(ctx, "CatID", r.ImGui_TableColumnFlags_WidthFixed(), 100)
-                        r.ImGui_TableSetupColumn(ctx, "Category", r.ImGui_TableColumnFlags_WidthFixed(), 140)
-                        r.ImGui_TableSetupColumn(ctx, "SubCategory", r.ImGui_TableColumnFlags_WidthFixed(), 140)
-                        r.ImGui_TableSetupColumn(ctx, "Description", r.ImGui_TableColumnFlags_WidthFixed(), 500)
+            -- JKK_Search와 같은 모양의 미니 팝업 (Modules/JKK_MiniPopup.lua)
+            local is_dollar = (trigger_char == "$")
+            r.ImGui_PushFont(ctx, font_small, 14)
+            local res = MiniPopup.Draw(ctx, mini_popup_state, {
+                id = "Renamer Suggestions##jkk_renamer_mini",
+                x = input_rect_min_x, y = input_rect_max_y, w = input_w,
+                palette = PopupPalette(),
+                count = #filtered,
+                key = tostring(trigger_char) .. "\1" .. tostring(filter_str),
+                selected = popup_sel_idx,
+                ensure_visible = popup_scroll_to_sel,
+                highlight = (filter_str or ""):lower(),
+                -- 열 정렬: $ = 와일드카드 | 이름 ........ 설명(오른쪽 정렬)
+                --          ! = CatID .......... | Category | SubCategory   (설명은 툴팁)
+                columns = is_dollar and PopupColumns().dollar or PopupColumns().ucs,
+                right_from = (not is_dollar) and 2 or nil,
+                row = function(i)
+                    local item = filtered[i]
+                    if not item then return nil end
+                    if is_dollar then
+                        return { cols = { item.insert, item.name }, detail = item.desc }
                     end
-                    
-                    r.ImGui_TableHeadersRow(ctx)
-
-                    for i, item in ipairs(filtered) do
-                        r.ImGui_TableNextRow(ctx)
-                        
-                        local is_selected = (i == popup_sel_idx)
-                        if is_selected then 
-                            r.ImGui_TableSetBgColor(ctx, r.ImGui_TableBgTarget_RowBg0(), GetColor("btn_primary"))
-                        end
-
-                        r.ImGui_TableNextColumn(ctx)
-
-                        PushText(ctx, "accent")
-                        local display_text = item.insert
-                        if r.ImGui_Selectable(ctx, display_text .. "##" .. tostring(i), false, r.ImGui_SelectableFlags_SpanAllColumns()) then
-                            if trigger_char == "$" then
-                                input_buf = clean_search_buf:gsub("%$[^%s$!]*$", item.insert .. " ")
-                            elseif trigger_char == "!" then
-                                input_buf = clean_search_buf:gsub("![^%s$!]*$", item.insert .. " ")
-                            end
-                            popup_dismissed = true
-                            show_popup = false
-                            set_focus = true
-                        end
-                        PopText(ctx)
-                        
-                        if r.ImGui_IsItemHovered(ctx) then popup_sel_idx = i end
-
-                        if trigger_char == "$" then
-                            r.ImGui_TableNextColumn(ctx)
-                            r.ImGui_Text(ctx, item.name)
-                            r.ImGui_TableNextColumn(ctx)
-                            r.ImGui_TextDisabled(ctx, item.desc)
-                        else
-                            r.ImGui_TableNextColumn(ctx)
-                            r.ImGui_Text(ctx, item.cat)
-                            r.ImGui_TableNextColumn(ctx)
-                            r.ImGui_Text(ctx, item.sub)
-                            r.ImGui_TableNextColumn(ctx)
-                            r.ImGui_TextDisabled(ctx, item.desc)
-                        end
-                    end
-                    r.ImGui_EndTable(ctx)
-                end
-                r.ImGui_PopFont(ctx)
-
-                local px, py = r.ImGui_GetWindowPos(ctx)
-                local pw, ph = r.ImGui_GetWindowSize(ctx)
-                popup_rect = { min_x = px, min_y = py, max_x = px + pw, max_y = py + ph }
-
-                r.ImGui_End(ctx)
+                    return { cols = { item.insert, item.cat, item.sub }, tooltip = item.desc }
+                end,
+            })
+            r.ImGui_PopFont(ctx)
+            popup_scroll_to_sel = false
+            popup_was_open = true
+            if res.rect then
+                popup_rect = { min_x = res.rect.x, min_y = res.rect.y,
+                    max_x = res.rect.x + res.rect.w, max_y = res.rect.y + res.rect.h }
+            end
+            if res.clicked then
+                popup_sel_idx = res.clicked
+                InsertPopupItem(clean_search_buf, trigger_char, filtered[res.clicked])
+            elseif res.focused and not r.ImGui_IsMouseDown(ctx, 0) then
+                -- 팝업(스크롤바 등)을 클릭해 포커스가 옮겨갔으면 입력창으로 돌려준다 (커서는 맨 끝)
+                set_focus = true
+                r.ImGui_Function_SetValue(completion_callback, "caret_end", 3)
             end
         else
             popup_sel_idx = 1
             popup_was_open = false
             popup_rect = nil
+            popup_scroll_to_sel = false
         end
 
         r.ImGui_EndTabItem(ctx)
         end
 
-        local find_tab_flags = (restore_saved_tab and active_tab == "FindReplace")
+        local queue_tab_flags = (restore_saved_tab and active_tab == "Queue")
             and r.ImGui_TabItemFlags_SetSelected() or 0
-        if r.ImGui_BeginTabItem(ctx, "Find & Replace", find_tab_flags) then
-            if not restore_saved_tab and active_tab ~= "FindReplace" then
-                active_tab = "FindReplace"
+        if r.ImGui_BeginTabItem(ctx, "Advanced", queue_tab_flags) then
+            if not restore_saved_tab and active_tab ~= "Queue" then
+                active_tab = "Queue"
                 SaveState()
             end
-
-            local fr_width = r.ImGui_GetContentRegionAvail(ctx)
-            local apply_width = 90
-            local label_width = 68
-            local input_width = math.max(140, fr_width - apply_width - label_width - 8)
-            r.ImGui_Spacing(ctx)
-
-            r.ImGui_BeginGroup(ctx)
-            r.ImGui_Text(ctx, "Find")
-            r.ImGui_SameLine(ctx, label_width, 0)
-            r.ImGui_SetNextItemWidth(ctx, input_width)
-            local find_changed, new_find = r.ImGui_InputTextWithHint(ctx, "##FindText", "Text to find...", find_buf)
-            if find_changed then
-                find_buf = new_find
-                SaveState()
-            end
-
-            r.ImGui_Text(ctx, "Replace")
-            r.ImGui_SameLine(ctx, label_width, 0)
-            r.ImGui_SetNextItemWidth(ctx, input_width)
-            local replace_changed, new_replace = r.ImGui_InputTextWithHint(ctx, "##ReplaceText", "Replace with...", replace_buf)
-            if replace_changed then
-                replace_buf = new_replace
-                SaveState()
-            end
-            r.ImGui_EndGroup(ctx)
-
-            r.ImGui_SameLine(ctx, 0, 8)
-            r.ImGui_SetCursorPosY(ctx, r.ImGui_GetCursorPosY(ctx) - 2)
-            r.ImGui_PushFont(ctx, font_large, 18)
-            PushButton(ctx, "confirm")
-            if r.ImGui_Button(ctx, "Apply", apply_width, 64) then
-                ApplyFindReplace(targets, hierarchy_indices)
-            end
-            r.ImGui_PopFont(ctx)
-            PopButton(ctx)
-
-            r.ImGui_PushFont(ctx, font_small, 14)
-
-            local nth_changed, nth_value = r.ImGui_Checkbox(ctx, "Nth only", replace_nth_only)
-            if nth_changed then
-                replace_nth_only = nth_value
-                SaveState()
-            end
-            ShowItemTooltip("Replace only the specified occurrence of the Find text.")
-            if replace_nth_only then
-                r.ImGui_SameLine(ctx, 0, 6)
-                r.ImGui_SetNextItemWidth(ctx, 58)
-                local num_changed, num_value = r.ImGui_InputInt(ctx, "##FindReplaceNth", replace_nth, 0)
-                if num_changed then
-                    replace_nth = math.max(1, num_value)
-                    SaveState()
-                end
-            end
-
-            r.ImGui_SameLine(ctx, 0, 14)
-            local ext_changed, ext_value = r.ImGui_Checkbox(ctx, "No extension", remove_extension)
-            if ext_changed then
-                remove_extension = ext_value
-                SaveState()
-            end
-            ShowItemTooltip("Remove the file extension from the renamed filename.")
-
-            r.ImGui_SameLine(ctx, 0, 14)
-            local camel_changed, camel_value = r.ImGui_Checkbox(ctx, "Split cases", split_camel_case)
-            if camel_changed then
-                split_camel_case = camel_value
-                SaveState()
-            end
-            ShowItemTooltip("Split camelCase and PascalCase words with spaces.")
-
-            r.ImGui_SameLine(ctx, 0, 16)
-            r.ImGui_SetNextItemWidth(ctx, 225)
-            local case_changed, case_value = r.ImGui_Combo(ctx, "Case", case_mode,
-                " No Change\0 lowercase\0 UPPERCASE\0 Title Case\0 Title Case (Keep ALL CAPS)\0")
-            if case_changed then
-                case_mode = case_value
-                SaveState()
-            end
-            r.ImGui_SameLine(ctx, 0, 16)
-            local underscore_changed, underscore_value = r.ImGui_Checkbox(ctx, "Split _ words", split_underscore)
-            if underscore_changed then
-                split_underscore = underscore_value
-                SaveState()
-            end
-            ShowItemTooltip("Treat underscores as word separators when applying Title Case.")
-
-            r.ImGui_Spacing(ctx)
-            local number_changed, number_value = r.ImGui_Checkbox(ctx, " Number (_nn)", use_number)
-            if number_changed then
-                use_number = number_value
-                SaveState()
-            end
-            if use_number then
-                r.ImGui_SameLine(ctx)
-                r.ImGui_SetNextItemWidth(ctx, 55)
-                local num_changed, num_value = r.ImGui_InputInt(ctx, "##FindReplaceNumStart", number_start, 0)
-                if r.ImGui_IsItemActive(ctx) then num_input_active = true end
-                if num_changed then
-                    number_start = math.max(1, num_value)
-                    SaveState()
-                end
-            end
-            r.ImGui_SameLine(ctx, 0, 20)
-            local top_changed, top_value = r.ImGui_Checkbox(ctx, " Top-Level Only", top_level_only)
-            if top_changed then
-                top_level_only = top_value
-                SaveState()
-                targets = GetTargets()
-                target_count = #targets
-                hierarchy_indices = (use_number and not top_level_only) and BuildHierarchyIndices(targets) or nil
-            end
-
-            r.ImGui_PopFont(ctx)
-            r.ImGui_Separator(ctx)
-
-            r.ImGui_PushStyleVar(ctx, r.ImGui_StyleVar_WindowPadding(), 10, 8)
-            r.ImGui_PushStyleVar(ctx, r.ImGui_StyleVar_ChildRounding(), 6.0)
-            local preview_w, preview_h = r.ImGui_GetContentRegionAvail(ctx)
-            if r.ImGui_BeginChild(ctx, "FindReplacePreviewContainer", preview_w, preview_h, r.ImGui_ChildFlags_Borders()) then
-                r.ImGui_Indent(ctx, 6)
-                r.ImGui_Spacing(ctx)
-                if target_count > 0 then
-                    r.ImGui_PushFont(ctx, font_small, 14)
-                    if r.ImGui_BeginTable(ctx, "FindReplacePreviewTable", 4,
-                        r.ImGui_TableFlags_RowBg() | r.ImGui_TableFlags_ScrollY()) then
-                        r.ImGui_TableSetupColumn(ctx, "Type", r.ImGui_TableColumnFlags_WidthFixed(), 110)
-                        r.ImGui_TableSetupColumn(ctx, "Before", r.ImGui_TableColumnFlags_WidthStretch())
-                        r.ImGui_TableSetupColumn(ctx, "##BeforeAfterDivider", r.ImGui_TableColumnFlags_WidthFixed(), 18)
-                        r.ImGui_TableSetupColumn(ctx, "After", r.ImGui_TableColumnFlags_WidthStretch())
-                        for i, target in ipairs(targets) do
-                            r.ImGui_TableNextRow(ctx)
-                            r.ImGui_TableNextColumn(ctx)
-                            r.ImGui_TextDisabled(ctx, GetTargetTypeStr(target))
-                            r.ImGui_TableNextColumn(ctx)
-                            r.ImGui_Text(ctx, target.original_name or "")
-                            r.ImGui_TableNextColumn(ctx)
-                            r.ImGui_TextDisabled(ctx, "│")
-                            r.ImGui_TableNextColumn(ctx)
-                            local evaluated = ApplyFindReplaceName(target.original_name, i, hierarchy_indices)
-                            r.ImGui_TextColored(ctx, GetColor("accent"), evaluated)
-                        end
-                        r.ImGui_EndTable(ctx)
-                    end
-                    r.ImGui_PopFont(ctx)
-                else
-                    r.ImGui_PushFont(ctx, font_small, 14)
-                    r.ImGui_TextDisabled(ctx, "No items selected.")
-                    r.ImGui_PopFont(ctx)
-                end
-                r.ImGui_Unindent(ctx, 6)
-                r.ImGui_EndChild(ctx)
-            end
-            r.ImGui_PopStyleVar(ctx, 2)
+            queue_host.targets = targets
+            queue_host.hierarchy_indices = hierarchy_indices
+            QueueUI.Draw(ctx, queue_host)
             r.ImGui_EndTabItem(ctx)
         end
 

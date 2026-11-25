@@ -9,6 +9,7 @@ return {
     { insert = "$track", name = "Track Name", desc = "Selected Track Name" },
     { insert = "$region", name = "Region Name", desc = "Selected Region Name" },
     { insert = "$item", name = "Item Name", desc = "Selected Item Name" },
+    { insert = "$source", name = "Source File Name", desc = "Active take's source file name (no extension)" },
     { insert = "$filenumber[01]", name = "Files Number", desc = "Sequential Numbering" },
     { insert = "$sampleratek", name = "Sample Rate", desc = "Format: 48k" },
     { insert = "$channels", name = "Channels", desc = "Format: 2" },

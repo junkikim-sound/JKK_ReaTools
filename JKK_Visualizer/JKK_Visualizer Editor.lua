@@ -6,6 +6,12 @@
 --     [nomain] LOGO.png
 --========================================================
 
+
+-- 토글 액션: 실행 중에는 액션 State가 On, 다시 실행하면 창이 닫힘 (다중 인스턴스 방지)
+if reaper.set_action_options then reaper.set_action_options(1 | 4) end
+reaper.atexit(function()
+    if reaper.set_action_options then reaper.set_action_options(8) end
+end)
 local ctx = reaper.ImGui_CreateContext('JKK_Visualizer Editor')
 local sans_font = reaper.ImGui_CreateFont('Arial', 14)
 reaper.ImGui_Attach(ctx, sans_font)

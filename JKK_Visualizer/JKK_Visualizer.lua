@@ -1,12 +1,18 @@
 --========================================================
 -- @title JKK_Visualizer
 -- @author Junki Kim
--- @version 1.5.0
+-- @version 1.5.1
 -- @provides 
 --     [effect] JKK_Visualizer.jsfx
 -- Huge thanks to Tobokegao (Japan) for helping update (to6okegao@gmail.com)
 -- he helped some features(lighter Editor saving, Target FPS setting, Low CPU Mode)
 --========================================================
+
+-- 토글 액션: 실행 중에는 액션 State가 On, 다시 실행하면 창이 닫힘 (다중 인스턴스 방지)
+if reaper.set_action_options then reaper.set_action_options(1 | 4) end
+reaper.atexit(function()
+    if reaper.set_action_options then reaper.set_action_options(8) end
+end)
 local jkk_theme_core_path = reaper.GetResourcePath() .. "/Scripts/JKK_ReaTools/JKK_ReaTools/Modules/JKK_Theme_Core.lua"
 local JKK_Theme = (reaper.file_exists(jkk_theme_core_path) and dofile(jkk_theme_core_path)) or nil
 local last_synced_theme_rev = -1

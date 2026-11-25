@@ -41,6 +41,65 @@ local track_channels = 2
 -- 프로젝트 전체 적용 여부를 저장하는 변수
 local apply_all_tracks = (reaper.GetExtState("JKK_TrackTool", "apply_all_tracks") == "1")
 
+------------------------------------------------------------
+-- Relative mode (Abs/Rel switch in the JKK_ReaTools Controller header,
+-- shared through the JKK_RELATIVE_MODE global).
+-- The sliders show the FIRST selected track's real value (same as Abs).
+-- Dragging moves every selected track by the same amount the slider moved,
+-- measured from a snapshot taken when the drag starts. The slider keeps its value.
+------------------------------------------------------------
+local rel_base, rel_start = nil, nil
+local REL_MAX_VOL_LIN = 3.98 -- +12 dB, same ceiling as the absolute slider
+
+local function IsRelative() return JKK_RELATIVE_MODE == true end
+
+-- Call BEFORE the slider variable is overwritten with the new value.
+local function RelCapture()
+    if rel_base then return end
+    rel_start = { vol_db = volume_db, pan = pan_val, width = width_val }
+    rel_base = {}
+    for i = 0, reaper.CountSelectedTracks(0) - 1 do
+        local track = reaper.GetSelectedTrack(0, i)
+        rel_base[#rel_base + 1] = {
+            track = track,
+            vol = reaper.GetMediaTrackInfo_Value(track, "D_VOL"),
+            pan = reaper.GetMediaTrackInfo_Value(track, "D_PAN"),
+            width = reaper.GetMediaTrackInfo_Value(track, "D_WIDTH"),
+        }
+    end
+end
+
+local function RelRelease()
+    rel_base, rel_start = nil, nil
+end
+
+local function RelEach(fn)
+    RelCapture()
+    for _, b in ipairs(rel_base) do
+        if reaper.ValidatePtr(b.track, "MediaTrack*") then fn(b) end
+    end
+end
+
+local function Action_RelVolume()
+    local delta_db = volume_db - rel_start.vol_db
+    RelEach(function(b)
+        local lin = (b.vol > 1e-8) and math.min(b.vol * 10 ^ (delta_db / 20), REL_MAX_VOL_LIN) or 0
+        reaper.SetMediaTrackInfo_Value(b.track, "D_VOL", lin)
+    end)
+end
+local function Action_RelPan()
+    local delta = pan_val - rel_start.pan
+    RelEach(function(b)
+        reaper.SetMediaTrackInfo_Value(b.track, "D_PAN", math.max(-1, math.min(1, b.pan + delta)))
+    end)
+end
+local function Action_RelWidth()
+    local delta = width_val - rel_start.width
+    RelEach(function(b)
+        reaper.SetMediaTrackInfo_Value(b.track, "D_WIDTH", math.max(-1, math.min(1, b.width + delta)))
+    end)
+end
+
 local function ReadSelectedTrackValues()
     local track = reaper.GetSelectedTrack(0, 0)
     if not track then return end
@@ -412,6 +471,17 @@ local function DrawTrackBatchController(ctx)
         reaper.ImGui_SetCursorPosX(ctx, row_x + label_width)
     end
 
+    -- Abs: every selected track gets the slider value.
+    -- Rel: the slider still shows the FIRST track's value, but dragging moves
+    -- every track by the same amount (each keeps its own offset).
+    local relative = IsRelative()
+    local function BeginEdit()
+        if relative then RelCapture() end   -- snapshot before the value changes
+    end
+    local function EndEditIfReleased()
+        if relative and reaper.ImGui_IsItemDeactivated(ctx) then RelRelease() end
+    end
+
     -- Volume
     BeginLabeledRow("Volume")
     reaper.ImGui_SetNextItemWidth(ctx, volume_slider_width)
@@ -421,10 +491,16 @@ local function DrawTrackBatchController(ctx)
     )
     if changed_vol then
         SliderUndoBegin(Undo.Label("track.set_selected_tracks_volume"))
+        BeginEdit()
         volume_db = slider_pos_to_db(new_slider_pos)
-        Action_SetSelectedTracksVolume(math.min(10 ^ (volume_db / 20.0), 3.98))
+        if relative then
+            Action_RelVolume()
+        else
+            Action_SetSelectedTracksVolume(math.min(10 ^ (volume_db / 20.0), 3.98))
+        end
     end
     SliderUndoEnd(ctx, Undo.Label("track.set_selected_tracks_volume"))
+    EndEditIfReleased()
     if reaper.ImGui_IsItemClicked(ctx, 1) then
         GestureUndo.Finish()
         reaper.Undo_BeginBlock()
@@ -464,10 +540,12 @@ local function DrawTrackBatchController(ctx)
     local changed_pan, new_pan = reaper.ImGui_SliderDouble(ctx, "##TrackPan", pan_val, -1.0, 1.0, pan_format)
     if changed_pan then
         SliderUndoBegin(Undo.Label("track.set_selected_tracks_panning"))
+        BeginEdit()
         pan_val = new_pan
-        Action_SetSelectedTracksPan(pan_val)
+        if relative then Action_RelPan() else Action_SetSelectedTracksPan(pan_val) end
     end
     SliderUndoEnd(ctx, Undo.Label("track.set_selected_tracks_panning"))
+    EndEditIfReleased()
     if reaper.ImGui_IsItemClicked(ctx, 1) then
         GestureUndo.Finish()
         reaper.Undo_BeginBlock()
@@ -489,10 +567,12 @@ local function DrawTrackBatchController(ctx)
     local changed_width, new_width = reaper.ImGui_SliderDouble(ctx, "##TrackWidth", width_val, -1.0, 1.0, width_format)
     if changed_width then
         SliderUndoBegin(Undo.Label("track.set_selected_tracks_width"))
+        BeginEdit()
         width_val = new_width
-        Action_SetSelectedTracksWidth(width_val)
+        if relative then Action_RelWidth() else Action_SetSelectedTracksWidth(width_val) end
     end
     SliderUndoEnd(ctx, Undo.Label("track.set_selected_tracks_width"))
+    EndEditIfReleased()
     if reaper.ImGui_IsItemClicked(ctx, 1) then
         GestureUndo.Finish()
         reaper.Undo_BeginBlock()

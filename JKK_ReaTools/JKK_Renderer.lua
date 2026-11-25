@@ -1,11 +1,17 @@
 --========================================================
 -- @title JKK_Renderer
 -- @author Junki Kim
--- @version 1.1.12
+-- @version 1.2.0
 -- @noindex
 --========================================================
 
 local r = reaper
+
+-- 토글 액션: 실행 중에는 액션 State가 On, 다시 실행하면 창이 닫힘 (다중 인스턴스 방지)
+if reaper.set_action_options then reaper.set_action_options(1 | 4) end
+reaper.atexit(function()
+    if reaper.set_action_options then reaper.set_action_options(8) end
+end)
 
 -- Renamer와 동일한 UCS / Wildcard 데이터 모듈을 사용한다.
 local script_info = debug.getinfo(1, 'S')
@@ -19,8 +25,14 @@ end
 local w_list = LoadListModule("JKK_Renamer_WildcardList.lua")
 local ucs_list = LoadListModule("JKK_Renamer_UCSList.lua")
 local sel_mgr = LoadListModule("JKK_SelectionManager.lua")
+local MiniPopup = LoadListModule("JKK_MiniPopup.lua")
+assert(type(MiniPopup.Draw) == "function", "JKK_MiniPopup.lua missing. Reinstall JKK_ReaTools.")
 local WindowChrome = LoadListModule("JKK_WindowChrome.lua")
 assert(type(WindowChrome.header) == "function", "JKK_WindowChrome.lua missing. Reinstall JKK_ReaTools.")
+local RenderQueue = LoadListModule("JKK_Renderer_Queue.lua")
+assert(type(RenderQueue.New) == "function", "JKK_Renderer_Queue.lua missing. Reinstall JKK_ReaTools.")
+local queue = RenderQueue.New()
+local queue_run = nil  -- { ids = {...}, pos = 1, folders = {}, stop = false } while the JKK queue is rendering
 
 local ctx = r.ImGui_CreateContext("JKK_Render")
 local font = r.ImGui_CreateFont('Arial', 14)
@@ -29,6 +41,8 @@ r.ImGui_Attach(ctx, font)
 r.ImGui_Attach(ctx, font_btn)
 
 -- Renamer와 동일한 Tab 자동완성 / 위아래 화살표 선택 콜백
+--  + 미니 팝업에서 고른 뒤: 전체 선택 없이 커서를 맨 오른쪽 끝에 둔다 (caret_end 프레임 동안)
+--    입력창이 켜진 채라면 replace_once로 텍스트도 직접 교체한다
 local completion_callback = r.ImGui_CreateFunctionFromEEL([[
 EventFlag == InputTextFlags_CallbackCompletion ? (
     tab_requested = 1;
@@ -37,12 +51,33 @@ EventFlag == InputTextFlags_CallbackHistory ? (
     EventKey == Key_UpArrow ? (up_requested = 1;);
     EventKey == Key_DownArrow ? (down_requested = 1;);
 );
+EventFlag == InputTextFlags_CallbackAlways ? (
+    len = strlen(#Buf);
+    replace_once ? (
+        strcmp(#Buf, #replace_text) != 0 ? (
+            InputTextCallback_DeleteChars(0, len);
+            InputTextCallback_InsertChars(0, #replace_text);
+            len = strlen(#replace_text);
+        );
+        replace_once = 0;
+    );
+    caret_end > 0 ? (
+        CursorPos = len;
+        SelectionStart = len;
+        SelectionEnd = len;
+        caret_end -= 1;
+    );
+);
 ]])
 r.ImGui_Attach(ctx, completion_callback)
 r.ImGui_Function_SetValue(completion_callback, "InputTextFlags_CallbackCompletion",
   r.ImGui_InputTextFlags_CallbackCompletion())
 r.ImGui_Function_SetValue(completion_callback, "InputTextFlags_CallbackHistory",
   r.ImGui_InputTextFlags_CallbackHistory())
+r.ImGui_Function_SetValue(completion_callback, "InputTextFlags_CallbackAlways",
+  r.ImGui_InputTextFlags_CallbackAlways())
+r.ImGui_Function_SetValue(completion_callback, "replace_once", 0)
+r.ImGui_Function_SetValue(completion_callback, "caret_end", 0)
 r.ImGui_Function_SetValue(completion_callback, "Key_UpArrow", r.ImGui_Key_UpArrow())
 r.ImGui_Function_SetValue(completion_callback, "Key_DownArrow", r.ImGui_Key_DownArrow())
 r.ImGui_Function_SetValue(completion_callback, "tab_requested", 0)
@@ -57,6 +92,29 @@ local suppress_initial_autocomplete = true
 local popup_was_open = false
 local popup_rect = nil
 local popup_sel_idx = 1
+
+-- Queue panel open/close animation (0 = hidden, 1 = fully open)
+local QUEUE_ANIM_DURATION = 0.18
+local queue_anim = nil
+local queue_anim_time = nil
+
+-- 미니 팝업 (! / # / $) : JKK_Search와 같은 모양 (Modules/JKK_MiniPopup.lua)
+local mini_popup_state = {}
+local popup_scroll_to_sel = false
+local last_popup_key = nil
+local esc_dismissed_popup = false
+
+-- 팝업에서 고른 결과를 파일 이름 입력창에 넣는다: 띄어쓰기 없음, 전체 선택 없이 커서는 맨 끝
+local function SetFilePatternFromPopup(tab, new_text)
+  tab.file_pattern = new_text
+  if r.ImGui_Function_SetValue_String then
+    r.ImGui_Function_SetValue_String(completion_callback, "#replace_text", new_text)
+    r.ImGui_Function_SetValue(completion_callback, "replace_once", 1)
+  end
+  r.ImGui_Function_SetValue(completion_callback, "caret_end", 3)
+  popup_dismissed = true
+  file_input_set_focus = true
+end
 
 -- =======================================================
 -- Preview Cache
@@ -161,6 +219,39 @@ local render_shortcuts = {
   {insert="#b32f", cat="Bit Depth", sub="Bit depth", name="32-bit Float", desc="Select 32-bit floating-point bit depth; switches to WAV if needed"},
   {insert="#b64f", cat="Bit Depth", sub="Bit depth", name="64-bit Float", desc="Select 64-bit floating-point bit depth; switches to WAV if needed"},
 }
+
+-- 미니 팝업 열 정렬 (모든 행이 같은 열 위치, 열 너비는 전체 목록 기준이라 입력 중에도 고정)
+--   $ : 와일드카드 | 이름 .................. 설명(오른쪽 정렬)
+--   # : 단축어     | 설정 .................. 설명(오른쪽 정렬)
+--   ! : CatID ............... | Category | SubCategory   (설명은 툴팁)
+local popup_columns = nil
+local function PopupColumns()
+  if popup_columns then return popup_columns end
+  local function Field(list, key)
+    local out = {}
+    for _, item in ipairs(list) do out[#out + 1] = tostring(item[key] or "") end
+    return out
+  end
+  popup_columns = {
+    ["$"] = { { samples = Field(w_list, "insert") }, { samples = Field(w_list, "name"), color = "muted" } },
+    ["#"] = { { samples = Field(render_shortcuts, "insert") }, { samples = Field(render_shortcuts, "name"), color = "muted" } },
+    ["!"] = { { samples = Field(ucs_list, "insert"), flex = true }, { samples = Field(ucs_list, "cat") },
+              { samples = Field(ucs_list, "sub"), color = "muted" } },
+  }
+  return popup_columns
+end
+
+local function PopupPalette()
+  local function Role(role, fallback)
+    if theme.GetColor then
+      local ok, c = pcall(theme.GetColor, role)
+      if ok and type(c) == "number" then return c end
+    end
+    return fallback
+  end
+  return MiniPopup.Palette(Role("base_bg", 0x1E1E22FF), Role("control_bg", nil),
+    Role("text_main", 0xEDEDEDFF), Role("accent_main", GetColor("accent")))
+end
 
 local vid_size_list = " UHD (3840 x 2160)\0 QHD (2560 x 1440)\0 FHD (1920 x 1080)\0 HD (1024 x 720)\0 SD (640 x 480)\0"
 local vid_sizes_w = {3840, 2560, 1920, 1024, 640}
@@ -409,6 +500,7 @@ local function SaveAllExtState()
   r.SetExtState("JKK_CustomRender", "FavData", SerializeTable(favorites), true)
   r.SetExtState("JKK_CustomRender", "DataVersion", "3", true)
   r.SetExtState("JKK_CustomRender", "ActiveTab", tostring(active_tab_idx), true)
+  r.SetExtState("JKK_CustomRender", "QueueData", SerializeTable(queue.entries), true)
 end
 
 local function LoadAllExtState()
@@ -429,6 +521,16 @@ local function LoadAllExtState()
       if func then
         local success, loaded_favs = pcall(func)
         if success and type(loaded_favs) == "table" then favorites = loaded_favs end
+      end
+    end
+  end
+  if r.HasExtState("JKK_CustomRender", "QueueData") then
+    local str = r.GetExtState("JKK_CustomRender", "QueueData")
+    if str and str ~= "" then
+      local func = load("return " .. str)
+      if func then
+        local success, loaded_queue = pcall(func)
+        if success and type(loaded_queue) == "table" then queue:SetEntries(loaded_queue) end
       end
     end
   end
@@ -705,7 +807,11 @@ end
 -- =======================================================
 -- REAPER RENDER SETTINGS INJECTION ENGINE
 -- =======================================================
-local function ApplyRenderSettingsToProject(tab, p_item, explicit_pattern)
+-- opts.custom_bounds: 큐 항목은 저장해 둔 bounds_start/end를 그대로 써야 하므로
+-- Time selection 대신 Custom 범위(RENDER_BOUNDSFLAG 0)로 렌더한다
+local function ApplyRenderSettingsToProject(tab, p_item, explicit_pattern, opts)
+  local use_custom_bounds = opts and opts.custom_bounds
+      and (tab.render_source == 0 or tab.render_source == 1) and tab.render_bounds == 1
   local proj = 0
   local resolved_dir, is_empty = ResolveOutputDirectory(tab.file_directory)
   local dir_to_set = is_empty and "" or resolved_dir
@@ -733,7 +839,7 @@ local function ApplyRenderSettingsToProject(tab, p_item, explicit_pattern)
 
   local bounds_val = 1
   if tab.render_source == 0 or tab.render_source == 1 then
-    if tab.render_bounds == 1 then bounds_val = 2 else bounds_val = 1 end
+    if tab.render_bounds == 1 then bounds_val = use_custom_bounds and 0 or 2 else bounds_val = 1 end
   elseif tab.render_source == 2 or tab.render_source == 3 then bounds_val = 3
   elseif tab.render_source == 4 or tab.render_source == 5 then bounds_val = 4 end
 
@@ -767,7 +873,7 @@ local function ApplyRenderSettingsToProject(tab, p_item, explicit_pattern)
     if tab.render_source == 4 or tab.render_source == 5 then pad_start_flag = 16
     elseif tab.render_source == 2 or tab.render_source == 3 then pad_start_flag = 8
     elseif tab.render_bounds == 0 then pad_start_flag = 2
-    elseif tab.render_bounds == 1 then pad_start_flag = 4 end
+    elseif tab.render_bounds == 1 then pad_start_flag = use_custom_bounds and 1 or 4 end
   end
   r.GetSetProjectInfo(proj, "RENDER_STARTTAILFLAG", pad_start_flag, true)
   r.GetSetProjectInfo(proj, "RENDER_STARTTAILMS", (tab.pad_start_len or 0.0) * 1000, true)
@@ -777,7 +883,7 @@ local function ApplyRenderSettingsToProject(tab, p_item, explicit_pattern)
     if tab.render_source == 4 or tab.render_source == 5 then tail_flag = 16
     elseif tab.render_source == 2 or tab.render_source == 3 then tail_flag = 8
     elseif tab.render_bounds == 0 then tail_flag = 2
-    elseif tab.render_bounds == 1 then tail_flag = 4 end
+    elseif tab.render_bounds == 1 then tail_flag = use_custom_bounds and 1 or 4 end
   end
   r.GetSetProjectInfo(proj, "RENDER_TAILFLAG", tail_flag, true)
   r.GetSetProjectInfo(proj, "RENDER_TAILMS", tab.tail_len * 1000, true)
@@ -1171,6 +1277,257 @@ local function GeneratePreviewList(tab, force)
   return previews, items_to_process
 end
 
+-- =======================================================
+-- RENDER EXECUTION (single render + JKK queue share this path)
+-- =======================================================
+local function OpenFolder(render_path)
+  r.RecursiveCreateDirectory(render_path, 0)
+  if r.CF_ShellExecute then
+    r.CF_ShellExecute(render_path)
+  else
+    local os_name = r.GetOS()
+    if os_name:match("Win") then os.execute('explorer "' .. render_path:gsub('/', '\\') .. '"')
+    else os.execute('open "' .. render_path .. '"') end
+  end
+end
+
+-- 파일 상태 도장: 없으면 nil, js_ReaScriptAPI가 있으면 "크기|수정시각", 없으면 "?" (비교 불가)
+local function FileStamp(path)
+  if not r.file_exists(path) then return nil end
+  if r.JS_File_Stat then
+    local ok, rv, size, _, mtime = pcall(r.JS_File_Stat, path)
+    if ok and rv == 0 then return tostring(size) .. "|" .. tostring(mtime) end
+  end
+  return "?"
+end
+
+-- 렌더 직전 RENDER_TARGETS를 모으고, 각 파일의 렌더 전 상태를 함께 기록한다
+local function CollectRenderTargets(out)
+  local ok, targets = r.GetSetProjectInfo_String(0, "RENDER_TARGETS", "", false)
+  if ok and type(targets) == "string" and targets ~= "" then
+    for path in targets:gmatch("[^;]+") do
+      out[#out + 1] = { path = path, before = FileStamp(path) }
+    end
+  end
+end
+
+-- opts.queue  : JKK 큐 항목 렌더. 대상 선택을 스냅샷대로 맞추고, Custom bounds를 쓰고,
+--               렌더 창은 항상 자동으로 닫는다(42230) — 다음 항목이 막히지 않도록
+-- opts.matrix : 큐 항목의 Region Matrix 스냅샷 (렌더하는 동안만 적용 후 원래대로)
+-- 반환: 이번 렌더의 출력 파일 목록 (RENDER_TARGETS)
+local function PerformRender(tab, items_to_process, opts)
+  opts = opts or {}
+  local is_queue = opts.queue == true
+  local render_cmd = is_queue and 42230 or 41824
+  local apply_opts = is_queue and { custom_bounds = true } or nil
+  local targets = {}
+
+  local need_sequential = (tab.channels == 0 or tab.sr_idx == 0) and (#items_to_process > 1) and (tab.render_source == 1 or tab.render_source == 5)
+
+  local init_sel_items, init_sel_tracks = {}, {}
+  for i = 0, r.CountSelectedMediaItems(0) - 1 do table.insert(init_sel_items, r.GetSelectedMediaItem(0, i)) end
+  for i = 0, r.CountSelectedTracks(0) - 1 do table.insert(init_sel_tracks, r.GetSelectedTrack(0, i)) end
+
+  local matrix_snapshot = nil
+  if opts.matrix then
+    matrix_snapshot = CaptureRegionRenderMatrix()
+    RestoreRegionRenderMatrix(opts.matrix)
+  elseif tab.render_source == 3 then
+    matrix_snapshot = ApplyTimeSelectionMatrix()
+  end
+
+  if need_sequential then
+    for _, p_item in ipairs(items_to_process) do
+      r.Main_OnCommand(40289, 0)
+      r.Main_OnCommand(40297, 0)
+      if p_item.item then r.SetMediaItemSelected(p_item.item, true) end
+      if p_item.track then r.SetTrackSelected(p_item.track, true) end
+
+      ApplyRenderSettingsToProject(tab, p_item, nil, apply_opts)
+      CollectRenderTargets(targets)
+      r.Main_OnCommand(render_cmd, 0)
+    end
+  else
+    if tab.render_source == 4 then
+      r.Main_OnCommand(40289, 0)
+      for _, f_item in ipairs(items_to_process) do
+        if f_item.item then r.SetMediaItemSelected(f_item.item, true) end
+      end
+      r.UpdateArrange()
+    elseif is_queue and (tab.render_source == 1 or tab.render_source == 5) then
+      -- 큐 항목: 현재 선택이 아니라 큐에 넣을 때의 트랙/아이템을 렌더한다
+      r.Main_OnCommand(40289, 0)
+      r.Main_OnCommand(40297, 0)
+      for _, p_item in ipairs(items_to_process) do
+        if tab.render_source == 5 and p_item.item then r.SetMediaItemSelected(p_item.item, true) end
+        if tab.render_source == 1 and p_item.track then r.SetTrackSelected(p_item.track, true) end
+      end
+      r.UpdateArrange()
+    end
+
+    ApplyRenderSettingsToProject(tab, items_to_process[1], nil, apply_opts)
+    CollectRenderTargets(targets)
+    r.Main_OnCommand(render_cmd, 0)
+  end
+
+  if matrix_snapshot then
+    RestoreRegionRenderMatrix(matrix_snapshot)
+  end
+
+  r.Main_OnCommand(40289, 0)
+  r.Main_OnCommand(40297, 0)
+  for _, item in ipairs(init_sel_items) do if r.ValidatePtr(item, "MediaItem*") then r.SetMediaItemSelected(item, true) end end
+  for _, track in ipairs(init_sel_tracks) do if r.ValidatePtr(track, "MediaTrack*") then r.SetTrackSelected(track, true) end end
+  r.UpdateArrange()
+
+  return targets
+end
+
+-- =======================================================
+-- JKK RENDER QUEUE (snapshot + sequential runner)
+-- =======================================================
+local queue_source_names = {
+  [0] = "Master mix", [1] = "Selected tracks (stems)", [2] = "Selected Regions (Matrix)",
+  [3] = "Selected Regions (Time Selection)", [4] = "Selected media items (Grouped)",
+  [5] = "Selected media items (Separately)",
+}
+local queue_format_names = { [0] = "WAV", [1] = "AIFF", [2] = "FLAC", [3] = "MP3", [4] = "OGG Opus", [5] = "OGG Vorbis", [6] = "MP4" }
+local queue_depth_names = {
+  [0] = { [0] = "8-bit", [1] = "16-bit", [2] = "24-bit", [3] = "32-bit", [4] = "32-bit float", [5] = "64-bit float" },
+  [1] = { [0] = "8-bit", [1] = "16-bit", [2] = "24-bit", [3] = "32-bit" },
+  [2] = { [0] = "16-bit", [1] = "24-bit", [2] = "32-bit" },
+}
+
+local function QueueSourceText(tab)
+  local text = queue_source_names[tab.render_source] or "?"
+  if tab.render_source == 0 or tab.render_source == 1 then
+    if tab.render_bounds == 1 then
+      text = text .. string.format(", time selection %.2fs ~ %.2fs", tab.bounds_start or 0, tab.bounds_end or 0)
+    else
+      text = text .. ", entire project"
+    end
+  end
+  return text
+end
+
+local function QueueFormatText(tab, first_target)
+  local fmt = queue_format_names[tab.format_idx] or "WAV"
+  local depth = queue_depth_names[tab.format_idx] and queue_depth_names[tab.format_idx][tab.bit_depth_idx]
+  if depth then fmt = fmt .. " " .. depth end
+  first_target = first_target or {}
+  return fmt .. " | " .. GetDisplaySR(tab, first_target.item) .. " | " .. GetDisplayCH(tab, first_target.track)
+end
+
+-- 큐에 넣을 때의 Region Matrix: Matrix 모드는 현재 Matrix 전체, Time Selection 모드는 겹치는 Region → Master
+local function BuildQueueMatrix(tab)
+  if tab.render_source == 2 then return CaptureRegionRenderMatrix() end
+  if tab.render_source == 3 then
+    local ts_start, ts_end = r.GetSet_LoopTimeRange(false, false, 0, 0, false)
+    local matrix = {}
+    if ts_end <= ts_start then return matrix end
+    local master_tr = r.GetMasterTrack(0)
+    for _, region in ipairs(GetProjectRegions()) do
+      if region.start_pos < ts_end and region.end_pos > ts_start then matrix[region.index] = { master_tr } end
+    end
+    return matrix
+  end
+  return nil
+end
+
+local function AddTabToQueue(tab, previews, items_to_process)
+  local names = {}
+  for i, p in ipairs(previews or {}) do names[i] = p.name end
+  queue:Add(tab, items_to_process, BuildQueueMatrix(tab), {
+    summary = QueueFormatText(tab, items_to_process and items_to_process[1]),
+    source_name = QueueSourceText(tab),
+    previews = names,
+  })
+  SaveAllExtState()
+end
+
+local function RenderQueueEntry(entry)
+  local items, matrix_or_err = RenderQueue.Resolve(entry)
+  if not items then return false, matrix_or_err end
+
+  -- 예전 버전에서 저장된 스냅샷에 없는 값은 기본값으로 채운다
+  local tab = CreateDefaultTabState(entry.label)
+  for k, v in pairs(entry.settings) do tab[k] = v end
+  NormalizeGroupedFormat(tab)
+
+  local ok, result = pcall(PerformRender, tab, items, { queue = true, matrix = matrix_or_err })
+  if not ok then return false, "Script error: " .. tostring(result) end
+
+  -- 실패 판정: 출력 파일이 없거나, 덮어쓸 파일이 렌더 전과 그대로(크기/수정시각 동일, js_ReaScriptAPI 필요)
+  local targets = result
+  if #targets == 0 then return true, "Rendered (output files could not be verified)" end
+  local missing, unchanged = 0, 0
+  for _, t in ipairs(targets) do
+    local after = FileStamp(t.path)
+    if not after then
+      missing = missing + 1
+    elseif t.before and t.before ~= "?" and after == t.before then
+      unchanged = unchanged + 1
+    end
+  end
+  if missing > 0 or unchanged > 0 then
+    local parts = {}
+    if missing > 0 then parts[#parts + 1] = string.format("%d missing", missing) end
+    if unchanged > 0 then parts[#parts + 1] = string.format("%d not updated", unchanged) end
+    return false, string.format("%s of %d output file(s) (render cancelled or failed?)", table.concat(parts, ", "), #targets)
+  end
+  return true, string.format("%d file(s) rendered", #targets)
+end
+
+local function StartQueueRun(ids)
+  if queue_run or not ids or #ids == 0 then return end
+  queue_run = { ids = ids, pos = 1, folders = {}, folder_seen = {}, stop = false }
+end
+
+local function FinishQueueRun()
+  if not queue_run then return end
+  for _, e in ipairs(queue.entries) do
+    if e.status == RenderQueue.RUNNING then e.status = RenderQueue.PENDING end
+  end
+  for _, path in ipairs(queue_run.folders) do OpenFolder(path) end
+  queue_run = nil
+  SaveAllExtState()
+end
+
+-- 프레임마다 한 단계씩: 먼저 "Rendering..." 상태를 한 프레임 그린 뒤, 다음 프레임에서 실제로 렌더한다
+local function StepQueueRun()
+  if not queue_run then return end
+  if queue_run.stop then FinishQueueRun() return end
+
+  local id = queue_run.ids[queue_run.pos]
+  if not id then FinishQueueRun() return end
+
+  local entry = queue:Find(id)
+  if not entry then queue_run.pos = queue_run.pos + 1 return end
+
+  if entry.status ~= RenderQueue.RUNNING then
+    entry.status = RenderQueue.RUNNING
+    entry.message = ""
+    return
+  end
+
+  local ok, msg = RenderQueueEntry(entry)
+  entry.status = ok and RenderQueue.DONE or RenderQueue.FAILED
+  entry.message = msg or ""
+  entry.finished = os.date("%H:%M")
+  if ok then
+    entry.checked = false  -- 완료 항목은 체크 해제 (다시 체크하면 재렌더 가능)
+    if entry.settings.open_folder then
+      local path = ResolveOutputDirectory(entry.settings.file_directory)
+      if not queue_run.folder_seen[path] then
+        queue_run.folder_seen[path] = true
+        queue_run.folders[#queue_run.folders + 1] = path
+      end
+    end
+  end
+  queue_run.pos = queue_run.pos + 1
+  SaveAllExtState()
+end
+
 -- The selected ITEMS, not the selected tracks, are the audio contributors.
 -- REAPER cannot stem-render an arbitrary subset of media items via the normal
 -- folder stem source. We temporarily mute every unselected/out-of-group item,
@@ -1178,18 +1535,30 @@ end
 -- Routing through any selected nested folder bus (and its FX) remains intact.
 -- Both track and item mute/solo are restored after EACH render or queue add.
 local function Main()
+  esc_dismissed_popup = false
   r.ImGui_PushFont(ctx, font, 14)
   r.ImGui_SetNextWindowSize(ctx, 960, 900, r.ImGui_Cond_FirstUseEver())
   r.ImGui_SetNextWindowSizeConstraints(ctx, 880, 850, 3840, 2160)
-  
+
   local style_pop_count, color_pop_count = ApplyTheme(ctx)
-  
+
   local visible, open_flag = r.ImGui_Begin(ctx, 'JKK_Renderer', open, WindowChrome.flags())
 
   open = open_flag
 
+  -- Esc: 창 닫기. 단, ! / # / $ 미니 팝업이 떠 있으면 미니 팝업만 닫는다
+  -- (InputText는 Esc를 받으면 입력 전 값으로 되돌리므로 이번 프레임의 변경은 무시한다)
   if r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_Escape()) then
-    open = false
+    if popup_was_open then
+      esc_dismissed_popup = true
+      popup_dismissed = true
+      popup_was_open = false
+      popup_rect = nil
+      file_input_set_focus = true
+      r.ImGui_Function_SetValue(completion_callback, "caret_end", 3)
+    else
+      open = false
+    end
   end
 
   if visible then
@@ -1197,13 +1566,6 @@ local function Main()
     local is_focused = r.ImGui_IsWindowFocused(ctx, r.ImGui_FocusedFlags_RootAndChildWindows and r.ImGui_FocusedFlags_RootAndChildWindows() or 0)
     sel_mgr.Update(is_focused)
     local is_any_item_active = r.ImGui_IsAnyItemActive(ctx)
-    if show_autocomplete then
-        local root_focused = r.ImGui_IsWindowFocused(ctx, r.ImGui_FocusedFlags_RootWindow())
-        if not root_focused then
-            popup_dismissed = true
-            show_autocomplete = false
-        end
-    end
 
     -- =======================================================
     -- GLOBAL KEYBOARD SHORTCUTS
@@ -1577,14 +1939,8 @@ local function Main()
 
       _, tab.add_to_proj = r.ImGui_Checkbox(ctx, ' Add to project', tab.add_to_proj)
       _, tab.add_to_queue = r.ImGui_Checkbox(ctx, ' Add to render queue', tab.add_to_queue)
-      r.ImGui_SameLine(ctx)
-      PushAccentButtonStyle(ctx)
-      if r.ImGui_Button(ctx, "Open##queue_open", 40, 20) then
-        r.Main_OnCommand(40929, 0) 
-      end
-      PopAccentButtonStyle(ctx)
       if r.ImGui_IsItemHovered(ctx) then
-        r.ImGui_SetTooltip(ctx, "Open REAPER Render Queue Window")
+        r.ImGui_SetTooltip(ctx, "The main button adds the current settings and targets to the JKK render queue\n(shown under the preview list) instead of rendering right away.")
       end
       _, tab.enter_to_render = r.ImGui_Checkbox(ctx, ' Enter to render', tab.enter_to_render)
       _, tab.auto_close = r.ImGui_Checkbox(ctx, ' Auto-Close when finished', tab.auto_close)
@@ -1601,70 +1957,20 @@ local function Main()
       PushButton(ctx, "confirm")
       local render_btn_txt = tab.add_to_queue and "Add to Queue" or "Render"
 
-      if not can_render then r.ImGui_BeginDisabled(ctx) end
+      local main_btn_disabled = (not can_render) or queue_run ~= nil
+      if main_btn_disabled then r.ImGui_BeginDisabled(ctx) end
       local render_btn_clicked = r.ImGui_Button(ctx, render_btn_txt, main_btn_w, btn_h)
-      if not can_render then r.ImGui_EndDisabled(ctx) end
+      if main_btn_disabled then r.ImGui_EndDisabled(ctx) end
 
-      if render_btn_clicked or trigger_enter_render then
-        
-        local need_sequential = (tab.channels == 0 or tab.sr_idx == 0) and (#items_to_process > 1) and (tab.render_source == 1 or tab.render_source == 5)
-
-        local init_sel_items, init_sel_tracks = {}, {}
-        for i = 0, r.CountSelectedMediaItems(0) - 1 do table.insert(init_sel_items, r.GetSelectedMediaItem(0, i)) end
-        for i = 0, r.CountSelectedTracks(0) - 1 do table.insert(init_sel_tracks, r.GetSelectedTrack(0, i)) end
-
-        local matrix_snapshot = nil
-        if tab.render_source == 3 then
-          matrix_snapshot = ApplyTimeSelectionMatrix()
-        end
-
-        if need_sequential then
-          for _, p_item in ipairs(items_to_process) do
-            r.Main_OnCommand(40289, 0)
-            r.Main_OnCommand(40297, 0)
-            if p_item.item then r.SetMediaItemSelected(p_item.item, true) end
-            if p_item.track then r.SetTrackSelected(p_item.track, true) end
-            
-            ApplyRenderSettingsToProject(tab, p_item)
-            if tab.add_to_queue then r.Main_OnCommand(41823, 0) else r.Main_OnCommand(41824, 0) end
-          end
+      if (render_btn_clicked or trigger_enter_render) and not main_btn_disabled then
+        if tab.add_to_queue then
+          -- JKK 큐에 현재 탭 설정 + 대상을 스냅샷으로 추가 (렌더는 큐 목록의 Render Queue에서)
+          AddTabToQueue(tab, previews, items_to_process)
         else
-          if tab.render_source == 4 then
-            r.Main_OnCommand(40289, 0) 
-            for _, f_item in ipairs(items_to_process) do
-              if f_item.item then r.SetMediaItemSelected(f_item.item, true) end
-            end
-            r.UpdateArrange()
-          end
-          
-          ApplyRenderSettingsToProject(tab, items_to_process[1])
-          if tab.add_to_queue then r.Main_OnCommand(41823, 0) else r.Main_OnCommand(41824, 0) end
+          PerformRender(tab, items_to_process)
+          if tab.open_folder then OpenFolder(ResolveOutputDirectory(tab.file_directory)) end
+          if tab.auto_close then open = false end
         end
-
-        if matrix_snapshot then
-          RestoreRegionRenderMatrix(matrix_snapshot)
-        end
-
-        r.Main_OnCommand(40289, 0) 
-        r.Main_OnCommand(40297, 0) 
-        for _, item in ipairs(init_sel_items) do if r.ValidatePtr(item, "MediaItem*") then r.SetMediaItemSelected(item, true) end end
-        for _, track in ipairs(init_sel_tracks) do if r.ValidatePtr(track, "MediaTrack*") then r.SetTrackSelected(track, true) end end
-        r.UpdateArrange()
-
-        if tab.open_folder then
-          local render_path = ResolveOutputDirectory(tab.file_directory)
-          r.RecursiveCreateDirectory(render_path, 0)
-          
-          if r.CF_ShellExecute then
-            r.CF_ShellExecute(render_path)
-          else
-            local os_name = r.GetOS()
-            if os_name:match("Win") then os.execute('explorer "' .. render_path:gsub('/', '\\') .. '"')
-            else os.execute('open "' .. render_path .. '"') end
-          end
-        end
-
-        if tab.auto_close then open = false end
       end
       
       PopButton(ctx)
@@ -1770,6 +2076,7 @@ local function Main()
 
       local file_input_flags = r.ImGui_InputTextFlags_CallbackCompletion()
                            | r.ImGui_InputTextFlags_CallbackHistory()
+                           | r.ImGui_InputTextFlags_CallbackAlways()
       if file_input_set_focus and select_all_on_initial_file_focus then
         file_input_flags = file_input_flags | r.ImGui_InputTextFlags_AutoSelectAll()
         select_all_on_initial_file_focus = false
@@ -1778,6 +2085,11 @@ local function Main()
       local file_input_min_x = r.ImGui_GetCursorScreenPos(ctx)
       local file_name_changed, new_file_pattern = r.ImGui_InputText(
         ctx, '##fn', tab.file_pattern, file_input_flags, completion_callback)
+      -- 입력창이 꺼져 있으면 다시 켜질 때 file_pattern을 새로 읽으므로 콜백 교체는 필요 없다
+      if not r.ImGui_IsItemActive(ctx) then
+        r.ImGui_Function_SetValue(completion_callback, "replace_once", 0)
+      end
+      if esc_dismissed_popup then file_name_changed = false end
       if file_name_changed then
         tab.file_pattern = new_file_pattern
         suppress_initial_autocomplete = false
@@ -1850,34 +2162,45 @@ local function Main()
         if #filtered_shortcuts == 0 then show_autocomplete = false end
       end
 
+      -- 필터 글자가 바뀌면 선택은 첫 항목으로 (JKK_Search와 같음)
+      local popup_key = tostring(trigger_char) .. "\1" .. tostring(filter_str)
+      if popup_key ~= last_popup_key then
+        last_popup_key = popup_key
+        popup_sel_idx = 1
+      end
       popup_sel_idx = math.max(1, math.min(popup_sel_idx,
           #filtered_shortcuts > 0 and #filtered_shortcuts or 1))
 
       if show_autocomplete then
         if up_requested then
           popup_sel_idx = math.max(1, popup_sel_idx - 1)
+          popup_scroll_to_sel = true
         elseif down_requested then
           popup_sel_idx = math.min(#filtered_shortcuts, popup_sel_idx + 1)
+          popup_scroll_to_sel = true
         end
       end
 
+      -- 고른 항목 넣기: 뒤에 띄어쓰기 없음, 커서는 맨 끝 (# 는 설정만 바꾸고 글자는 지운다)
       local function SelectAutocompleteItem(selected_item)
         if not selected_item then return end
+        local insert = selected_item.insert or ""
+        local new_text
         if trigger_char == "#" then
-          tab.file_pattern = clean_search_buf:gsub("#[^%s!#$]*$", "")
-          ApplyRenderShortcut(tab, (selected_item.insert or ""):sub(2))
+          new_text = clean_search_buf:gsub("#[^%s!#$]*$", "", 1)
+          ApplyRenderShortcut(tab, insert:sub(2))
         elseif trigger_char == "$" then
-          tab.file_pattern = clean_search_buf:gsub("%$[^%s!#$]*$", selected_item.insert .. " ")
+          new_text = clean_search_buf:gsub("%$[^%s!#$]*$", function() return insert end, 1)
         elseif trigger_char == "!" then
-          tab.file_pattern = clean_search_buf:gsub("![^%s!#$]*$", selected_item.insert .. " ")
+          new_text = clean_search_buf:gsub("![^%s!#$]*$", function() return insert end, 1)
         end
-        popup_dismissed = true
-        file_input_set_focus = true
+        if new_text then SetFilePatternFromPopup(tab, new_text) end
         show_autocomplete = false
       end
 
+      -- Tab: 현재 선택된 항목 넣기 (예전에는 항상 첫 항목)
       if show_autocomplete and tab_requested then
-        SelectAutocompleteItem(filtered_shortcuts[1])
+        SelectAutocompleteItem(filtered_shortcuts[popup_sel_idx] or filtered_shortcuts[1])
       end
 
       if show_autocomplete and (r.ImGui_IsKeyPressed(ctx, r.ImGui_Key_Enter())
@@ -1918,99 +2241,50 @@ local function Main()
         r.ImGui_EndPopup(ctx)
       end
 
-      -- 자동완성 팝업 창
+      -- 자동완성 미니 팝업: JKK_Search와 같은 모양 (Modules/JKK_MiniPopup.lua)
       if show_autocomplete then
-        r.ImGui_SetNextWindowPos(ctx, file_input_min_x, file_input_max_y + 4)
-        
-        -- 팝업 창의 전체 높이는 600px로 길게 유지
-        r.ImGui_SetNextWindowSize(ctx, math.max(file_input_w, 440), 600)
-        local popup_flags = r.ImGui_WindowFlags_NoTitleBar()
-                         | r.ImGui_WindowFlags_NoResize()
-                         | r.ImGui_WindowFlags_NoMove()
-                         | r.ImGui_WindowFlags_NoSavedSettings()
-                         | r.ImGui_WindowFlags_NoFocusOnAppearing()
-
-        if r.ImGui_Begin(ctx, "RendererAutoCompletePopup", true, popup_flags) then
-          popup_was_open = true
-
-          local popup_font_pushed = false
-          r.ImGui_PushFont(ctx, font, 14)
-          popup_font_pushed = true
-
-          local table_flags = r.ImGui_TableFlags_RowBg()
-                            | r.ImGui_TableFlags_BordersInnerV()
-                            | r.ImGui_TableFlags_ScrollX()
-                            | r.ImGui_TableFlags_ScrollY()
-          local column_count = (trigger_char == "!") and 4 or 3
-          if r.ImGui_BeginTable(ctx, "RendererPopupTable", column_count, table_flags) then
-            -- 최상단 헤더 행 틀고정 (Freeze 1 Row)
-            r.ImGui_TableSetupScrollFreeze(ctx, 0, 1)
-
-            if trigger_char == "$" then
-              r.ImGui_TableSetupColumn(ctx, "Wildcard", r.ImGui_TableColumnFlags_WidthFixed(), 140)
-              r.ImGui_TableSetupColumn(ctx, "Name", r.ImGui_TableColumnFlags_WidthFixed(), 150)
-              r.ImGui_TableSetupColumn(ctx, "Description", r.ImGui_TableColumnFlags_WidthStretch())
-            elseif trigger_char == "!" then
-              r.ImGui_TableSetupColumn(ctx, "CatID", r.ImGui_TableColumnFlags_WidthFixed(), 100)
-              r.ImGui_TableSetupColumn(ctx, "Category", r.ImGui_TableColumnFlags_WidthFixed(), 140)
-              r.ImGui_TableSetupColumn(ctx, "SubCategory", r.ImGui_TableColumnFlags_WidthFixed(), 140)
-              r.ImGui_TableSetupColumn(ctx, "Description", r.ImGui_TableColumnFlags_WidthFixed(), 500)
-            else
-              r.ImGui_TableSetupColumn(ctx, "Shortcut", r.ImGui_TableColumnFlags_WidthFixed(), 145)
-              r.ImGui_TableSetupColumn(ctx, "Setting", r.ImGui_TableColumnFlags_WidthFixed(), 190)
-              r.ImGui_TableSetupColumn(ctx, "Description", r.ImGui_TableColumnFlags_WidthStretch())
+        local trig = trigger_char
+        r.ImGui_PushFont(ctx, font, 14)
+        local res = MiniPopup.Draw(ctx, mini_popup_state, {
+          id = "Renderer Suggestions##jkk_renderer_mini",
+          x = file_input_min_x, y = file_input_max_y, w = math.max(file_input_w, 440),
+          palette = PopupPalette(),
+          count = #filtered_shortcuts,
+          key = tostring(trig) .. "\1" .. tostring(filter_str),
+          selected = popup_sel_idx,
+          ensure_visible = popup_scroll_to_sel,
+          highlight = (filter_str or ""):lower(),
+          columns = PopupColumns()[trig],
+          right_from = (trig == "!") and 2 or nil,
+          row = function(i)
+            local item = filtered_shortcuts[i]
+            if not item then return nil end
+            if trig == "!" then
+              return { cols = { item.insert, item.cat, item.sub }, tooltip = item.desc }
             end
-            r.ImGui_TableHeadersRow(ctx)
-
-            for i, item in ipairs(filtered_shortcuts) do
-              r.ImGui_TableNextRow(ctx)
-              if i == popup_sel_idx then
-                r.ImGui_TableSetBgColor(ctx, r.ImGui_TableBgTarget_RowBg0(), GetColor("btn_primary"))
-              end
-
-              r.ImGui_TableNextColumn(ctx)
-              PushText(ctx, "accent")
-              local item_clicked = r.ImGui_Selectable(ctx,
-                item.insert .. "##renderer_shortcut_" .. tostring(i), false,
-                r.ImGui_SelectableFlags_SpanAllColumns())
-              PopText(ctx)
-              if r.ImGui_IsItemHovered(ctx) then popup_sel_idx = i end
-              if item_clicked then SelectAutocompleteItem(item) end
-
-              if trigger_char == "$" then
-                r.ImGui_TableNextColumn(ctx)
-                r.ImGui_Text(ctx, item.name or "")
-                r.ImGui_TableNextColumn(ctx)
-                r.ImGui_TextDisabled(ctx, item.desc or "")
-              elseif trigger_char == "!" then
-                r.ImGui_TableNextColumn(ctx)
-                r.ImGui_Text(ctx, item.cat or "")
-                r.ImGui_TableNextColumn(ctx)
-                r.ImGui_Text(ctx, item.sub or "")
-                r.ImGui_TableNextColumn(ctx)
-                r.ImGui_TextDisabled(ctx, item.desc or "")
-              else
-                r.ImGui_TableNextColumn(ctx)
-                r.ImGui_Text(ctx, item.name or "")
-                r.ImGui_TableNextColumn(ctx)
-                r.ImGui_TextDisabled(ctx, item.desc or "")
-              end
-            end
-            r.ImGui_EndTable(ctx)
-          end
-
-          if popup_font_pushed then r.ImGui_PopFont(ctx) end
-          
-          local px, py = r.ImGui_GetWindowPos(ctx)
-          local pw, ph = r.ImGui_GetWindowSize(ctx)
-          popup_rect = { min_x = px, min_y = py, max_x = px + pw, max_y = py + ph }
-
-          r.ImGui_End(ctx)
+            return { cols = { item.insert, item.name }, detail = item.desc }
+          end,
+        })
+        r.ImGui_PopFont(ctx)
+        popup_scroll_to_sel = false
+        popup_was_open = true
+        if res.rect then
+          popup_rect = { min_x = res.rect.x, min_y = res.rect.y,
+            max_x = res.rect.x + res.rect.w, max_y = res.rect.y + res.rect.h }
+        end
+        if res.clicked then
+          popup_sel_idx = res.clicked
+          SelectAutocompleteItem(filtered_shortcuts[res.clicked])
+        elseif res.focused and not r.ImGui_IsMouseDown(ctx, 0) then
+          -- 팝업(스크롤바 등)을 클릭해 포커스가 옮겨갔으면 입력창으로 돌려준다 (커서는 맨 끝)
+          file_input_set_focus = true
+          r.ImGui_Function_SetValue(completion_callback, "caret_end", 3)
         end
       else
         popup_sel_idx = 1
         popup_was_open = false
         popup_rect = nil
+        popup_scroll_to_sel = false
       end
       
       r.ImGui_Spacing(ctx)
@@ -2043,7 +2317,28 @@ local function Main()
       
       r.ImGui_Spacing(ctx)
       
-      if r.ImGui_BeginChild(ctx, "preview_box", 0, 0, child_flags) then
+      -- 큐에 항목이 있으면 미리보기 목록을 줄이고 그 아래에 큐 목록을 보여준다
+      -- 큐 패널 열림/닫힘 애니메이션: 미리보기 높이가 전체 → 45%로 부드럽게 줄어든다
+      local has_queue = queue:Count() > 0
+      local now_t = r.time_precise()
+      local anim_dt = math.max(0, math.min(0.1, now_t - (queue_anim_time or now_t)))
+      queue_anim_time = now_t
+      local step = anim_dt / QUEUE_ANIM_DURATION
+      if queue_anim == nil then queue_anim = has_queue and 1 or 0 end -- 창을 열 때는 애니메이션 없이
+      if has_queue then queue_anim = math.min(1, queue_anim + step)
+      else queue_anim = math.max(0, queue_anim - step) end
+      local show_queue_box = queue_anim > 0
+      local preview_h = 0
+      if show_queue_box then
+        local _, right_avail_h = r.ImGui_GetContentRegionAvail(ctx)
+        local split_h = math.max(110, math.floor(right_avail_h * 0.45))
+        local t = queue_anim < 0.5 and 4 * queue_anim ^ 3 or 1 - ((-2 * queue_anim + 2) ^ 3) / 2 -- ease-in-out
+        preview_h = math.floor(right_avail_h + (split_h - right_avail_h) * t)
+        -- 아래 큐 상자가 최소 1px은 남도록
+        preview_h = math.max(40, math.min(preview_h, right_avail_h - 6))
+      end
+
+      if r.ImGui_BeginChild(ctx, "preview_box", 0, preview_h, child_flags) then
         r.ImGui_SetCursorPosY(ctx, r.ImGui_GetCursorPosY(ctx) + 6)
         r.ImGui_SetCursorPosX(ctx, 16)
         
@@ -2088,6 +2383,23 @@ local function Main()
         r.ImGui_EndChild(ctx)
       end
 
+      if show_queue_box then
+        r.ImGui_Spacing(ctx)
+        if r.ImGui_BeginChild(ctx, "queue_box", 0, 0, child_flags) then
+          queue:Draw(ctx, {
+            GetColor = GetColor,
+            PushButton = PushButton,
+            PopButton = PopButton,
+            ctrl_down = ctrl_down,
+            running = queue_run ~= nil,
+            on_render = StartQueueRun,
+            on_stop = function() if queue_run then queue_run.stop = true end end,
+            on_changed = SaveAllExtState,
+          })
+          r.ImGui_EndChild(ctx)
+        end
+      end
+
       r.ImGui_EndTable(ctx)
     end
   end
@@ -2096,6 +2408,9 @@ local function Main()
   r.ImGui_PopStyleVar(ctx, style_pop_count)
   r.ImGui_PopStyleColor(ctx, color_pop_count)
   r.ImGui_PopFont(ctx)
+
+  -- JKK 큐 렌더: ImGui 프레임이 끝난 뒤 한 단계씩 진행 (렌더 명령은 끝날 때까지 블록된다)
+  if open then StepQueueRun() end
 
   if open then r.defer(Main)
   else if r.ImGui_DestroyContext then r.ImGui_DestroyContext(ctx) end end
